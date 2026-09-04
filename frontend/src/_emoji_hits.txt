@@ -1,0 +1,44 @@
+.\components\live-map\LiveTripMap.tsx:23: transport: { emoji: '🚆', color: '#0284c7', label: 'Transport' },
+.\components\live-map\LiveTripMap.tsx:24: stay: { emoji: '🏨', color: '#6366f1', label: 'Stay' },
+.\components\live-map\LiveTripMap.tsx:25: food: { emoji: '🍛', color: '#f59e0b', label: 'Dining' },
+.\components\live-map\LiveTripMap.tsx:26: attraction: { emoji: '🏞️', color: '#10b981', label: 'Attraction' },
+.\components\live-map\LiveTripMap.tsx:27: hidden_gem: { emoji: '💎', color: '#ec4899', label: 'Hidden Gem' },
+.\components\live-map\LiveTripMap.tsx:28: safety: { emoji: '⚠️', color: '#eab308', label: 'Safety Note' },
+.\components\live-map\LiveTripMap.tsx:29: emergency: { emoji: '🚑', color: '#ef4444', label: 'Emergency' }
+.\components\live-map\LiveTripMap.tsx:182: 🧭
+.\components\live-map\LiveTripMap.tsx:256: {CATEGORY_ICONS[selectedStop.category]?.emoji || '📍'}
+.\components\mode-selection\ModeSelectionModal.tsx:89: 🧭
+.\components\mode-selection\ModeSelectionModal.tsx:129: 🏔️
+.\components\mode-selection\ModeSelectionModal.tsx:194: <span>View Terms & Conditions →</span>
+.\components\navigation\LiveNavigationMode.tsx:110: 🧭
+.\components\review\ReviewModal.tsx:84: {rating === 5 ? "Exceptional experience! ⭐" : rating === 4 ? "Great guide service!" : "Good, but room for improvement"}
+.\components\search-bar\TripSearchBar.tsx:118: return `📅 ${startStr} → ${endStr} · ${diffDays} days • ${nights} nights`;
+.\components\search-bar\TripSearchBar.tsx:126: setErrorMessage("📍 Please select your departure city.");
+.\components\search-bar\TripSearchBar.tsx:132: setErrorMessage("📍 Please select your destination city.");
+.\components\search-bar\TripSearchBar.tsx:138: setErrorMessage("🔄 Your destination is the same as your source.");
+.\components\search-bar\TripSearchBar.tsx:148: setErrorMessage("📅 Please choose a future travel date and time.");
+.\components\search-bar\TripSearchBar.tsx:154: setErrorMessage("⚠️ Your return date must be after your departure date.");
+.\components\search-bar\TripSearchBar.tsx:411: <span>⚡ Real-time verified schedules & fares</span>
+.\views\AdminDomain.tsx:182: ★ Retained platform service commissions only.
+.\views\AdminDomain.tsx:269: <td className="py-3 font-bold text-amber-600">★ {g.rating} ({g.review_count})</td>
+.\views\LandingPage.tsx:266: { name: 'Ooty', state: 'Tamil Nadu', img: '🌿', tag: 'Hill Station', from: '₹4,200' },
+.\views\LandingPage.tsx:267: { name: 'Manali', state: 'Himachal Pradesh', img: '🏔️', tag: 'Adventure', from: '₹6,800' },
+.\views\LandingPage.tsx:268: { name: 'Goa', state: 'Goa', img: '🏖️', tag: 'Beach & Culture', from: '₹5,500' },
+.\views\LandingPage.tsx:269: { name: 'Jaipur', state: 'Rajasthan', img: '🏯', tag: 'Heritage', from: '₹3,900' },
+.\views\LandingPage.tsx:270: { name: 'Munnar', state: 'Kerala', img: '🍃', tag: 'Nature', from: '₹4,600' },
+.\views\LandingPage.tsx:271: { name: 'Delhi', state: 'NCT', img: '🕌', tag: 'History', from: '₹2,800' },
+.\views\LandingPage.tsx:303: >Get Started →</button>
+.\views\ManagerDomain.tsx:69: alert("🎉 Guide assigned successfully! Status updated to BUSY and user notified.");
+.\views\ManagerDomain.tsx:262: <span className="text-xs text-amber-500 font-semibold">★ {cand.rating}</span>
+.\views\UserDomain.tsx:211: description: `${activeTrip.source_name} → ${activeTrip.destination_name} trip`,
+.\views\UserDomain.tsx:415: <div className="text-xs font-bold text-travion-700">{trip.source_name} → {trip.destination_name}</div>
+.\views\UserDomain.tsx:456: {activeTrip.mode === 'GUIDE_MODE' ? '🧭' : '🏔️'}
+.\views\UserDomain.tsx:461: {activeTrip.source_name} ⇄ {activeTrip.destination_name}
+.\views\UserDomain.tsx:557: <span>🚆 Transport (Roundtrip Verified Rail/Bus):</span>
+.\views\UserDomain.tsx:561: <span>🏨 Stay (2 Nights Verified Accommodation):</span>
+.\views\UserDomain.tsx:565: <span>🍛 Curated Local Meals Allowance:</span>
+.\views\UserDomain.tsx:569: <span>🏞️ Activities & Heritage Entry:</span>
+.\views\UserDomain.tsx:573: <span className="font-semibold">🤝 Verified Local Guide Fee:</span>
+.\views\UserDomain.tsx:577: <span>⚙️ Travion Platform Fee:</span>
+.\views\UserDomain.tsx:604: ? '🔒 Secure test-mode payment via Razorpay · UPI / cards / netbanking'
+.\views\UserDomain.tsx:605: : '⚡ Sandbox verification flow — connect to Razorpay API for live test cards'}

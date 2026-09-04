@@ -1,0 +1,11 @@
+# Environment secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Runtime artifacts
+*.db
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/

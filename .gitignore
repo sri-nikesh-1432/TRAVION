@@ -1,0 +1,17 @@
+# Python caches
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Environment secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Runtime artifacts
+*.db
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
