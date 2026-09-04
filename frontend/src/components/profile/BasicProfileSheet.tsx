@@ -19,7 +19,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   const [gender, setGender] = useState(initialData?.gender || 'Prefer not to say');
   const [language, setLanguage] = useState(initialData?.preferred_language || 'English');
   const [country, setCountry] = useState(initialData?.country || 'India');
-  const [homeCity, setHomeCity] = useState(initialData?.home_city || 'Bangalore');
+  const [homeCity, setHomeCity] = useState(initialData?.home_city || '');
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [commPreference, setCommPreference] = useState<'Voice' | 'Text' | 'Both'>(initialData?.preferred_communication || 'Both');
@@ -145,7 +145,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                 type="text"
                 value={homeCity}
                 onChange={(e) => setHomeCity(e.target.value)}
-                placeholder="e.g. Bangalore"
+                placeholder="Your home city"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
               />
             </div>

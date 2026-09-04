@@ -18,7 +18,7 @@ import logging
 import math
 import re
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from app.services.pricing_service import compute_fees, party_headcount
 from app.services.verified_data import (
@@ -194,6 +194,19 @@ def _rooms_for_pax(pax: float) -> int:
     return max(1, int(math.ceil(pax / 2)))
 
 
+def _norm_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Discovery stores multi-select answers as structured lists; every planner
+    matcher is substring-based, so stringify list selections without losing any
+    choice (e.g. ['Adventure & Treks', 'Nature & Wildlife'] -> joined text)."""
+    out: Dict[str, Any] = dict(profile)
+    for key in ("party", "experience", "food_pref", "stay_pref", "transport_pref",
+                "activities", "pace", "walking_tolerance", "priority"):
+        value = out.get(key)
+        if isinstance(value, (list, tuple)):
+            out[key] = ", ".join(str(v) for v in value if str(v).strip())
+    return out
+
+
 class AIOrchestrator:
     """Builds preference-driven, verified-grounding trip itineraries."""
 
@@ -205,8 +218,11 @@ class AIOrchestrator:
         start_date: str,
         end_date: str,
         mode: str,
-        profile: Dict[str, Any]
+        profile: Dict[str, Any],
+        source_coords: Optional[Dict[str, float]] = None,
+        dest_coords: Optional[Dict[str, float]] = None
     ) -> Dict[str, Any]:
+        profile = _norm_profile(profile)
         if destination_name not in PACKAGE_DESTINATIONS:
             raise ValueError(
                 f"No verified itinerary package is published yet for {destination_name}. "
@@ -222,8 +238,16 @@ class AIOrchestrator:
         rooms = _rooms_for_pax(pax)
 
         transport = _pick_transport(source_name, destination_name, profile, budget)
-        dest_coords = LOCATION_COORDS.get(destination_name, {"lat": 11.4102, "lng": 76.6950})
-        src_coords = LOCATION_COORDS.get(source_name, {"lat": 12.9716, "lng": 77.5946})
+        # Real coordinates come from the traveller's selected locations (Location rows).
+        # Verified dataset coordinates are used only when the planner itself resolves
+        # the place; there is never a fabricated city fallback.
+        dest_coords = dest_coords or LOCATION_COORDS.get(destination_name)
+        src_coords = source_coords or LOCATION_COORDS.get(source_name)
+        if not dest_coords or not src_coords:
+            raise ValueError(
+                f"Coordinate data is unavailable for {source_name} or {destination_name}. "
+                "Travion will not guess a location — choose places with resolved coordinates."
+            )
 
         stay = _pick_stay(destination_name, profile, budget, nights)
         food_options = _pick_food(destination_name, profile)
@@ -234,8 +258,14 @@ class AIOrchestrator:
 
         priority = str(profile.get("priority") or "").lower()
         experience = str(profile.get("experience") or "").lower()
+        activities = str(profile.get("activities") or "").lower()
         want_gems = any(k in priority for k in ["gem", "hidden", "explor", "discovery", "value"])
-        want_depth = want_gems or any(k in experience for k in ["adventure", "trek", "wildlife", "heritage", "culture"])
+        want_depth = want_gems or any(
+            k in experience for k in ["adventure", "trek", "wildlife", "heritage", "culture", "culinary", "spiritual"]
+        ) or any(
+            k in activities for k in ["trek", "hike", "waterfall", "wildlife", "heritage", "temple",
+                                      "museum", "culture", "photography", "adventure", "food trail", "spiritual"]
+        )
 
         # ----- Costs (whole-group estimates) -----
         transport_cost = float(transport.get("fare", 0)) * 2 * pax  # round trip

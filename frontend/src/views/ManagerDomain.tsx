@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Compass, Users, Clock, CheckCircle2, XCircle, Award,
   Sparkles, DollarSign, LogOut, Check, ChevronRight, UserCheck,
-  Star
+  Star, GripVertical, ArrowDownToLine
 } from 'lucide-react';
 import { AuthSession, GuideCandidate } from '../types';
 import { api } from '../services/api';
@@ -21,6 +21,8 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
   const [candidates, setCandidates] = useState<GuideCandidate[]>([]);
   const [settlements, setSettlements] = useState<any[]>([]);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [dragTripId, setDragTripId] = useState<string | null>(null);
+  const [dragOverGuideId, setDragOverGuideId] = useState<string | null>(null);
 
   const fetchManagerData = async () => {
     try {
@@ -67,6 +69,8 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
     setIsAssigning(true);
     try {
       await api.assignGuide(tripId, guideId);
+      setDragTripId(null);
+      setDragOverGuideId(null);
       alert("Guide assigned successfully. The guide is now BUSY and the traveller has been notified.");
       fetchManagerData();
     } catch (err: any) {
@@ -205,21 +209,32 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Select Trip</span>
                 {tripRequests.map(req => {
                   const isSelected = selectedTripId === req.trip_id;
+                  const isDragging = dragTripId === req.trip_id;
                   return (
                     <div
                       key={req.trip_id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/trip-id', req.trip_id);
+                        e.dataTransfer.effectAllowed = 'move';
+                        setDragTripId(req.trip_id);
+                      }}
+                      onDragEnd={() => setDragTripId(null)}
                       onClick={() => {
                         setSelectedTripId(req.trip_id);
                         fetchCandidates(req.trip_id);
                       }}
-                      className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+                      className={`cursor-grab active:cursor-grabbing p-4 rounded-2xl border transition-all ${
                         isSelected
                           ? 'border-indigo-500 bg-indigo-50/50 shadow-sm ring-2 ring-indigo-200'
                           : 'border-slate-200 hover:border-indigo-200 bg-white'
-                      }`}
+                      } ${isDragging ? 'opacity-50 border-dashed' : ''}`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-black text-slate-900">{req.destination} Expedition</span>
+                        <span className="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                          <GripVertical className="w-3.5 h-3.5 text-slate-300" />
+                          <span>{req.destination} Expedition</span>
+                        </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           req.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                         }`}>
@@ -229,6 +244,9 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                       <div className="text-xs text-slate-500">Traveller: {req.traveller.name} ({req.traveller.preferred_language})</div>
                       {req.assigned_guide_name && (
                         <div className="text-xs font-bold text-indigo-700 mt-1">Assigned: {req.assigned_guide_name}</div>
+                      )}
+                      {!req.assigned_guide_name && (
+                        <div className="text-[10px] font-bold text-indigo-400 mt-1.5">Drag this trip onto an eligible guide to assign</div>
                       )}
                     </div>
                   );
@@ -247,10 +265,34 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    {dragTripId && (
+                      <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-50 border border-dashed border-indigo-300 text-[11px] font-bold text-indigo-700">
+                        <ArrowDownToLine className="w-3.5 h-3.5" />
+                        <span>Drop the trip onto an eligible guide below to confirm the assignment</span>
+                      </div>
+                    )}
                     {candidates.map(cand => (
                       <div
                         key={cand.guide_id}
-                        className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-indigo-200 shadow-sm transition-all"
+                        onDragOver={(e) => {
+                          if (cand.status !== 'ACTIVE') return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDragOverGuideId(cand.guide_id);
+                        }}
+                        onDragLeave={() => setDragOverGuideId((prev) => prev === cand.guide_id ? null : prev)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverGuideId(null);
+                          if (cand.status !== 'ACTIVE') return;
+                          const tripId = e.dataTransfer.getData('text/trip-id');
+                          if (tripId) handleAssign(tripId, cand.guide_id);
+                        }}
+                        className={`p-4 rounded-2xl bg-white border transition-all ${
+                          dragOverGuideId === cand.guide_id && cand.status === 'ACTIVE'
+                            ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50/60'
+                            : 'border-slate-200 hover:border-indigo-200'
+                        } shadow-sm`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                           <div className="flex items-center gap-3">

@@ -181,11 +181,21 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
     });
   }, [selectedStop]);
 
-  // Live Traveller Avatar position
+  // Live Traveller Avatar — only ever drawn from the device's real GPS position.
+  // No avatar is shown when location permission has not been granted; the map
+  // never fabricates a position.
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
-    const pos = avatarPosition || (stops.length > 0 ? [stops[0].lat, stops[0].lng] : [11.4102, 76.6950]);
+    const pos = avatarPosition; // [lat, lng] from real device GPS, or undefined
+
+    if (!pos) {
+      if (avatarMarkerRef.current) {
+        map.removeLayer(avatarMarkerRef.current);
+        avatarMarkerRef.current = null;
+      }
+      return;
+    }
 
     if (!avatarMarkerRef.current) {
       const avatarHtml = `
@@ -208,7 +218,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
     } else {
       avatarMarkerRef.current.setLatLng(pos as [number, number]);
     }
-  }, [avatarPosition, stops]);
+  }, [avatarPosition]);
 
   return (
     <div className="relative w-full h-full min-h-[480px] rounded-3xl overflow-hidden border border-slate-200/80 shadow-soft">

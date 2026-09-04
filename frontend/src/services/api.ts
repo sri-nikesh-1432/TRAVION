@@ -116,6 +116,11 @@ export const api = {
   searchLocations: (q: string) =>
     request<LocationItem[]>(`/locations/search?q=${encodeURIComponent(q)}`),
 
+  // World-scale places: persist any searchable worldwide place resolved by the
+  // location provider (Google Places / geocoding) so trips can use real geography.
+  registerLocation: (data: { name: string; state?: string; country?: string; lat: number; lng: number; place_id?: string; description?: string }) =>
+    request<LocationItem>('/locations/register', { method: 'POST', body: JSON.stringify(data) }),
+
   // Trips & User Profile
   searchTrip: (data: { source_location_id: string; destination_location_id: string; start_datetime: string; end_datetime: string }) =>
     request<TripItem>('/trips/search', { method: 'POST', body: JSON.stringify(data) }),
@@ -142,7 +147,7 @@ export const api = {
       is_complete: boolean;
       question_id?: string;
       question_text?: string;
-      question_type?: 'choice' | 'budget' | 'text';
+      question_type?: 'choice' | 'multi_choice' | 'budget' | 'text';
       options?: string[];
       placeholder?: string;
       answered_count: number;
@@ -259,6 +264,6 @@ export const api = {
   getChatHistory: (tripId: string, channel: 'AI' | 'GUIDE') =>
     request<ChatMessageItem[]>(`/trips/${tripId}/chat-history?channel=${channel}`),
 
-  sendChatMessage: (tripId: string, message: string, channel: 'AI' | 'GUIDE') =>
-    request<ChatMessageItem>(`/trips/${tripId}/chat-message`, { method: 'POST', body: JSON.stringify({ message, channel }) }),
+  sendChatMessage: (tripId: string, message: string, channel: 'AI' | 'GUIDE', position?: { lat: number; lng: number } | null) =>
+    request<ChatMessageItem>(`/trips/${tripId}/chat-message`, { method: 'POST', body: JSON.stringify({ message, channel, lat: position?.lat, lng: position?.lng }) }),
 };

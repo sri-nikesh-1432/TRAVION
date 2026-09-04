@@ -182,12 +182,14 @@ def test_full_user_trip_flow():
         "answers_so_far": {
             "budget": "₹15,000 - ₹25,000",
             "party": "Solo",
-            "experience": "Nature & Wildlife",
-            "food_pref": "Pure Veg",
+            "experience": ["Nature & Wildlife", "Adventure & Treks"],
+            "food_pref": ["Pure Veg", "Local Traditional Only"],
             "stay_pref": "3 Star Cozy Boutique",
-            "transport_pref": "Scenic Train",
+            "transport_pref": "Scenic Train / Toy Train",
+            "activities": ["Hiking & Treks", "Wildlife & Safaris"],
+            "pace": "Balanced",
             "walking_tolerance": "Moderate",
-            "priority": "Balanced Value"
+            "priority": ["Balanced Value", "Safety & Verified Support"]
         }
     }).json()
     assert q_done["is_complete"]

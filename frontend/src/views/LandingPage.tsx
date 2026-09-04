@@ -239,7 +239,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   /* Live journey visualization state */
   const [activeStop, setActiveStop] = useState(0);
   const journeyStops = [
-    { label: 'Departure', place: 'Bangalore', sub: 'Kempegowda', icon: <Compass className="w-4 h-4" /> },
+    { label: 'Departure', place: 'Your location', sub: 'Live GPS · resolved', icon: <Compass className="w-4 h-4" /> },
     { label: 'Transport', place: 'Nilgiri Express', sub: 'Overnight · reserved seat', icon: <Train className="w-4 h-4" /> },
     { label: 'Stay', place: 'Tea-estate cottage', sub: 'Checked in · Day 1', icon: <BedDouble className="w-4 h-4" /> },
     { label: 'Dining', place: 'Local plantation café', sub: 'Near your stay · 10 min walk', icon: <Utensils className="w-4 h-4" /> },
@@ -418,9 +418,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               transition={{ duration: 1, delay: 0.4, ease: EASE }}
               className="mt-5 text-white text-[clamp(2.6rem,6.2vw,4.9rem)] font-extrabold leading-[1.02] tracking-[-0.03em]"
             >
-              Your entire journey,
+              Make unfamiliar India
               <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white">intelligently orchestrated.</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white">feel familiar.</span>
             </motion.h1>
 
             <motion.p
@@ -429,9 +429,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               transition={{ duration: 0.9, delay: 0.6, ease: EASE }}
               className="mt-6 max-w-xl text-white/75 text-base md:text-lg leading-relaxed font-medium"
             >
-              From your first search to the journey home, Travion plans, coordinates and adapts your
-              trip around the way you actually travel — with verified transport, stays, dining and
-              guides at every step.
+              From planning your journey to finding your way, understanding local transport,
+              discovering hidden places and adapting when plans change — Travion stays with you.
             </motion.p>
 
             <motion.div
@@ -666,7 +665,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                       </span>
                       <div>
                         <p className="text-sm font-extrabold text-slate-900">Your journey preview</p>
-                        <p className="text-[11px] font-semibold text-slate-400">Day 1 · Bangalore to Munnar</p>
+                        <p className="text-[11px] font-semibold text-slate-400">Day 1 · Your location to Munnar</p>
                       </div>
                     </div>
                     <span className="px-2.5 py-1 rounded-lg bg-travion-50 text-travion-700 text-[10px] font-bold uppercase tracking-wider">
@@ -744,7 +743,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 <span className="w-2.5 h-2.5 rounded-full bg-slate-200" />
                 <span className="ml-3 flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
                   <Navigation className="w-3.5 h-3.5 text-travion-500" />
-                  Live Trip · Bangalore → Munnar
+                  Live Trip · Your location → Munnar
                 </span>
                 <span className="ml-auto px-2.5 py-1 rounded-lg bg-travion-50 text-travion-700 text-[10px] font-bold uppercase tracking-wider">
                   Product preview
@@ -1287,13 +1286,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
           <div className="mt-16 relative">
             <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gradient-to-b from-travion-200 via-slate-200 to-slate-100" />
             {[
-              { n: '01', t: 'Tell us how you travel', d: 'Choose source, destination, dates and travellers.' },
-              { n: '02', t: 'Travion understands your preferences', d: 'A short adaptive interview captures budget, pace, stay, food, transport, adventure and interests.' },
-              { n: '03', t: 'Your journey is intelligently planned', d: 'Verified transport, stays, dining and activities are assembled day by day within your budget.' },
-              { n: '04', t: 'Choose Guide Mode or Adventurous Mode', d: 'Add a verified local guide or travel solo with the full AI plan.' },
-              { n: '05', t: 'Travion coordinates the journey', d: 'In Guide Mode, a manager matches and assigns an eligible verified guide; fees are split transparently and paid securely.' },
-              { n: '06', t: 'Travel with live support', d: 'Live trip map, turn-by-turn navigation, offline package and a trip-scoped AI assistant.' },
-              { n: '07', t: 'Travion adapts when plans change', d: 'Dynamic replanning recalculates with a clear explanation, keeping you moving.' }
+              { n: '01', t: 'Plan', d: 'Choose source, destination and dates — any real place, anywhere in the world.' },
+              { n: '02', t: 'Reach', d: 'Verified transport, stays, dining and activities are assembled day by day within your budget, so you know how to get there and what to expect.' },
+              { n: '03', t: 'Navigate', d: 'A live trip map with real GPS, turn-by-turn guidance and every stop pinned professionally on the route.' },
+              { n: '04', t: 'Communicate', d: 'A trip-scoped AI assistant that understands your journey, remembers your conversation and helps you speak the local language.' },
+              { n: '05', t: 'Discover', d: 'Local food, hidden gems and lesser-known experiences matched to your interests, budget and the time you have.' },
+              { n: '06', t: 'Adapt', d: 'Weather, delays and plan changes trigger dynamic replanning with a clear explanation — plus a full offline package when connectivity drops.' },
+              { n: '07', t: 'Return', d: 'Safety contacts, emergency support and your guide at your side until the journey is complete and settled.' }
             ].map((step, i) => (
               <Reveal key={step.n} delay={i * 0.04}>
                 <div className="relative flex gap-6 pb-10 last:pb-0">

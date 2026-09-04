@@ -113,6 +113,7 @@ class Location(Base):
     country = Column(String(100), default="India")
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
+    place_id = Column(String(255), nullable=True, index=True)  # Provider canonical id (Google Places)
     description = Column(Text, nullable=True)
     hero_image = Column(String(500), nullable=True)
     popular_season = Column(String(100), nullable=True)
@@ -295,4 +296,6 @@ class ChatMessage(Base):
     sender_name = Column(String(100), nullable=False)
     message = Column(Text, nullable=False)
     channel = Column(String(50), default="AI")  # AI, GUIDE
+    lat = Column(Float, nullable=True)  # traveller's real GPS position (device-reported)
+    lng = Column(Float, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)

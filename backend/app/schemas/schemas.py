@@ -107,9 +107,19 @@ class LocationResponse(BaseModel):
     country: str
     lat: float
     lng: float
+    place_id: Optional[str] = None
     description: Optional[str] = None
     hero_image: Optional[str] = None
     popular_season: Optional[str] = None
+
+class RegisterLocationRequest(BaseModel):
+    name: str
+    state: Optional[str] = None
+    country: Optional[str] = None
+    lat: float
+    lng: float
+    place_id: Optional[str] = None
+    description: Optional[str] = None
 
 # --- Trip Search & Creation ---
 class TripSearchRequest(BaseModel):
@@ -254,6 +264,10 @@ class ReviewVisibilityUpdate(BaseModel):
 class ChatMessageCreate(BaseModel):
     message: str
     channel: str = "AI"  # AI or GUIDE
+    # Optional live GPS position from the traveller's device — used as real
+    # current-location context by the AI (never fabricated server-side).
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 class ChatMessageResponse(BaseModel):
     id: str

@@ -27,6 +27,14 @@ def _ensure_sqlite_columns():
             ucols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
             if "phone" not in ucols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(50)"))
+            lcols = {row[1] for row in conn.execute(text("PRAGMA table_info(locations)")).fetchall()}
+            if "place_id" not in lcols:
+                conn.execute(text("ALTER TABLE locations ADD COLUMN place_id VARCHAR(255)"))
+            ccols = {row[1] for row in conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()}
+            if "lat" not in ccols:
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN lat FLOAT"))
+            if "lng" not in ccols:
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN lng FLOAT"))
             conn.commit()
     except Exception as exc:  # pragma: no cover
         print(f"[migration] column ensure skipped: {exc}")

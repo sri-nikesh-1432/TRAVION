@@ -55,6 +55,8 @@ export interface LocationItem {
   country: string;
   lat: number;
   lng: number;
+  place_id?: string;
+  formatted_address?: string;
   description?: string;
   hero_image?: string;
   popular_season?: string;

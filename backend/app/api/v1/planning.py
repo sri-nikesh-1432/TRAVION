@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import require_role
-from app.models.entities import Trip, TripProfile, Itinerary, GuideAssignment
+from app.models.entities import Trip, TripProfile, Itinerary, GuideAssignment, Location
 from app.schemas.schemas import PlanTripRequest, ItineraryResponse
 from app.services.ai_orchestrator import AIOrchestrator, PACKAGE_DESTINATIONS
 from app.services.verified_data import VERIFIED_TRANSPORT
@@ -52,6 +52,12 @@ def generate_trip_plan(
 
     profile_dict = trip.profile.questions_answers if trip.profile else {}
 
+    # Real geography from the traveller's selected locations — never a default city.
+    src_loc = db.query(Location).filter(Location.id == trip.source_location_id).first()
+    dst_loc = db.query(Location).filter(Location.id == trip.destination_location_id).first()
+    source_coords = {"lat": src_loc.lat, "lng": src_loc.lng} if src_loc and src_loc.lat is not None else None
+    dest_coords = {"lat": dst_loc.lat, "lng": dst_loc.lng} if dst_loc and dst_loc.lat is not None else None
+
     try:
         itinerary_plan = AIOrchestrator.generate_itinerary(
             source_name=trip.source_name,
@@ -59,7 +65,9 @@ def generate_trip_plan(
             start_date=trip.start_datetime.isoformat(),
             end_date=trip.end_datetime.isoformat(),
             mode=req.mode,
-            profile=profile_dict
+            profile=profile_dict,
+            source_coords=source_coords,
+            dest_coords=dest_coords
         )
     except ValueError as exc:
         msg = str(exc)

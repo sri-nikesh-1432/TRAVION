@@ -10,9 +10,10 @@ import { LiveTripMap } from './LiveTripMap';
 interface SplitViewProps {
   itinerary: TripItinerary;
   onStartNavigation: (stop: ItineraryStop) => void;
+  avatarPosition?: [number, number] | null;
 }
 
-export const SplitView: React.FC<SplitViewProps> = ({ itinerary, onStartNavigation }) => {
+export const SplitView: React.FC<SplitViewProps> = ({ itinerary, onStartNavigation, avatarPosition = null }) => {
   const allStops: ItineraryStop[] = itinerary.days.flatMap(d => d.stops);
   const [selectedStop, setSelectedStop] = useState<ItineraryStop | null>(allStops[0] || null);
   const [activeDay, setActiveDay] = useState<number>(1);
@@ -113,6 +114,7 @@ export const SplitView: React.FC<SplitViewProps> = ({ itinerary, onStartNavigati
           selectedStop={selectedStop}
           onSelectStop={(s) => setSelectedStop(s)}
           onStartNavigation={onStartNavigation}
+          avatarPosition={avatarPosition || undefined}
         />
       </div>
 

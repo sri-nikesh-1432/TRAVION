@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowLeft, Sparkles, Check } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Sparkles, Check, Plus } from 'lucide-react';
 
 interface DiscoveryCardProps {
   questionId: string;
   questionText: string;
-  questionType: 'choice' | 'budget' | 'text';
+  questionType: 'choice' | 'multi_choice' | 'budget' | 'text';
   options?: string[];
   placeholder?: string;
   currentAnswer?: any;
@@ -27,11 +27,29 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
   answeredCount,
   totalEstimated
 }) => {
-  const [selectedOption, setSelectedOption] = useState<any>(currentAnswer || '');
+  const isMulti = questionType === 'multi_choice';
+  // Single-select keeps a string; multi-select keeps a structured list so every
+  // chosen preference reaches the planner (never just the last click).
+  const [selectedOption, setSelectedOption] = useState<any>(
+    isMulti
+      ? Array.isArray(currentAnswer) ? currentAnswer : (currentAnswer ? [currentAnswer] : [])
+      : currentAnswer || ''
+  );
+
+  const toggleMulti = (opt: string) => {
+    setSelectedOption((prev: string[]) => {
+      if (!Array.isArray(prev)) prev = [];
+      return prev.includes(opt) ? prev.filter(x => x !== opt) : [...prev, opt];
+    });
+  };
+
+  const canContinue = isMulti
+    ? Array.isArray(selectedOption) && selectedOption.length > 0
+    : selectedOption !== undefined && selectedOption !== '';
 
   const handleNext = () => {
-    if (selectedOption !== undefined && selectedOption !== '') {
-      onAnswer(selectedOption);
+    if (canContinue) {
+      onAnswer(isMulti && !Array.isArray(selectedOption) ? [selectedOption] : selectedOption);
     }
   };
 
@@ -67,29 +85,42 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
 
       {/* Multiple Choice Options as Chips / Cards */}
       {options && options.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-          {options.map((opt, idx) => {
-            const isSelected = selectedOption === opt;
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setSelectedOption(opt)}
-                className={`p-4 rounded-2xl border text-left font-semibold text-sm transition-all flex items-center justify-between ${
-                  isSelected
-                    ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
-                    : 'border-slate-200 hover:border-travion-300 text-slate-700 bg-white'
-                }`}
-              >
-                <span>{opt}</span>
-                {isSelected && (
-                  <div className="w-5 h-5 rounded-full bg-travion-600 text-white flex items-center justify-center shrink-0">
-                    <Check className="w-3 h-3 stroke-[3]" />
-                  </div>
-                )}
-              </button>
-            );
-          })}
+        <div className="mb-6">
+          {isMulti && (
+            <p className="text-[11px] font-bold text-slate-400 mb-2.5">Select all that apply</p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {options.map((opt, idx) => {
+              const isSelected = isMulti
+                ? Array.isArray(selectedOption) && selectedOption.includes(opt)
+                : selectedOption === opt;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => isMulti ? toggleMulti(opt) : setSelectedOption(opt)}
+                  className={`p-4 rounded-2xl border text-left font-semibold text-sm transition-all flex items-center justify-between ${
+                    isSelected
+                      ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
+                      : 'border-slate-200 hover:border-travion-300 text-slate-700 bg-white'
+                  }`}
+                >
+                  <span>{opt}</span>
+                  {isSelected && (
+                    <div className="w-5 h-5 rounded-full bg-travion-600 text-white flex items-center justify-center shrink-0">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {isMulti && Array.isArray(selectedOption) && selectedOption.length > 0 && (
+            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-travion-50 border border-travion-200 text-[11px] font-bold text-travion-700">
+              <Plus className="w-3 h-3" />
+              <span>{selectedOption.length} selected{selectedOption.length > 1 ? ' — all will shape your plan' : ''}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -125,7 +156,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
 
         <button
           type="button"
-          disabled={!selectedOption}
+          disabled={!canContinue}
           onClick={handleNext}
           className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm shadow-md hover:shadow-soft transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >

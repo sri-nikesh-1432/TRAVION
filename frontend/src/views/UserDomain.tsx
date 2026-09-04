@@ -10,7 +10,7 @@ import {
   AuthSession, LocationItem, TripItem, TripItinerary,
   ItineraryStop, UserProfile
 } from '../types';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
 import { DiscoveryCard } from '../components/trip-discovery/DiscoveryCard';
 import { ModeSelectionModal } from '../components/mode-selection/ModeSelectionModal';
@@ -87,6 +87,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [myTrips, setMyTrips] = useState<TripItem[]>([]);
   const [assignedGuide, setAssignedGuide] = useState<{ name: string; phone?: string; rating?: number } | null>(null);
 
+  // Real device GPS during the live trip — never fabricated, never defaulted.
+  const [livePosition, setLivePosition] = useState<{ lat: number; lng: number } | null>(null);
+
   // Plan-stage UX state — prevents blank screens when a plan cannot be built yet
   const [planError, setPlanError] = useState<{ message: string; available?: string[] } | null>(null);
   const [reroutingDest, setReroutingDest] = useState<string | null>(null);
@@ -96,6 +99,19 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   useEffect(() => {
     api.getLocations().then(setLocationsCache).catch(() => {});
   }, []);
+
+  // Live GPS tracking once the trip is underway (permission-gated; errors are
+  // silent — the map simply shows no avatar rather than a fake position).
+  useEffect(() => {
+    const inTrip = currentView === 'workspace' && activeTrip && ['PAID', 'GUIDE_ASSIGNED', 'ACTIVE'].includes(activeTrip.status);
+    if (!inTrip || !('geolocation' in navigator)) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setLivePosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => { /* permission denied or GPS unavailable — no fallback position */ },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [currentView, activeTrip?.id, activeTrip?.status]);
 
   const getPlanErrorMessage = (err: any): { message: string; available?: string[] } => {
     const fallback = 'Something went wrong while planning your trip. Please try again.';
@@ -190,6 +206,28 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   };
 
   // 1. Hand off from Trip Search Bar to Discovery
+  // A place picked from worldwide Google results carries a gmap: id until it is
+  // registered — persist it server-side now so the trip has real geography.
+  const ensureRegistered = async (loc: LocationItem): Promise<LocationItem> => {
+    if (!loc.id.startsWith('gmap:')) return loc;
+    try {
+      const registered = await api.registerLocation({
+        name: loc.name,
+        state: loc.state,
+        country: loc.country,
+        lat: loc.lat,
+        lng: loc.lng,
+        description: loc.description
+      });
+      return registered;
+    } catch {
+      throw new ApiError(
+        `Could not save “${loc.name}” yet. Please pick it again from the list.`,
+        'LOCATION_REGISTER_FAILED'
+      );
+    }
+  };
+
   const handleTripSearch = async (searchData: {
     source: LocationItem;
     destination: LocationItem;
@@ -198,9 +236,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   }) => {
     setPlanError(null);
     try {
+      const source = await ensureRegistered(searchData.source);
+      const destination = await ensureRegistered(searchData.destination);
       const trip = await api.searchTrip({
-        source_location_id: searchData.source.id,
-        destination_location_id: searchData.destination.id,
+        source_location_id: source.id,
+        destination_location_id: destination.id,
         start_datetime: searchData.startDate,
         end_datetime: searchData.endDate
       });
@@ -459,10 +499,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             <div className="text-center max-w-2xl mx-auto mb-8">
               <span className="text-[11px] font-bold uppercase tracking-wider text-travion-600">AI Travel Hub</span>
               <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
-                Where would you like to explore next?
+                Where would you like to go?
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-2 font-medium">
-                Verified rail timetables, boutique heritage cottages, authentic dining, and regional guides.
+                Start anywhere, go anywhere. Search any city, region, landmark or place — Travion orchestrates the journey around you.
               </p>
             </div>
 
@@ -672,6 +712,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             <SplitView
               itinerary={itinerary}
               onStartNavigation={(stop) => setNavigatingStop(stop)}
+              avatarPosition={livePosition ? [livePosition.lat, livePosition.lng] : null}
             />
 
             {/* Magnification Quick Actions Dock */}
@@ -854,6 +895,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         isGuideAssigned={activeTrip?.status === 'GUIDE_ASSIGNED' || activeTrip?.status === 'ACTIVE'}
         assignedGuideName={assignedGuide?.name || ''}
         onTriggerReplan={() => handleTriggerReplan('TIREDNESS')}
+        currentPosition={livePosition}
       />
 
       {/* Offline Package Modal */}

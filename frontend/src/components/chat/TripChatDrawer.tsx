@@ -14,6 +14,7 @@ interface TripChatDrawerProps {
   isGuideAssigned: boolean;
   assignedGuideName?: string;
   onTriggerReplan?: () => void;
+  currentPosition?: { lat: number; lng: number } | null;
 }
 
 export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
@@ -22,7 +23,8 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
   onClose,
   isGuideAssigned,
   assignedGuideName,
-  onTriggerReplan
+  onTriggerReplan,
+  currentPosition = null
 }) => {
   const [channel, setChannel] = useState<'AI' | 'GUIDE'>('AI');
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
@@ -57,7 +59,7 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
     setIsLoading(true);
 
     try {
-      await api.sendChatMessage(tripId, text, channel);
+      await api.sendChatMessage(tripId, text, channel, currentPosition);
       await fetchHistory();
       if (text.toLowerCase().includes("change") && onTriggerReplan) {
         onTriggerReplan();
