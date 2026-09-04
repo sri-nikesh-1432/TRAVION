@@ -245,6 +245,41 @@ def test_full_user_trip_flow():
     assert pkg["trip_id"] == trip_id
     assert "Offline mode verified" in pkg["offline_notice"]
 
+def test_planned_trip_first_step_is_departure_from_source():
+    """The first step of any planned trip must be the departure from the source.
+
+    Regression: day stops were sorted lexicographically on the 12-hour label
+    ("02:00 PM" < "08:00 AM", "06:00 PM" < "06:30 AM"), which scrambled the
+    itinerary so a destination check-in / briefing appeared as Step 1 instead of
+    the outbound departure. Overnight legs (evening departure, next-day arrival)
+    must keep Day 1 as the journey day and start destination content on Day 2.
+    """
+    from app.services.ai_orchestrator import AIOrchestrator
+    from app.services.india_planner import build_estimate_plan
+
+    # Verified overnight route (Delhi -> Manali 7:30 PM Volvo) and same-day
+    # morning route (Mumbai -> Goa 05:50 AM Tejas) both start with departure.
+    for src, dst in (("Delhi", "Manali"), ("Mumbai", "Goa"), ("Bangalore", "Ooty")):
+        plan = AIOrchestrator.generate_itinerary(
+            src, dst, "2026-09-10T06:00:00+05:30", "2026-09-13T06:00:00+05:30",
+            "ADVENTUROUS_MODE", {"budget": 18000, "party": "Solo"},
+        )
+        first = plan["days"][0]["stops"][0]
+        assert first["category"] == "transport", f"{src}->{dst} first step: {first['title']}"
+        assert first["title"].lower().startswith("depart"), f"{src}->{dst} first step: {first['title']}"
+
+    # India-wide estimate engine for any pair (no verified package needed).
+    est = build_estimate_plan(
+        "Hyderabad", "Munnar", "Telangana", "Kerala",
+        "2026-09-10T06:00:00+05:30", "2026-09-12T06:00:00+05:30",
+        "ADVENTUROUS_MODE", {"budget": 18000, "party": "Solo"},
+        {"lat": 17.38, "lng": 78.48}, {"lat": 10.09, "lng": 77.06},
+    )
+    first = est["days"][0]["stops"][0]
+    assert first["category"] == "transport"
+    assert "departure from hyderabad" in first["title"].lower()
+
+
 def test_admin_dual_revenue():
     # Elevate to Admin
     adm_email = f"admin_{datetime.now().timestamp()}@travion.in"

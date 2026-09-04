@@ -122,6 +122,26 @@ def _mins_to_label(minutes: int) -> str:
     return f"{hh:02d}:{m:02d} {suffix}"
 
 
+def _clock_minutes(label: str) -> int:
+    """'hh:mm AM/PM' -> minutes since midnight for real chronological ordering.
+
+    Sorting on the raw 12-hour label is lexicographic and wrong ("02:00 PM" sorts
+    before "08:00 AM", "06:00 PM" before "06:30 AM"), which used to scramble the
+    itinerary so the outbound departure was not the first step of Day 1.
+    """
+    m = re.match(r"(\d{1,2}):(\d{2})\s*(AM|PM)?", (label or "").strip(), re.IGNORECASE)
+    if not m:
+        return 0
+    hour = int(m.group(1))
+    minute = int(m.group(2))
+    meridiem = (m.group(3) or "").upper()
+    if meridiem == "PM" and hour < 12:
+        hour += 12
+    if meridiem == "AM" and hour == 12:
+        hour = 0
+    return hour * 60 + minute
+
+
 def _time_label_from(start_label: str, minutes: int) -> str:
     """Add minutes to a '06:30 AM' label -> arrival estimate label."""
     try:
@@ -437,7 +457,10 @@ def build_estimate_plan(
                 ai_note="Estimated corridor — verified live by your assistant before travel.",
             ))
 
-        day_stops.sort(key=lambda s: s["time"])
+        # Chronological sort (minutes since midnight), NOT lexicographic on the
+        # 12-hour label — so the 06:30 AM departure is always the first step of
+        # Day 1 and no check-in ever sorts ahead of the morning departure.
+        day_stops.sort(key=lambda s: _clock_minutes(s.get("time")))
         if is_first:
             theme_name = "Arrival & Orientation"
         elif is_last and days > 1:

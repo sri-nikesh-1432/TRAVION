@@ -150,6 +150,36 @@ def _pick_food(dest: str, profile: Dict[str, Any]) -> List[Dict[str, Any]]:
     return foods
 
 
+def _clock_minutes(value: Any) -> int:
+    """'hh:mm AM/PM' -> minutes since midnight for real chronological ordering.
+
+    Sorting on the raw 12-hour label is lexicographic and wrong ("02:00 PM" sorts
+    before "08:00 AM", "06:00 PM" before "06:30 AM"), which used to scramble the
+    itinerary so the outbound departure was not the first step of Day 1.
+    """
+    m = re.match(r"(\d{1,2}):(\d{2})\s*(AM|PM)?", str(value or "").strip(), re.IGNORECASE)
+    if not m:
+        return 0
+    hour = int(m.group(1))
+    minute = int(m.group(2))
+    meridiem = (m.group(3) or "").upper()
+    if meridiem == "PM" and hour < 12:
+        hour += 12
+    if meridiem == "AM" and hour == 12:
+        hour = 0
+    return hour * 60 + minute
+
+
+def _minutes_to_clock(minutes: int) -> str:
+    """Minutes since midnight -> 'hh:mm AM/PM' label."""
+    minutes %= 1440
+    hour = (minutes // 60) % 24
+    minute = minutes % 60
+    suffix = "AM" if hour < 12 else "PM"
+    hh = hour % 12 or 12
+    return f"{hh:02d}:{minute:02d} {suffix}"
+
+
 def _stop(**kwargs: Any) -> Dict[str, Any]:
     base = {
         "id": "stop",
@@ -280,6 +310,20 @@ class AIOrchestrator:
         # A hidden gem is offered once mid-trip for discovery-seekers.
         gem_day = min(days, 2) if days >= 2 and (want_gems or want_depth) else None
 
+        # Overnight outbound legs (evening departure or next-day arrival) mean the
+        # traveller is not physically at the destination on Day 1. Day 1 is then
+        # purely the departure journey, and destination content (safety briefing +
+        # hotel check-in) belongs to Day 2 after the morning arrival.
+        dep_label = str(transport.get("departure", "06:15 AM"))
+        arr_label = str(transport.get("arrival", ""))
+        overnight_out = (
+            "+1" in arr_label
+            or "next day" in arr_label.lower()
+            or _clock_minutes(dep_label) >= 17 * 60
+        )
+        defer_dest_to_day2 = overnight_out and days >= 3
+        day2_extra: List[Dict[str, Any]] = []
+
         for day_num in range(1, days + 1):
             day_stops: List[Dict[str, Any]] = []
             is_first = day_num == 1
@@ -307,11 +351,17 @@ class AIOrchestrator:
                     source=transport.get("source", "verified_api"),
                     transport_details=transport,
                 ))
-                # Grounded safety / emergency briefing.
-                day_stops.append(_stop(
+                # Grounded safety / emergency briefing. On overnight journeys the
+                # traveller boards in the evening and arrives the next morning, so
+                # the briefing is scheduled for Day 2 after arrival instead.
+                briefing_time = "08:00 AM"
+                if defer_dest_to_day2:
+                    arr_min = _clock_minutes(arr_label)
+                    briefing_time = _minutes_to_clock(arr_min + 45) if arr_label and arr_min else "09:00 AM"
+                briefing_stop = _stop(
                     id=f"stop-d{day_num}-s",
                     day=day_num,
-                    time="08:00 AM",
+                    time=briefing_time,
                     title=f"{destination_name} Safety & Emergency Briefing",
                     description=(
                         f"Hospital: {safety['hospital_name']} ({safety['hospital_phone']}). "
@@ -326,11 +376,18 @@ class AIOrchestrator:
                     rating=5.0,
                     emergency_contact=safety.get("tourist_helpline"),
                     source="verified_api",
-                ))
+                )
+                if defer_dest_to_day2:
+                    briefing_stop["id"] = "stop-d2-s"
+                    briefing_stop["day"] = 2
+                    day2_extra.append(briefing_stop)
+                else:
+                    day_stops.append(briefing_stop)
 
-            # Stay check-in / check-out.
+            # Stay check-in / check-out. On an overnight journey the traveller
+            # sleeps on the road and checks in the following afternoon.
             if is_first:
-                day_stops.append(_stop(
+                checkin_stop = _stop(
                     id=f"stop-d{day_num}-h",
                     day=day_num,
                     time="02:00 PM",
@@ -348,7 +405,13 @@ class AIOrchestrator:
                     rating=float(stay.get("rating", 4.7)),
                     ai_note="Matched to your stay preference and within your travel budget.",
                     source=stay.get("source", "verified_api"),
-                ))
+                )
+                if defer_dest_to_day2:
+                    checkin_stop["id"] = "stop-d2-h"
+                    checkin_stop["day"] = 2
+                    day2_extra.append(checkin_stop)
+                else:
+                    day_stops.append(checkin_stop)
             elif is_last:
                 day_stops.append(_stop(
                     id=f"stop-d{day_num}-h",
@@ -367,19 +430,23 @@ class AIOrchestrator:
                 ))
 
             # Attractions for the day (no repeats until the pool is exhausted).
-            spots_available = [a for a in sightseeing if a["name"] not in used_attractions]
-            if not spots_available:
-                used_attractions.clear()
-                spots_available = list(sightseeing)
-            picks = []
-            if spots_available:
-                first = spots_available.pop(0)
-                picks.append(first)
-                used_attractions.add(first["name"])
-            if len(picks) == 1 and spots_available and not is_last:
-                second = spots_available.pop(0)
-                picks.append(second)
-                used_attractions.add(second["name"])
+            # A night-travel Day 1 has no destination time left, so Day 2 (which
+            # carries its own full schedule) is not duplicated with Day 1 picks.
+            travel_night_day = is_first and defer_dest_to_day2
+            picks: List[Dict[str, Any]] = []
+            if not travel_night_day:
+                spots_available = [a for a in sightseeing if a["name"] not in used_attractions]
+                if not spots_available:
+                    used_attractions.clear()
+                    spots_available = list(sightseeing)
+                if spots_available:
+                    first = spots_available.pop(0)
+                    picks.append(first)
+                    used_attractions.add(first["name"])
+                if len(picks) == 1 and spots_available and not is_last:
+                    second = spots_available.pop(0)
+                    picks.append(second)
+                    used_attractions.add(second["name"])
 
             for idx, attr in enumerate(picks):
                 slot = _ATTRACTION_TIMES[idx % len(_ATTRACTION_TIMES)]
@@ -429,6 +496,8 @@ class AIOrchestrator:
             # Meals.
             if days == 1:
                 meal_slots = _MEAL_TIMES
+            elif is_first and defer_dest_to_day2:
+                meal_slots = []  # traveller is on the overnight leg, not in town
             elif is_first:
                 meal_slots = [_MEAL_TIMES[1]]
             elif is_last:
@@ -481,8 +550,18 @@ class AIOrchestrator:
                     source=transport.get("source", "verified_api"),
                 ))
 
-            day_stops.sort(key=lambda s: s["time"])
+            # When the outbound journey arrived overnight, Day 2 opens with the
+            # deferred safety briefing + hotel check-in from the travel night.
+            if day_num == 2 and day2_extra:
+                day_stops = day2_extra + day_stops
+
+            # Chronological sort (minutes since midnight), NOT lexicographic on the
+            # 12-hour label — so the 06:30 AM departure always precedes the 02:00 PM
+            # check-in and the outbound leg is Step 1 of the trip.
+            day_stops.sort(key=lambda s: _clock_minutes(s.get("time")))
             if is_first:
+                theme = "Overnight Journey & Departure" if defer_dest_to_day2 else "Arrival & Orientation"
+            elif day_num == 2 and defer_dest_to_day2:
                 theme = "Arrival & Orientation"
             elif is_last and days > 1:
                 theme = "Departure Day"
