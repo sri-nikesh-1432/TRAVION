@@ -23,7 +23,7 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
 
   const guideFeatures = [
     "Verified local human guide, language & destination matched",
-    "Complete door-to-door itinerary with verified transport & stay",
+    "Door-to-door itinerary — verified where published, clear estimates everywhere else",
     "Curated local food tastings & guide-submitted hidden spots",
     "Live turn-by-turn navigation & live traveller avatar",
     "Direct in-app guide chat (unlocked on assignment)",
@@ -33,8 +33,8 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
 
   const adventurousFeatures = [
     "Self-guided autonomous exploration (no human guide assigned)",
-    "Explicit train/bus numbers, schedules & departure platforms",
-    "Verified stays, curated food spots & attraction waypoints",
+    "Transport plans — verified schedules where published, honest estimates elsewhere",
+    "Stay, food & attraction plans built to your preferences",
     "Voice turn-by-turn navigation & offline trip package",
     "Dedicated 24/7 tourist emergency helpline & police hotline",
     "Trip-scoped AI assistant & dynamic replanning engine"

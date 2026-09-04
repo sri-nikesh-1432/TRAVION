@@ -781,8 +781,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 </div>
                 <div className="space-y-2 text-xs text-slate-700 font-medium">
                   {[
-                    { icon: TrainFront, color: '#0284c7', label: 'Transport (round-trip, verified)', value: checkoutData.breakdown.transport },
-                    { icon: BedDouble, color: '#6366f1', label: 'Stay (verified accommodation)', value: checkoutData.breakdown.stay },
+                    { icon: TrainFront, color: '#0284c7', label: 'Transport (round trip)', value: checkoutData.breakdown.transport },
+                    { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: checkoutData.breakdown.stay },
                     { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: checkoutData.breakdown.food },
                     { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: checkoutData.breakdown.activities }
                   ].map((row) => (

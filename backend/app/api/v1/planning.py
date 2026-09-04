@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
@@ -5,7 +6,12 @@ from app.core.security import require_role
 from app.models.entities import Trip, TripProfile, Itinerary, GuideAssignment, Location
 from app.schemas.schemas import PlanTripRequest, ItineraryResponse
 from app.services.ai_orchestrator import AIOrchestrator, PACKAGE_DESTINATIONS
+from app.services.india_planner import build_estimate_plan
 from app.services.verified_data import VERIFIED_TRANSPORT
+
+
+def _is_india(country: Optional[str]) -> bool:
+    return (country or "").strip().lower() == "india"
 
 router = APIRouter(prefix="/trips", tags=["Planning"])
 
@@ -58,46 +64,89 @@ def generate_trip_plan(
     source_coords = {"lat": src_loc.lat, "lng": src_loc.lng} if src_loc and src_loc.lat is not None else None
     dest_coords = {"lat": dst_loc.lat, "lng": dst_loc.lng} if dst_loc and dst_loc.lat is not None else None
 
-    try:
-        itinerary_plan = AIOrchestrator.generate_itinerary(
-            source_name=trip.source_name,
-            destination_name=trip.destination_name,
-            start_date=trip.start_datetime.isoformat(),
-            end_date=trip.end_datetime.isoformat(),
-            mode=req.mode,
-            profile=profile_dict,
-            source_coords=source_coords,
-            dest_coords=dest_coords
-        )
-    except ValueError as exc:
-        msg = str(exc)
-        # Destinations that are truly reachable from this departure city today:
-        # a verified itinerary package AND a verified transport route from the source.
+    destination_name = trip.destination_name
+
+    # India-wide coverage: ANY India -> India pair must produce a plan instantly.
+    # Destinations with published verified packages use the verified engine; every
+    # other India pair is planned by the estimate engine (real geography + clearly
+    # marked estimates — never invented schedules, hotels or attractions).
+    both_india = bool(
+        src_loc and dst_loc
+        and _is_india(src_loc.country) and _is_india(dst_loc.country)
+        and source_coords and dest_coords
+    )
+
+    def _raise_uncovered(kind: str, message: str) -> None:
+        # Truly reachable journey destinations from this departure city today.
         reachable = sorted({
             dst for (src, dst) in VERIFIED_TRANSPORT.keys()
             if src == trip.source_name and dst in PACKAGE_DESTINATIONS
         })
-        if "No verified itinerary package" in msg:
-            # The selected destination has no published itinerary package — structured & recoverable.
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error_code": "DESTINATION_NOT_COVERED",
-                    "message": msg,
-                    "available_destinations": reachable,
-                },
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": kind,
+                "message": message,
+                "available_destinations": reachable,
+            },
+        )
+
+    try:
+        if destination_name in PACKAGE_DESTINATIONS:
+            try:
+                itinerary_plan = AIOrchestrator.generate_itinerary(
+                    source_name=trip.source_name,
+                    destination_name=destination_name,
+                    start_date=trip.start_datetime.isoformat(),
+                    end_date=trip.end_datetime.isoformat(),
+                    mode=req.mode,
+                    profile=profile_dict,
+                    source_coords=source_coords,
+                    dest_coords=dest_coords
+                )
+            except ValueError as exc:
+                # Verified package exists but no verified route from this departure
+                # city (e.g. Kurnool -> Munnar). India pairs still get an instant
+                # estimated plan instead of a refusal.
+                if both_india:
+                    itinerary_plan = build_estimate_plan(
+                        source_name=trip.source_name,
+                        destination_name=destination_name,
+                        source_state=src_loc.state or "",
+                        destination_state=dst_loc.state or "",
+                        start_date=trip.start_datetime.isoformat(),
+                        end_date=trip.end_datetime.isoformat(),
+                        mode=req.mode,
+                        profile=profile_dict,
+                        source_coords=source_coords,
+                        dest_coords=dest_coords,
+                    )
+                else:
+                    _raise_uncovered("ROUTE_NOT_COVERED", str(exc))
+        elif both_india:
+            itinerary_plan = build_estimate_plan(
+                source_name=trip.source_name,
+                destination_name=destination_name,
+                source_state=src_loc.state or "",
+                destination_state=dst_loc.state or "",
+                start_date=trip.start_datetime.isoformat(),
+                end_date=trip.end_datetime.isoformat(),
+                mode=req.mode,
+                profile=profile_dict,
+                source_coords=source_coords,
+                dest_coords=dest_coords,
             )
-        if "No verified transport schedule" in msg:
-            # The destination has a package but no verified route from this departure city.
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error_code": "ROUTE_NOT_COVERED",
-                    "message": msg,
-                    "available_destinations": reachable,
-                },
+        else:
+            _raise_uncovered(
+                "DESTINATION_NOT_COVERED",
+                f"No verified itinerary package is published yet for {destination_name}. "
+                "Travion only grounds plans in verified stays, dining and attraction data — "
+                "please choose one of the currently covered destinations.",
             )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        _raise_uncovered("DESTINATION_NOT_COVERED", str(exc))
 
     breakdown = itinerary_plan["cost_breakdown"]
 
