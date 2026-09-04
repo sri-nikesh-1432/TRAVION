@@ -210,15 +210,54 @@ export const api = {
   settlePayout: (splitId: string) =>
     request<any>(`/manager/settlements/${splitId}/settle`, { method: 'POST' }),
 
+  // Manager portal pages
+  getManagerGuides: () =>
+    request<any[]>('/manager/guides'),
+
+  getManagerActiveTrips: () =>
+    request<any[]>('/manager/active-trips'),
+
+  getManagerPayments: () =>
+    request<any[]>('/manager/payments'),
+
+  getManagerRevenue: () =>
+    request<{
+      gross_traveller_payments: number;
+      platform_revenue: number;
+      guide_fees: number;
+      settled_guide_fees: number;
+      pending_settlements: number;
+      by_month: { month: string; platform: number; guide: number; gross: number }[];
+      by_destination: { destination: string; revenue: number }[];
+      by_mode: { mode: string; revenue: number }[];
+      status_counts: Record<string, number>;
+      currency: string;
+    }>('/manager/revenue'),
+
+  getManagerReviews: () =>
+    request<any[]>('/manager/reviews'),
+
   // Admin
   getAdminOverview: () =>
-    request<{ total_users: number; total_guides: number; total_managers: number; active_trips: number; completed_trips: number }>('/admin/overview'),
+    request<{
+      total_users: number; total_guides: number; verified_guides: number; pending_guides: number;
+      total_managers: number; active_trips: number; completed_trips: number; total_payments: number;
+      failed_payments: number; platform_revenue: number; pending_settlements: number;
+    }>('/admin/overview'),
 
   getAdminRevenue: () =>
     request<{
       total_platform_transactions: number;
       actual_platform_revenue: number;
       total_guide_fees_payout: number;
+      settled_guide_fees: number;
+      pending_guide_fees: number;
+      net_revenue: number;
+      by_month: { month: string; platform: number; guide: number; gross: number }[];
+      by_destination: { destination: string; revenue: number }[];
+      by_mode: { mode: string; revenue: number }[];
+      payment_status_counts: { status: string; count: number }[];
+      settlement_status_counts: { status: string; count: number }[];
       currency: string;
       notes: string;
     }>('/admin/revenue'),
@@ -234,6 +273,39 @@ export const api = {
 
   getAdminAuditLogs: () =>
     request<any[]>('/admin/audit-logs'),
+
+  getAdminTrips: () =>
+    request<any[]>('/admin/trips'),
+
+  getAdminPayments: () =>
+    request<any[]>('/admin/payments'),
+
+  getAdminSettlements: () =>
+    request<any[]>('/admin/settlements'),
+
+  getAdminManagers: () =>
+    request<any[]>('/admin/managers'),
+
+  getAdminConversions: () =>
+    request<{ assignments: any[]; funnel: Record<string, number> }>('/admin/conversions'),
+
+  getAdminAnalytics: () =>
+    request<{
+      users_growth: { month: string; count: number }[];
+      guides_growth: { month: string; count: number }[];
+      trips_growth: { month: string; count: number }[];
+      destination_popularity: { destination: string; count: number }[];
+      mode_popularity: { mode: string; count: number }[];
+      trip_status_distribution: { status: string; count: number }[];
+      average_budget: number;
+      average_trip_duration_days: number;
+      average_guide_rating: number;
+      assignment_rate: number;
+      completion_rate: number;
+    }>('/admin/analytics'),
+
+  getAdminActiveOperations: () =>
+    request<any[]>('/admin/active-operations'),
 
   // Payments
   checkoutTrip: (tripId: string) =>

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { AuthSession, GuideProfile, ReviewItem } from '../types';
 import { api } from '../services/api';
+import { TripChatDrawer } from '../components/chat/TripChatDrawer';
 
 const GUIDE_LANGUAGES = ['English', 'Hindi', 'Tamil', 'Kannada', 'Malayalam', 'Telugu', 'Marathi', 'Bengali', 'Punjabi', 'French', 'German'];
 const DESTINATION_OPTIONS = ['Ooty', 'Manali', 'Goa', 'Jaipur', 'Munnar', 'Varanasi', 'Coimbatore', 'Bangalore', 'Delhi', 'Mumbai'];
@@ -37,6 +38,7 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const [onboardingSaved, setOnboardingSaved] = useState(false);
   const [isSavingOnboarding, setIsSavingOnboarding] = useState(false);
+  const [chatTrip, setChatTrip] = useState<any | null>(null);
 
   const toggleIn = (list: string[], value: string, setter: (v: string[]) => void) => {
     setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
@@ -68,7 +70,7 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
       await api.updateGuideStatus(newStatus);
       setStatus(newStatus);
     } catch (err: any) {
-      alert(err.message || "Failed to update status");
+      setOnboardingError(err.message || "Failed to update status");
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -448,8 +450,16 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setChatTrip(assignment)}
+                      className="px-3.5 py-2 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Message Traveller</span>
+                    </button>
                     <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold">
-                      Guide fee settlement follows trip completion
+                      Guide fee follows trip completion
                     </span>
                   </div>
                 </div>
@@ -519,6 +529,19 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
         </div>
 
       </main>
+
+      {/* Guide <-> Traveller chat (real trip-scoped conversation) */}
+      <TripChatDrawer
+        tripId={chatTrip?.trip?.id || ''}
+        isOpen={!!chatTrip}
+        onClose={() => setChatTrip(null)}
+        isGuideAssigned
+        mode="guide"
+        travellerName={chatTrip?.trip?.traveller?.name}
+        destinationName={chatTrip?.trip?.destination}
+        tripStart={chatTrip?.trip?.start_datetime}
+        tripEnd={chatTrip?.trip?.end_datetime}
+      />
     </div>
   );
 };

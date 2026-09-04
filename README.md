@@ -102,7 +102,25 @@ frontend/
                               # ManagerDomain, AdminDomain
     components/               # search bar, discovery, live map, chat,
                               # mode selection, replanning, review, offline
+    components/portal/        # multi-page portal shell + UI kit (tables, charts, drawers)
+    components/live-map/      # LiveTripMap, SplitView, JourneyTimeline (+ journey state engine)
   scripts/geodata/            # index generator + curated source data
+```
+
+## Portals (Manager & Admin)
+
+Both staff portals are multi-page operational apps with a persistent sidebar, breadcrumbs, page-specific search, filters, responsive tables, SVG charts, detail drawers and confirmation dialogs — every number comes from real database records (no hardcoded or demo figures).
+
+**Manager Portal** — Overview, Trip Requests (with detail drawer), Conversion Center (travellers left / assignment workspace center / eligible guides right, drag-and-drop or click-to-assign with backend validation), Active Trips, Guides, Guide Verification, Settlements, Payments, Revenue Analytics, Reviews.
+
+**Admin Portal** — Overview, Users, Guides, Managers, Trips (full lifecycle drawer + CSV export), Conversions (funnel + assignment history), Active Operations, Payments ledger, Guide Settlements, Revenue Analytics, Platform Analytics, Review Moderation, Audit Logs.
+
+## Live E2E smoke suite
+
+`backend/e2e_smoke.py` is a 180-check live journey test against a running backend (`:8002`): signup, worldwide location registration and hub dedupe, mandatory discovery, any-India instant planning, verified-hub planning, fee model (guide vs adventurous), checkout + webhook, guide onboarding -> manager approval -> assignment -> BUSY lock, settlements, admin revenue consistency, trip-scoped chat security (intruder/guide isolation), AI context, translation, itinerary actions, replan, offline package, review, and structured non-India refusal.
+
+```bash
+cd backend && PYTHONIOENCODING=utf-8 python e2e_smoke.py
 ```
 
 ## Getting started

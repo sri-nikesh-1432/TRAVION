@@ -115,8 +115,16 @@ def register_location(
 
 @router.get("/all", response_model=List[LocationResponse])
 def get_all_locations(db: Session = Depends(get_db)):
+    """Journey-ready hubs only: the seeded, verified destinations.
+
+    User-registered worldwide places (landmarks, towns, foreign cities) live in
+    the same table but must never be marketed as verified hubs — the landing
+    page shows this list as "journey-ready destinations". Registered places
+    remain fully usable for trips, maps and search.
+    """
     ensure_locations_seeded(db)
-    return db.query(Location).all()
+    hub_ids = {loc["id"] for loc in VERIFIED_LOCATIONS}
+    return db.query(Location).filter(Location.id.in_(hub_ids)).all()
 
 @router.get("/search", response_model=List[LocationResponse])
 def search_locations(q: str = Query("", min_length=0), db: Session = Depends(get_db)):

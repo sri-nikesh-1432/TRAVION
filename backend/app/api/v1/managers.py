@@ -1,10 +1,13 @@
+from datetime import datetime
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.core.db import get_db
 from app.core.security import require_role
 from app.models.entities import (
-    Guide, Trip, GuideAssignment, PaymentSplit, Payment, User, AuditLog
+    Guide, Trip, GuideAssignment, PaymentSplit, Payment, User, AuditLog,
+    Itinerary, Review,
 )
 from app.schemas.schemas import AssignGuideRequest
 from app.services.matching_engine import GuideMatchingEngine
@@ -254,5 +257,215 @@ def settle_guide_payout(
         raise HTTPException(status_code=404, detail="Settlement record not found")
 
     split.settlement_status = "SETTLED"
+    split.settled_at = datetime.utcnow()
+    db.commit()
+
+    audit = AuditLog(
+        action="SETTLEMENT_MARKED",
+        actor_email=current["email"],
+        actor_role=current["role"],
+        target_id=split.id,
+        details={"guide_fee": split.guide_fee, "platform_fee": split.platform_fee}
+    )
+    db.add(audit)
     db.commit()
     return {"message": "Guide fee payout settled successfully", "split_id": split.id}
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Manager portal pages — every number below comes from real records.
+# ────────────────────────────────────────────────────────────────────────
+
+def _trip_ledger_row(db: Session, trip: Trip) -> dict:
+    user = trip.user
+    guide = None
+    assignment = trip.guide_assignment
+    if assignment and assignment.guide:
+        guide = assignment.guide
+    payment = db.query(Payment).filter(Payment.trip_id == trip.id).first()
+    return {
+        "trip_id": trip.id,
+        "traveller": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
+        "source": trip.source_name,
+        "destination": trip.destination_name,
+        "start_datetime": trip.start_datetime,
+        "end_datetime": trip.end_datetime,
+        "mode": trip.mode,
+        "budget": trip.budget,
+        "total_cost": trip.total_cost,
+        "status": trip.status,
+        "guide_name": f"{guide.first_name} {guide.last_name}" if guide else None,
+        "payment_status": payment.status if payment else None,
+        "created_at": trip.created_at,
+    }
+
+
+@router.get("/guides")
+def get_manager_guides(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Full guide roster for the manager Guides page (real DB records)."""
+    guides = db.query(Guide).order_by(Guide.created_at.desc()).all()
+    return [
+        {
+            "id": g.id,
+            "name": f"{g.first_name} {g.last_name}",
+            "status": g.status,
+            "approval_status": g.approval_status,
+            "languages": g.languages or [],
+            "destinations": g.destinations or [],
+            "experience_years": g.experience_years or 0,
+            "specializations": g.specializations or [],
+            "rating": g.rating or 5.0,
+            "review_count": g.review_count or 0,
+            "current_trip_id": g.current_trip_id,
+            "created_at": g.created_at,
+        }
+        for g in guides
+    ]
+
+
+@router.get("/active-trips")
+def get_manager_active_trips(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Live trip operations: every running trip and the guide on it."""
+    trips = db.query(Trip).filter(Trip.status.in_(["PAID", "ACTIVE", "GUIDE_ASSIGNED"])).order_by(Trip.start_datetime.desc()).all()
+    rows = []
+    for trip in trips:
+        row = _trip_ledger_row(db, trip)
+        # Active itinerary day span for live operations.
+        itin = db.query(Itinerary).filter(
+            Itinerary.trip_id == trip.id, Itinerary.is_active == True
+        ).first()
+        row["plan_days"] = len(itin.days_data) if itin and itin.days_data else 0
+        rows.append(row)
+    return rows
+
+
+@router.get("/payments")
+def get_manager_payments(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Operational payment ledger — actual transactions only."""
+    payments = db.query(Payment).order_by(Payment.created_at.desc()).all()
+    rows = []
+    for p in payments:
+        trip = p.trip
+        user = trip.user if trip else None
+        split = db.query(PaymentSplit).filter(PaymentSplit.payment_id == p.id).first()
+        guide = None
+        if trip and trip.guide_assignment and trip.guide_assignment.guide:
+            guide = trip.guide_assignment.guide
+        rows.append({
+            "payment_id": p.id,
+            "razorpay_order_id": p.razorpay_order_id,
+            "trip_id": trip.id if trip else None,
+            "traveller": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
+            "destination": trip.destination_name if trip else None,
+            "amount": p.total_amount,
+            "currency": p.currency,
+            "status": p.status,
+            "guide_name": f"{guide.first_name} {guide.last_name}" if guide else None,
+            "guide_fee": split.guide_fee if split else 0.0,
+            "platform_fee": split.platform_fee if split else 0.0,
+            "settlement_status": split.settlement_status if split else None,
+            "created_at": p.created_at,
+        })
+    return rows
+
+
+@router.get("/revenue")
+def get_manager_revenue(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Operational revenue analytics computed from real payments + splits."""
+    payments = db.query(Payment).filter(Payment.status == "SUCCESS").all()
+    splits = db.query(PaymentSplit).all()
+
+    gross = float(sum(p.total_amount for p in payments))
+    platform_total = 0.0
+    guide_total = 0.0
+    settled = 0.0
+    pending = 0.0
+    by_dest: Dict[str, float] = {}
+    by_mode: Dict[str, float] = {}
+    by_month: Dict[str, Dict[str, float]] = {}
+    status_counts: Dict[str, int] = {}
+
+    for s in splits:
+        payment = s.payment
+        if payment and payment.status == "SUCCESS":
+            platform_total += float(s.platform_fee or 0)
+            gf = float(s.guide_fee or 0)
+            guide_total += gf
+            if s.settlement_status == "SETTLED":
+                settled += gf
+            else:
+                pending += gf
+            trip = payment.trip
+            if trip:
+                dest = trip.destination_name or "Unknown"
+                by_dest[dest] = by_dest.get(dest, 0.0) + float(payment.total_amount or 0)
+                mode = trip.mode or "Unknown"
+                by_mode[mode] = by_mode.get(mode, 0.0) + float(payment.total_amount or 0)
+                month = payment.created_at.strftime("%Y-%m") if payment.created_at else "Unknown"
+                bucket = by_month.setdefault(month, {"platform": 0.0, "guide": 0.0, "gross": 0.0})
+                bucket["platform"] += float(s.platform_fee or 0)
+                bucket["guide"] += gf
+                bucket["gross"] += float(payment.total_amount or 0)
+
+    mode_counts = db.query(Trip.mode, func.count(Trip.id)).group_by(Trip.mode).all()
+    for m, c in mode_counts:
+        status_counts[f"trips_{m or 'UNKNOWN'}"] = c
+    pay_counts = db.query(Payment.status, func.count(Payment.id)).group_by(Payment.status).all()
+    for st, c in pay_counts:
+        status_counts[f"payment_{st}"] = c
+
+    by_month_sorted = [
+        {"month": k, **v} for k, v in sorted(by_month.items())
+    ]
+    by_dest_sorted = sorted(
+        [{"destination": k, "revenue": round(v, 2)} for k, v in by_dest.items()],
+        key=lambda x: x["revenue"], reverse=True,
+    )
+    by_mode_sorted = [{"mode": k, "revenue": round(v, 2)} for k, v in by_mode.items()]
+
+    return {
+        "gross_traveller_payments": round(gross, 2),
+        "platform_revenue": round(platform_total, 2),
+        "guide_fees": round(guide_total, 2),
+        "settled_guide_fees": round(settled, 2),
+        "pending_settlements": round(pending, 2),
+        "by_month": by_month_sorted,
+        "by_destination": by_dest_sorted,
+        "by_mode": by_mode_sorted,
+        "status_counts": status_counts,
+        "currency": "INR",
+    }
+
+
+@router.get("/reviews")
+def get_manager_reviews(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    reviews = db.query(Review).order_by(Review.created_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "trip_id": r.trip_id,
+            "guide_id": r.guide_id,
+            "guide_name": f"{r.guide.first_name} {r.guide.last_name}" if r.guide else "Guide",
+            "user_name": r.user_name,
+            "rating": r.rating,
+            "comment": r.comment,
+            "is_visible_on_profile": r.is_visible_on_profile,
+            "created_at": r.created_at,
+        }
+        for r in reviews
+    ]

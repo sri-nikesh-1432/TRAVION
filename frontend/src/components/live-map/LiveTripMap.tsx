@@ -61,13 +61,14 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Default center Nilgiris/Ooty
-    const initialLat = stops.length > 0 ? stops[0].lat : 11.4102;
-    const initialLng = stops.length > 0 ? stops[0].lng : 76.6950;
+    // Neutral India default; when stops exist the map is centred on the real
+    // planned geometry (fitBounds below), never on a hardcoded city.
+    const initialLat = stops.length > 0 ? stops[0].lat : 20.5937;
+    const initialLng = stops.length > 0 ? stops[0].lng : 78.9629;
 
     const map = L.map(mapContainerRef.current, {
       center: [initialLat, initialLng],
-      zoom: 12,
+      zoom: stops.length > 0 ? 10 : 5,
       zoomControl: false
     });
 

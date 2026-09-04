@@ -715,6 +715,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               itinerary={itinerary}
               onStartNavigation={(stop) => setNavigatingStop(stop)}
               avatarPosition={livePosition ? [livePosition.lat, livePosition.lng] : null}
+              tripStart={activeTrip.start_datetime}
+              tripEnd={activeTrip.end_datetime}
+              tripStatus={activeTrip.status}
+              tripSource={activeTrip.source_name}
+              tripDestination={activeTrip.destination_name}
             />
 
             {/* Magnification Quick Actions Dock */}
@@ -898,6 +903,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         assignedGuideName={assignedGuide?.name || ''}
         onTriggerReplan={() => handleTriggerReplan('TIREDNESS')}
         currentPosition={livePosition}
+        destinationName={activeTrip?.destination_name}
+        tripStart={activeTrip?.start_datetime}
+        tripEnd={activeTrip?.end_datetime}
+        itinerary={itinerary}
+        budgetLabel={itinerary?.cost_breakdown ? `Trip budget ₹${Math.round(itinerary.cost_breakdown.total || 0).toLocaleString('en-IN')}` : undefined}
       />
 
       {/* Offline Package Modal */}

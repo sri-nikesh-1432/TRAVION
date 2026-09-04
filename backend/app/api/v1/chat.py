@@ -35,6 +35,56 @@ router = APIRouter(prefix="/trips", tags=["Chat"])
 _RUPEE = "\u20b9"
 
 
+def _authorize_chat_access(db: Session, trip: Trip, current: dict, channel: str) -> None:
+    """Trip-scoped chat security.
+
+    The AI channel is the traveller's private trip memory (trip-scoped per
+    trip_id) — only the trip owner may read or write it. The GUIDE channel is
+    the traveller <-> assigned-guide thread and is limited to those two
+    parties. Staff accounts never write into traveller chat. Without this,
+    any authenticated account could read/write any trip's conversation by id.
+    """
+    role = current["role"]
+    identity_id = current["identity_id"]
+
+    if role == "USER":
+        user = db.query(User).filter(User.identity_id == identity_id).first()
+        if not user or user.id != trip.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access the chat of your own trip."
+            )
+        return
+
+    if role == "GUIDE":
+        guide = db.query(Guide).filter(Guide.identity_id == identity_id).first()
+        if not guide:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Guide account not found.")
+        assigned = db.query(GuideAssignment).filter(
+            GuideAssignment.trip_id == trip.id,
+            GuideAssignment.guide_id == guide.id,
+        ).first()
+        if not assigned:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This trip is not assigned to you, so its chat is not accessible."
+            )
+        if channel == "AI":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The AI trip assistant channel belongs to the traveller."
+            )
+        return
+
+    # MANAGER / ADMIN and any other server role: read-only oversight.
+    if channel == "AI" or role in ("MANAGER", "ADMIN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the traveller (AI channel) and the traveller or assigned guide (guide channel) can message trip chat."
+        )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this trip's chat.")
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────
@@ -48,6 +98,8 @@ def get_trip_chat_history(
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    _authorize_chat_access(db, trip, current, channel)
 
     if channel == "GUIDE":
         if trip.status not in ["GUIDE_ASSIGNED", "PAID", "ACTIVE", "COMPLETED"]:
@@ -73,6 +125,8 @@ def send_chat_message(
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    _authorize_chat_access(db, trip, current, req.channel)
 
     sender_name = "User"
     if current["role"] == "USER":
