@@ -209,7 +209,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // A place picked from worldwide Google results carries a gmap: id until it is
   // registered — persist it server-side now so the trip has real geography.
   const ensureRegistered = async (loc: LocationItem): Promise<LocationItem> => {
-    if (!loc.id.startsWith('gmap:')) return loc;
+    // Ephemeral client-side picks (Google Places or the bundled India index) carry
+    // a non-server id until they are persisted — register them now for real geography.
+    if (!loc.id.startsWith('gmap:') && !loc.id.startsWith('india:')) return loc;
     try {
       const registered = await api.registerLocation({
         name: loc.name,

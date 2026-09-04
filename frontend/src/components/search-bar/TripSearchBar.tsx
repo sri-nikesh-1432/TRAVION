@@ -6,6 +6,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { LocationItem } from '../../types';
 import { api, authStorage } from '../../services/api';
+import { searchPlaces, kindLabel, IndexedPlace } from '../../data/placeIndex';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const RECENT_KEY = 'travion_recent_places';
@@ -288,6 +289,44 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     setErrorField(null);
   };
 
+  /** Pick a bundled India/world place — register it server-side when signed in. */
+  const selectLocal = async (p: IndexedPlace, field: FieldKind) => {
+    const address = p.country === 'India'
+      ? [p.name, p.state, 'India'].filter(Boolean).join(', ')
+      : p.country;
+    const item: LocationItem = {
+      id: `india:${p.id}`,
+      name: p.name,
+      state: p.state,
+      country: p.country,
+      lat: p.lat,
+      lng: p.lng,
+      formatted_address: address,
+      description: address,
+    };
+    if (isLoggedIn) {
+      try {
+        const reg = await api.registerLocation({
+          name: p.name, state: p.state, country: p.country, lat: p.lat, lng: p.lng,
+          description: address,
+        });
+        item.id = reg.id;
+      } catch { /* keep the ephemeral id; registration retried at plan time */ }
+    }
+    remember(item);
+    if (field === 'source') {
+      setSelectedSource(item);
+      setSourceQuery(item.name);
+      setShowSourceDropdown(false);
+    } else {
+      setSelectedDest(item);
+      setDestQuery(item.name);
+      setShowDestDropdown(false);
+    }
+    setErrorMessage(null);
+    setErrorField(null);
+  };
+
   const selectRecent = async (p: RecentPlace, field: FieldKind) => {
     const item: LocationItem = {
       id: `gmap:${p.place_id || p.name}`,
@@ -522,52 +561,107 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     </>
   );
 
+  /** Local bundled place icon + subtitle for the row. */
+  const localMeta = (p: IndexedPlace) => {
+    const kind = p.kind;
+    const icon = kind === 'country' ? Globe : kind === 'state' ? Landmark : kind === 'place' ? Trees : MapPin;
+    let sub: string;
+    if (kind === 'country') sub = 'Country';
+    else if (p.country === 'India') sub = kind === 'district' ? `District in ${p.state}, India` : `${p.state || 'India'}, India`;
+    else sub = p.country;
+    const tag = kind === 'state' ? 'State' : kindLabel(kind);
+    return { icon, sub, tag };
+  };
+
   const renderResults = (field: FieldKind, results: Suggestion[]) => {
     const query = field === 'source' ? sourceQuery.trim() : destQuery.trim();
     const loading = searchState === field;
+    const local = query.length >= 1 ? searchPlaces(query, 8) : [];
+    const hasLocal = local.length > 0;
+    const hasWorld = results.length > 0;
+    const any = hasLocal || hasWorld;
     return (
       <>
         <div className="px-4 pt-2 pb-1.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl">
           <span>Search results</span>
           <span className="text-[10px] font-bold text-travion-400 flex items-center gap-1">
-            <Globe className="w-3 h-3" /> Google Places
+            <MapPin className="w-3 h-3" /> {(hasLocal ? 'India + ' : '')}{mapsReady ? 'Worldwide' : 'Bundled index'}
           </span>
         </div>
-        {results.length === 0 && loading && (
+
+        {!any && loading && (
           <div className="px-4 py-6 text-center">
             <Loader2 className="w-5 h-5 text-travion-400 animate-spin mx-auto mb-2" />
             <p className="text-xs font-semibold text-slate-500">Searching the world…</p>
           </div>
         )}
-        {results.length === 0 && !loading && (
+        {!any && !loading && (
           <div className="px-4 py-6 text-center">
             <MapPin className="w-5 h-5 text-slate-300 mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-600">No places found for “{query}”</p>
-            <p className="text-[10px] text-slate-400 font-medium mt-1">Try a broader name — a city, country, landmark or address.</p>
+            <p className="text-xs font-bold text-slate-600">No matching place found for “{query}”</p>
+            <p className="text-[10px] text-slate-400 font-medium mt-1">Check the spelling, or try a broader name — a city, town, state or landmark.{!mapsReady ? ' (Live worldwide results need the Google Places key; the full India index is available now.)' : ''}</p>
           </div>
         )}
-        {results.map(s => {
-          const Icon = iconForPlace(s.types);
-          return (
-            <button
-              key={s.place_id}
-              type="button"
-              onClick={() => selectSuggestion(s, field)}
-              className="w-full text-left px-4 py-2.5 hover:bg-sky-50 flex items-start gap-3 text-sm transition-colors"
-            >
-              <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5">
-                <Icon className="w-4 h-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="font-bold text-slate-800 block truncate">{s.name}</span>
-                <span className="text-[11px] text-slate-400 block truncate">{s.subtitle}</span>
-              </span>
-              <span className="ml-auto shrink-0 self-center text-slate-300">
-                <Check className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100" />
-              </span>
-            </button>
-          );
-        })}
+
+        {/* India & bundled index results — instant, always available */}
+        {hasLocal && (
+          <>
+            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-300">
+              {query.length >= 2 ? 'India — cities, towns, districts & states' : 'Places in India'}
+            </div>
+            {local.map(p => {
+              const { icon: Icon, sub, tag } = localMeta(p);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => selectLocal(p, field)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-sky-50 flex items-start gap-3 text-sm transition-colors"
+                >
+                  <span className="w-8 h-8 rounded-xl bg-travion-50 text-travion-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-bold text-slate-800 block truncate">{p.name}</span>
+                    <span className="text-[11px] text-slate-400 block truncate">{sub}</span>
+                  </span>
+                  <span className="ml-auto shrink-0 self-center text-[9px] font-black uppercase tracking-wide text-slate-300">{tag}</span>
+                </button>
+              );
+            })}
+          </>
+        )}
+
+        {/* Live worldwide results (Google Places when the key is configured) */}
+        {hasWorld && (
+          <>
+            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-300 border-t border-slate-50">
+              Worldwide — live places
+            </div>
+            {results.map(s => {
+              const Icon = iconForPlace(s.types);
+              return (
+                <button
+                  key={s.place_id}
+                  type="button"
+                  onClick={() => selectSuggestion(s, field)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-sky-50 flex items-start gap-3 text-sm transition-colors"
+                >
+                  <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-bold text-slate-800 block truncate">{s.name}</span>
+                    <span className="text-[11px] text-slate-400 block truncate">{s.subtitle}</span>
+                  </span>
+                  <span className="ml-auto shrink-0 self-center text-slate-300">
+                    <Check className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100" />
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
       </>
     );
   };
@@ -606,7 +700,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   exit={{ opacity: 0, y: 6 }}
                   className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-slate-100 py-1.5 z-50 max-h-80 overflow-y-auto"
                 >
-                  {sourceQuery.trim().length < 2 ? renderSourceEmpty() : renderResults('source', sourceResults)}
+                  {sourceQuery.trim().length < 1 ? renderSourceEmpty() : renderResults('source', sourceResults)}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -651,7 +745,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   exit={{ opacity: 0, y: 6 }}
                   className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-slate-100 py-1.5 z-50 max-h-80 overflow-y-auto"
                 >
-                  {destQuery.trim().length < 2 ? renderDestinationEmpty() : renderResults('destination', destResults)}
+                  {destQuery.trim().length < 1 ? renderDestinationEmpty() : renderResults('destination', destResults)}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -733,13 +827,13 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
           </motion.div>
         ) : (
           <div className="text-slate-500 font-medium flex items-center gap-2">
-            <span>{getDurationHint() || "Search any real place on Earth — cities, towns, landmarks, stations, parks"}</span>
+            <span>{getDurationHint() || "Every Indian state, district, city and town — plus live worldwide places"}</span>
           </div>
         )}
 
         <div className="hidden sm:flex items-center gap-2 text-slate-400 text-[11px]">
           <Globe className="w-3 h-3 text-travion-400" />
-          <span>{mapsReady ? 'Live worldwide search · Google Places' : mapsError ? 'Offline — type a place name' : 'Connecting to worldwide places…'}</span>
+          <span>{mapsReady ? 'Full India index · live worldwide search' : 'Full India index loaded · worldwide live search unavailable'}</span>
         </div>
       </div>
     </div>
