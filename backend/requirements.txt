@@ -1,0 +1,14 @@
+# Travion backend — FastAPI runtime dependencies
+fastapi==0.140.0
+uvicorn==0.51.0
+SQLAlchemy==2.0.34
+pydantic==2.13.4
+python-dotenv==1.2.2
+passlib==1.7.4
+bcrypt==4.0.1
+PyJWT==2.13.0
+requests==2.34.2
+
+# Development / test dependencies
+pytest==9.1.1
+httpx==0.28.1

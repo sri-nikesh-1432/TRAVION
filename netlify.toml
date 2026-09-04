@@ -1,0 +1,14 @@
+# Netlify deploy configuration — Travion frontend (React + Vite, lives in /frontend).
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: every client route is served by index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
