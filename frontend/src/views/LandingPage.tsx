@@ -86,9 +86,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   };
 
   const openGuideRegistration = () => {
-    setShowAuthModal(false);
-    // Navigate to guide registration via parent component
-    // This will be handled by modifying the parent App component
+    // Open auth modal with guide mode already selected for registration
+    setIsLoginMode(false);
+    setAuthRole('GUIDE');
+    setAuthError(null);
+    setShowAuthModal(true);
   };
 
   /* Strong-password helpers */
