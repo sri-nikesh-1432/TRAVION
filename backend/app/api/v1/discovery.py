@@ -170,27 +170,14 @@ def get_next_discovery_question(
             "Vegetarian", "Non-vegetarian", "Jain", "Halal", "Vegan", "Pure Veg",
         )]
 
-        # Extract budget if numeric or string; also store the explicit envelope
-        # (min/max) so the strict budget engine can clamp all three plans.
-        b_val = answers.get("budget", 15000)
-        if isinstance(b_val, dict):
-            profile.questions_answers = {**answers, "budget": b_val}
-            trip.budget = float(b_val.get("max") or 15000)
-        elif isinstance(b_val, str):
-            parts = [p for p in b_val.replace(",", "").split("-") if p.strip().replace(".", "").isdigit()]
-            if len(parts) >= 2:
-                profile.questions_answers = {**answers, "budget": {"min": float(parts[0]), "max": float(parts[1])}}
-                trip.budget = float(parts[1])
-            else:
-                joined = "".join(c for c in b_val if c.isdigit())
-                if joined:
-                    profile.questions_answers = {**answers, "budget": {"min": float(joined) * 0.8, "max": float(joined)}}
-                    trip.budget = float(joined)
-                else:
-                    trip.budget = 15000.0
-        elif isinstance(b_val, (int, float)):
-            profile.questions_answers = {**answers, "budget": {"min": float(b_val) * 0.8, "max": float(b_val)}}
-            trip.budget = float(b_val)
+        # Extract budget via the centralized BudgetService — currency-symbol
+        # strings like '₹10,000 - ₹25,000' previously concatenated digits into
+        # a billion-rupee budget. The envelope is stored so the strict budget
+        # engine can clamp all three plans.
+        from app.services.budget_service import parse_budget
+        bmin, bmax = parse_budget(answers.get("budget"), fallback=(12000.0, 15000.0))
+        profile.questions_answers = {**answers, "budget": {"min": bmin, "max": bmax}}
+        trip.budget = float(bmax)
 
         trip.status = "PLANNED"
         db.commit()

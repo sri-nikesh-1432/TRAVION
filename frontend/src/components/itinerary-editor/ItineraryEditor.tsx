@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { TripItinerary, ItineraryDay, ExplorePlace } from '../../types';
 import { api } from '../../services/api';
+import { isSaneBudget } from '../../utils/budget';
 
 interface ItineraryEditorProps {
   tripId: string;
@@ -34,7 +35,12 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
   const [exploreLoading, setExploreLoading] = useState(false);
   const dragCounter = useRef(0);
 
-  const remaining = budgetMax - itinerary.total_cost;
+  const activeBudget = isSaneBudget(budgetMax) ? budgetMax : null;
+  const total = Number(itinerary.total_cost) || 0;
+  const remaining = activeBudget != null ? activeBudget - total : null;
+  const pct = activeBudget != null && activeBudget > 0
+    ? Math.min(100, Math.max(0, (total / activeBudget) * 100))
+    : 0;
 
   const applyChange = async (change: any) => {
     if (busy) return;
@@ -105,14 +111,27 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
     <div className="relative">
       {/* Budget bar */}
       <div className="mb-5 p-4 rounded-3xl bg-white border border-slate-200/80 shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Itinerary budget</p>
-          <p className="text-lg font-extrabold text-slate-900">
-            {inr(itinerary.total_cost)}{' '}
-            <span className={`text-[13px] font-bold ${remaining >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-              · {remaining >= 0 ? `${inr(remaining)} left` : `${inr(-remaining)} over`}
-            </span>
+          <p className="text-lg font-extrabold text-slate-900 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            {inr(total)}
+            {activeBudget != null && (
+              <span className="text-[12px] font-bold text-slate-400">/ {inr(activeBudget)}</span>
+            )}
+            {remaining != null && (
+              <span className={`text-[13px] font-bold ${remaining >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                · {remaining >= 0 ? `${inr(remaining)} left` : `${inr(-remaining)} over`}
+              </span>
+            )}
           </p>
+          {activeBudget != null && (
+            <div className="mt-2 h-1.5 w-full max-w-xs rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-slate-400 hidden sm:inline">Drag cards between days · v{itinerary.version}</span>

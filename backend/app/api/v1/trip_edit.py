@@ -28,25 +28,55 @@ from app.schemas.schemas import (
 from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import build_plans, recalculate_change
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
+from app.services.places_discovery import discover_destination
+from app.services.budget_service import parse_budget, base_ceiling_for, remaining_budget as budget_remaining
 
 router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 
 
 def _budget_envelope(profile: dict | None, trip_budget: float) -> Dict[str, float]:
-    """Budget envelope for this trip. Honors an explicit profile override."""
-    bmin, bmax = 0.0, float(trip_budget or 15000.0)
-    raw = (profile or {}).get("budget")
-    if isinstance(raw, dict):
-        try:
-            bmin = float(raw.get("min") or 0)
-            bmax = float(raw.get("max") or 0)
-        except (TypeError, ValueError):
-            pass
+    """Budget envelope for this trip — parsed ONLY via the centralized
+    BudgetService so currency-symbol strings like '₹10,000 - ₹25,000' can
+    never explode into a billion-rupee budget."""
+    bmin, bmax = parse_budget(
+        (profile or {}).get("budget"),
+        fallback=(float(trip_budget or 15000.0) * 0.8, float(trip_budget or 15000.0)),
+    )
     if bmax <= 0:
-        bmax = float(trip_budget or 15000.0)
+        bmin, bmax = parse_budget(float(trip_budget or 0), fallback=(0.0, 15000.0))
     if bmin >= bmax:
         bmin = max(0.0, bmax * 0.8)
     return {"min": bmin, "max": bmax}
+
+
+def _destination_anchor(trip: Trip, db: Session) -> Dict[str, Any]:
+    """Registered destination ground truth from the real location picker.
+
+    Returns a dict with the destination's REAL coordinates and state whenever
+    the trip was created from a recognized Location. This is what lets place
+    discovery run around the exact registered spot even when the destination
+    name is unindexed (Cochin, Dharamshala, …) or ambiguous (Manali TN vs HP).
+    """
+    loc = None
+    if getattr(trip, "destination_location_id", None):
+        loc = db.query(Location).filter(Location.id == trip.destination_location_id).first()
+    if not loc:
+        return {"coords": None, "state": None, "name": None}
+    return {
+        "coords": (loc.lat, loc.lng) if (getattr(loc, "lat", None) and getattr(loc, "lng", None)) else None,
+        "state": loc.state,
+        "name": loc.name,
+    }
+
+
+def _discovery_kwargs(anchor: Dict[str, Any]) -> Dict[str, Any]:
+    """Keyword-args for discover_destination() extracted from the anchor."""
+    kwargs: Dict[str, Any] = {}
+    if anchor.get("coords"):
+        kwargs["coords"] = (float(anchor["coords"][0]), float(anchor["coords"][1]))
+    if anchor.get("state"):
+        kwargs["state"] = str(anchor["state"])
+    return kwargs
 
 
 def _notify_guide(db: Session, trip: Trip, text: str) -> None:
@@ -157,61 +187,83 @@ def destination_catalog(
     days = itin.days_data if itin else []
 
     dest = trip.destination_name
-    attractions = VERIFIED_ATTRACTIONS.get(dest) or []
-    stays = VERIFIED_STAYS.get(dest) or []
-    foods = VERIFIED_FOOD.get(dest) or []
+    profile = trip.profile.questions_answers if trip.profile else {}
+    discovery = discover_destination(
+        dest,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(_destination_anchor(trip, db)),
+    )
+    if not discovery.get("total_places"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="We're unable to verify enough places for this destination right now. Please try another destination.",
+        )
+
+    attractions = discovery.get("must_visit") or []
+    stays = discovery.get("stays") or []
+    foods = discovery.get("food") or []
+    activities = discovery.get("activities") or []
 
     def _attr(a: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "name": a.get("name", ""),
             "category": a.get("category", "attraction"),
             "description": a.get("description"),
-            "lat": a.get("lat"),
-            "lng": a.get("lng"),
-            "entry_fee": a.get("entry_fee", 0),
-            "duration_minutes": a.get("duration_minutes", 90),
+            "address": a.get("address"),
+            "distance_km": a.get("distance_km"),
             "rating": a.get("rating"),
+            "review_count": a.get("review_count"),
+            "opening_hours": a.get("opening_hours"),
+            "entry_fee": a.get("entry_fee") if a.get("entry_fee") is not None else 0,
+            "duration_minutes": a.get("duration_minutes") or 90,
+            "duration_is_estimate": a.get("duration_is_estimate", True),
             "source": a.get("source", "verified_api"),
-            "verified": True,
+            "verified": a.get("verified", True),
             "already_in_plan": _in_plan(days, a.get("name", "")),
         }
 
     def _stay(s: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "name": s.get("name", ""),
-            "tier": s.get("tier", ""),
-            "price_per_night": s.get("price_per_night", 0),
+            "tier": s.get("tier") or ("Verified stay" if s.get("price_per_night") else None),
+            "price_per_night": s.get("price_per_night"),
             "rating": s.get("rating"),
             "amenities": s.get("amenities") or [],
+            "address": s.get("address"),
             "source": s.get("source", "verified_api"),
-            "verified": True,
+            "verified": s.get("verified", True),
             "already_in_plan": _in_plan(days, s.get("name", "")),
         }
 
     def _food(f: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "name": f.get("name", ""),
-            "cuisine": f.get("cuisine", ""),
-            "veg_type": f.get("veg_type", ""),
-            "avg_cost_for_two": f.get("avg_cost_for_two", 0),
+            "cuisine": f.get("cuisine") or f.get("types"),
+            "veg_type": f.get("veg_type"),
+            "avg_cost_for_two": f.get("avg_cost_for_two"),
             "rating": f.get("rating"),
-            "must_try": f.get("must_try"),
+            "address": f.get("address"),
             "source": f.get("source", "verified_api"),
-            "verified": True,
+            "verified": f.get("verified", True),
             "already_in_plan": _in_plan(days, f.get("name", "")),
         }
 
     return {
         "destination": dest,
         "verified_only": True,
-        "counts": {"attractions": len(attractions), "stays": len(stays), "food": len(foods)},
+        "discovery_source": discovery.get("source"),
+        "counts": {"attractions": len(attractions), "stays": len(stays), "food": len(foods), "activities": len(activities)},
         "must_visit": [_attr(a) for a in attractions],
         "stays": [_stay(s) for s in stays],
         "food": [_food(f) for f in foods],
+        "activities": [_attr(a) for a in activities],
     }
 
 
-# ── 1. Three in-budget plans ────────────────────────────────────────────────
+# ── 1. Three in-budget plans ───────────────────────────────────────────────
 
 @router.post("/{trip_id}/plan-multi")
 def plan_multi(
@@ -244,13 +296,57 @@ def plan_multi(
 
     base = generate_base_plan(trip, req.mode, db)
     base.setdefault("destination", trip.destination_name)
+
+    # Resolve selected names against the discovery pipeline so selections from
+    # the generic index (any destination in India) are injectable too. The
+    # trip's registered coordinates/state anchor the search (REAL places only).
+    anchor = _destination_anchor(trip, db)
+    discovery = discover_destination(
+        trip.destination_name,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(anchor),
+    )
+    resolved_attractions = [
+        {"name": a["name"], "category": "attraction", "description": a.get("description"),
+         "lat": a.get("latitude") or 0, "lng": a.get("longitude") or 0,
+         "entry_fee": a.get("entry_fee") or 0, "duration_minutes": a.get("duration_minutes") or 90,
+         "rating": a.get("rating") or 4.5, "source": a.get("source", "verified_api")}
+        for a in (discovery.get("must_visit") or []) + (discovery.get("activities") or [])
+    ]
+    resolved_food = [
+        {"name": f["name"], "cuisine": f.get("cuisine") or "", "veg_type": f.get("veg_type") or "",
+         "lat": f.get("latitude") or 0, "lng": f.get("longitude") or 0,
+         "avg_cost_for_two": f.get("avg_cost_for_two") or 500, "rating": f.get("rating") or 4.5,
+         "source": f.get("source", "verified_api")}
+        for f in (discovery.get("food") or [])
+    ]
+
     plans = build_plans(
         base, bmin, bmax,
         selected_places=req.selected_places,
         selected_food=req.selected_food,
         stay_tiers=req.stay_tiers or None,
         profile_stay_pref=str(profile.get("stay_pref") or ""),
+        resolved_attractions=resolved_attractions,
+        resolved_food=resolved_food,
     )
+
+    # Belt-and-braces: the plan engine already clamps, but a single plan that
+    # still exceeds the traveller's selected maximum is an unacceptable result.
+    # Reject it loudly instead of shipping an over-budget plan.
+    for p in plans:
+        if float(p["final_total"]) > bmax + 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"The {p['type']} plan exceeds your selected budget "
+                    f"(₹{round(float(p['final_total'])):,} > ₹{round(bmax):,}). "
+                    "Please raise your budget or remove some selections."
+                ),
+            )
 
     return [
         {
@@ -371,7 +467,38 @@ def explore_more(
     ).first()
 
     dest = trip.destination_name
-    catalog = VERIFIED_ATTRACTIONS.get(dest) or []
+    profile = trip.profile.questions_answers if trip.profile else {}
+
+    # Generic Explore More: curated catalog PLUS discovery-resolved real
+    # places, so it works for ANY destination in India — never invented.
+    catalog: List[Dict[str, Any]] = []
+    for a in VERIFIED_ATTRACTIONS.get(dest) or []:
+        catalog.append({
+            "name": a.get("name", ""), "category": a.get("category", "attraction"),
+            "description": a.get("description"), "lat": a.get("lat") or 0, "lng": a.get("lng") or 0,
+            "entry_fee": a.get("entry_fee") or 0, "duration_minutes": a.get("duration_minutes") or 90,
+            "rating": a.get("rating"), "source": a.get("source", "verified_api"),
+        })
+    discovery = discover_destination(
+        dest,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(_destination_anchor(trip, db)),
+    )
+    seen = {str(c.get("name", "")).lower() for c in catalog}
+    for a in discovery.get("must_visit") or []:
+        if str(a.get("name", "")).lower() in seen:
+            continue
+        seen.add(str(a.get("name", "")).lower())
+        catalog.append({
+            "name": a.get("name", ""), "category": a.get("category", "attraction"),
+            "description": a.get("description"), "lat": a.get("latitude") or 0, "lng": a.get("longitude") or 0,
+            "entry_fee": a.get("entry_fee") or 0, "duration_minutes": a.get("duration_minutes") or 90,
+            "rating": a.get("rating"), "source": a.get("source", "verified_api"),
+        })
+
     items: List[ExplorePlaceItem] = []
     for a in catalog:
         if _in_plan(itin.days_data if itin else [], a.get("name", "")):

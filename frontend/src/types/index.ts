@@ -164,11 +164,16 @@ export interface CatalogPlace {
   name: string;
   category: string;
   description?: string | null;
+  address?: string | null;
+  distance_km?: number | null;
+  opening_hours?: string | null;
   lat?: number;
   lng?: number;
   entry_fee?: number;
   duration_minutes?: number;
+  duration_is_estimate?: boolean;
   rating?: number | null;
+  review_count?: number | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
@@ -180,6 +185,7 @@ export interface CatalogStay {
   price_per_night: number;
   rating?: number | null;
   amenities: string[];
+  address?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
@@ -191,6 +197,7 @@ export interface CatalogFood {
   veg_type: string;
   avg_cost_for_two: number;
   rating?: number | null;
+  address?: string | null;
   must_try?: string | null;
   source: string;
   verified: boolean;
@@ -200,10 +207,12 @@ export interface CatalogFood {
 export interface DestinationCatalog {
   destination: string;
   verified_only: boolean;
-  counts: { attractions: number; stays: number; food: number };
+  discovery_source?: string | null;
+  counts: { attractions: number; stays: number; food: number; activities: number };
   must_visit: CatalogPlace[];
   stays: CatalogStay[];
   food: CatalogFood[];
+  activities: CatalogPlace[];
 }
 
 export interface ExplorePlace {

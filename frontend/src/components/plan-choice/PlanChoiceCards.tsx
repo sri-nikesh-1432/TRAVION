@@ -13,6 +13,11 @@ interface PlanChoiceCardsProps {
 
 const inr = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
+/* Budget sanity: sane trips are < ₹10L. Guards against any legacy garbage
+   state (e.g. the old billion-rupee budget bug) reaching the UI. */
+const isSane = (n: number) => Number.isFinite(n) && n > 0 && n < 1_000_000;
+const fmtBudget = (n: number) => (isSane(n) ? inr(n) : '—');
+
 export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
   plans, destinationName, onSelect, onBack, busy,
 }) => {
@@ -39,7 +44,10 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
         {plans.map((plan, i) => {
           const isSelected = selected === plan.type;
           const bd = plan.cost_breakdown || {};
-          const usedPct = Math.max(4, Math.min(100, (plan.final_total / Math.max(1, plan.budget_max)) * 100));
+          const budgetOk = isSane(plan.budget_max) && isSane(plan.final_total);
+          const usedPct = budgetOk
+            ? Math.max(4, Math.min(100, (plan.final_total / plan.budget_max) * 100))
+            : 100;
           return (
             <motion.button
               key={plan.type}
@@ -72,9 +80,9 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               {/* Live budget bar */}
               <div className="mt-3">
                 <div className="flex items-baseline justify-between">
-                  <p className="text-2xl font-extrabold text-slate-900">{inr(plan.final_total)}</p>
-                  <p className={`text-[11px] font-bold ${(plan.remaining_budget ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {inr(plan.remaining_budget)} left
+                  <p className="text-2xl font-extrabold text-slate-900">{fmtBudget(plan.final_total)}</p>
+                  <p className={`text-[11px] font-bold ${budgetOk && (plan.remaining_budget ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {budgetOk ? `${inr(plan.remaining_budget)} remaining` : 'Budget unavailable'}
                   </p>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
@@ -84,8 +92,8 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                   />
                 </div>
                 <div className="mt-1 flex justify-between text-[9.5px] font-bold text-slate-400">
-                  <span>limit {inr(plan.budget_min)}</span>
-                  <span>{inr(plan.budget_max)}</span>
+                  <span>{budgetOk ? 'of your selected budget' : ''}</span>
+                  <span>{fmtBudget(plan.budget_max)}</span>
                 </div>
               </div>
 

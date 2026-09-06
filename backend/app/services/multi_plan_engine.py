@@ -175,6 +175,8 @@ def _inject_selected_places(
     selected_places: List[str],
     selected_food: List[str],
     warnings: List[str],
+    resolved_attractions: Optional[List[Dict[str, Any]]] = None,
+    resolved_food: Optional[List[Dict[str, Any]]] = None,
 ) -> float:
     """Insert the user's selected real places into the schedule.
 
@@ -189,8 +191,17 @@ def _inject_selected_places(
     def _day_of(day_num: int) -> Optional[Dict[str, Any]]:
         return next((d for d in days if d.get("day") == day_num), None)
 
-    attractions = VERIFIED_ATTRACTIONS.get(dest) or []
-    foods = VERIFIED_FOOD.get(dest) or []
+    # Curated catalog first; discovery-resolved real places (e.g. GeoNames
+    # index entries for destinations outside the curated set) are also valid
+    # injection sources — a user selection is a REAL place either way.
+    attractions = list(VERIFIED_ATTRACTIONS.get(dest) or [])
+    for ra in (resolved_attractions or []):
+        if not _match_by_name(attractions, ra.get("name", "")):
+            attractions.append(ra)
+    foods = list(VERIFIED_FOOD.get(dest) or [])
+    for rf in (resolved_food or []):
+        if not _match_by_name(foods, rf.get("name", "")):
+            foods.append(rf)
 
     for name in selected_places or []:
         match = _match_by_name(attractions, name)
@@ -276,6 +287,8 @@ def build_plans(
     selected_food: Optional[List[str]] = None,
     stay_tiers: Optional[Dict[str, str]] = None,
     profile_stay_pref: str = "",
+    resolved_attractions: Optional[List[Dict[str, Any]]] = None,
+    resolved_food: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Create the three differentiated plans. See module docstring for rules."""
     dest = str(base.get("destination") or "")
@@ -296,7 +309,11 @@ def build_plans(
         ]
 
         # 1. HARD PREFERENCES: inject every selected real place into the plan.
-        selection_cost = _inject_selected_places(days, dest, selected_places or [], selected_food or [], warnings)
+        selection_cost = _inject_selected_places(
+            days, dest, selected_places or [], selected_food or [], warnings,
+            resolved_attractions=resolved_attractions,
+            resolved_food=resolved_food,
+        )
 
         bd0 = dict(base.get("cost_breakdown") or {})
         transport = float(bd0.get("transport", 0) or 0)
@@ -346,11 +363,17 @@ def build_plans(
         natural_flexible = stay + food + activities
         downgraded = False
         if flexible_budget <= 0:
+            # Transport + guide fees alone exceed the ceiling: fit the transport
+            # line to the budget (cheaper class) — NEVER return an over-budget
+            # plan. The user is told exactly why.
             stay = food = activities = 0.0
-            warnings.append(
-                f"Transport and guide fees alone exceed your ₹{round(budget_max):,} budget — "
-                "please raise the budget or shorten the trip."
-            )
+            if fixed > base_ceiling:
+                transport = max(base_ceiling - guide_fee, 0.0)
+                fixed = transport + guide_fee
+                warnings.append(
+                    f"Transport for this route consumes most of your ₹{round(budget_max):,} budget — "
+                    "we fitted the most affordable option. Raise the budget or shorten the trip for more comfort."
+                )
         elif natural_flexible > flexible_budget:
             factor = flexible_budget / natural_flexible
             stay, food, activities = stay * factor, food * factor, activities * factor
@@ -423,7 +446,7 @@ def build_plans(
             "budget_min": budget_min,
             "budget_max": budget_max,
             "remaining_budget": round(budget_max - final_total, 0),
-            "within_budget": final_total <= budget_max + 1,
+            "within_budget": final_total <= budget_max,
             "highlights": highlights,
             "warnings": warnings,
             "recommended": variant == "RECOMMENDED",
@@ -453,12 +476,20 @@ def _resequence(days: List[Dict[str, Any]]) -> None:
 def _enforce_ordering(plans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ budget_max — deterministic guarantee."""
     by_type = {p["type"]: p for p in plans}
-    prem = by_type["PREMIUM"]["final_total"]
+    budget_max = float(plans[0]["budget_max"]) if plans else 0.0
+    # The traveller's selected maximum budget is the HARD ceiling: even the
+    # premium plan must never exceed it (fee included).
+    prem = min(by_type["PREMIUM"]["final_total"], budget_max)
     rec = min(by_type["RECOMMENDED"]["final_total"], prem)
     val = min(by_type["VALUE"]["final_total"], rec)
+    if by_type["PREMIUM"]["final_total"] > budget_max:
+        _shave_final_to(by_type["PREMIUM"], float(budget_max))
     for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
         if plan["final_total"] > target:
             _shave_final_to(plan, float(target))
+    # Keep everyone's within_budget flag exact (no tolerance): total must be ≤ budget_max.
+    for plan in plans:
+        plan["within_budget"] = bool(float(plan["final_total"]) <= float(plan["budget_max"]))
     return plans
 
 
@@ -479,6 +510,8 @@ def _shave_final_to(plan: Dict[str, Any], target: float) -> None:
     take = min(activities, excess); activities -= take; excess -= take
     take = min(food, excess); food -= take; excess -= take
     take = min(stay, excess); stay -= take; excess -= take
+    if excess > 0:
+        take = min(transport, excess); transport -= take; excess -= take
 
     base_cost = transport + stay + food + activities + guide_fee
     platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
@@ -503,7 +536,7 @@ def _shave_final_to(plan: Dict[str, Any], target: float) -> None:
 def validate_days(days: List[Dict[str, Any]], budget_max: float, total_cost: float) -> List[str]:
     """Pre-display validation. Never show an obviously impossible schedule."""
     warnings: List[str] = []
-    if total_cost > budget_max + 1:
+    if total_cost > budget_max:
         warnings.append("Plan exceeds your stated budget — adjust before confirming.")
 
     for d in days:
@@ -645,7 +678,7 @@ def recalculate_change(
             applied = True
 
     final_total = float(breakdown.get("final_total", 0) or 0)
-    if final_total > budget_max + 1:
+    if final_total > budget_max:
         warnings.append(
             f"This change puts your total at ₹{round(final_total):,} — ₹{round(final_total - budget_max):,} "
             f"over your budget (including the {int(PLATFORM_FEE_RATE * 100)}% platform fee). "

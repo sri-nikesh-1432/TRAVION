@@ -26,6 +26,7 @@ import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
 import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
 import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
 import { DiscoverySelect } from '../components/discovery-select/DiscoverySelect';
+import { resolveBudgetMax } from '../utils/budget';
 
 declare global {
   interface Window {
@@ -786,7 +787,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               <ItineraryEditor
                 tripId={activeTrip.id}
                 itinerary={itinerary}
-                budgetMax={activeTrip.budget || itinerary.cost_breakdown?.budget || itinerary.total_cost}
+                budgetMax={resolveBudgetMax(
+                  itinerary.cost_breakdown?.budget,
+                  activeTrip.budget,
+                  itinerary.total_cost,
+                )}
                 onItineraryChange={handleItineraryChange}
               />
             </div>
