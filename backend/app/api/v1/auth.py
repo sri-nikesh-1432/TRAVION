@@ -39,7 +39,8 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
             identity_id=identity.id,
             first_name=req.first_name or "",
             last_name=req.last_name or "",
-            preferred_name=req.first_name or ""
+            preferred_name=req.first_name or "",
+            phone=req.phone  # Mandatory onboarding (validated by the schema)
         )
         db.add(user)
         db.flush()
@@ -49,6 +50,7 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
             identity_id=identity.id,
             first_name=req.first_name or "New",
             last_name=req.last_name or "Guide",
+            phone=req.phone,  # Mandatory onboarding (validated by the schema)
             approval_status="PENDING",
             status="DUTY_OFF"  # Cannot operate until verified by Manager
         )

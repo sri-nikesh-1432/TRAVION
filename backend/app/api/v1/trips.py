@@ -8,6 +8,7 @@ from app.models.entities import Trip, Location, User, Identity
 from app.schemas.schemas import (
     TripSearchRequest, TripResponse, BasicProfileUpdate
 )
+from app.services.privacy import mask_phone
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 
@@ -121,7 +122,10 @@ def get_trip_assignment(
         guide_data = {
             "guide_id": g.id,
             "name": f"{g.first_name} {g.last_name}".strip(),
-            "phone": g.phone,
+            # Privacy policy: full phone numbers are never exposed in the UI —
+            # only the masked form (+91 830959****) ever leaves the backend.
+            "phone": mask_phone(g.phone),
+            "phone_masked": True,
             "rating": g.rating,
             "review_count": g.review_count,
             "languages": g.languages or []

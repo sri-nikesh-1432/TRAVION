@@ -4,7 +4,7 @@ import {
   ArrowRight, ArrowUpRight, BadgeCheck, BedDouble, Bell, BookOpen, BrainCircuit,
   Check, CheckCircle2, ChevronDown, Clock, CloudRain, Compass,
   Eye, EyeOff, Globe2, HeartHandshake, IndianRupee, Key, Landmark,
-  Layers, Lock, Mail, MapPin, Menu, Mountain, Navigation,
+  Layers, Lock, Mail, MapPin, Menu, Mountain, Navigation, Phone,
   RefreshCw, Route, ShieldCheck, Train, Users, Utensils,
   Wallet, X
 } from 'lucide-react';
@@ -68,6 +68,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -91,7 +92,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   };
   const satisfiedCount = Object.values(passwordChecks).filter(Boolean).length;
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
-  const signupValid = !isLoginMode && Object.values(passwordChecks).every(Boolean) && passwordsMatch;
+  /* Mandatory phone onboarding: exactly 10 digits, Indian mobile (6-9 start) */
+  const phoneDigits = phone.replace(/\D/g, '');
+  const phoneValid = /^([6-9]\d{9})$/.test(phoneDigits) || /^91[6-9]\d{9}$/.test(phoneDigits);
+  const signupValid = !isLoginMode && Object.values(passwordChecks).every(Boolean) && passwordsMatch && phoneValid;
   const strengthIndex = Math.max(0, Math.min(3, satisfiedCount - 1));
   const strengthLabels = ['Too weak', 'Weak', 'Fair', 'Strong'];
   const strengthBar = ['bg-red-400', 'bg-orange-400', 'bg-amber-400', 'bg-emerald-500'];
@@ -164,7 +168,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       const endpoint = isLoginMode ? '/auth/login' : '/auth/signup';
       const body = isLoginMode
         ? { email, password }
-        : { email, password, role: authRole, first_name: firstName, last_name: lastName };
+        : { email, password, role: authRole, first_name: firstName, last_name: lastName, phone: phoneDigits };
       const res = await fetch(`${resolveApiBaseUrl()}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1756,8 +1760,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                       <Field label="First name">
                         <input type="text" required placeholder="Aarav" value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
                       </Field>
-                      <Field label="Last name">
-                        <input type="text" required placeholder="Sharma" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
+                      <Field label="Last name">                        <input type="text" required placeholder="Sharma" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
                       </Field>
                     </div>
                   )}
@@ -1847,6 +1850,37 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                             Passwords do not match
                           </p>
                         )}
+                      </Field>
+
+                      {/* Mandatory phone onboarding — masked for other users, never shown publicly */}
+                      <Field label="Phone number">
+                        <div className="relative">
+                          <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="tel"
+                            required
+                            inputMode="numeric"
+                            placeholder="10-digit mobile number"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value.replace(/[^+\d]/g, '').slice(0, 13))}
+                            className={`${inputCls} pl-10 ${
+                              phoneDigits.length === 0
+                                ? ''
+                                : phoneValid
+                                  ? 'border-emerald-300 ring-2 ring-emerald-50'
+                                  : 'border-red-300 ring-2 ring-red-50'
+                            }`}
+                          />
+                        </div>
+                        {phoneDigits.length > 0 && !phoneValid && (
+                          <p className="mt-1.5 text-[11px] font-bold text-red-500 flex items-center gap-1">
+                            <AlertIcon />
+                            Enter a valid 10-digit Indian mobile number
+                          </p>
+                        )}
+                        <p className="mt-1.5 text-[10.5px] font-semibold text-slate-400">
+                          Needed for guide coordination and emergencies. Always shown masked (+91 83095****) — never publicly.
+                        </p>
                       </Field>
                     </>
                   )}

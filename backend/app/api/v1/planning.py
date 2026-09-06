@@ -39,23 +39,14 @@ def effective_breakdown(itinerary: Itinerary) -> dict:
     }
 
 
-@router.post("/{trip_id}/plan", response_model=ItineraryResponse)
-def generate_trip_plan(
-    trip_id: str,
-    req: PlanTripRequest,
-    current: dict = Depends(require_role("USER")),
-    db: Session = Depends(get_db)
-):
-    trip = db.query(Trip).filter(Trip.id == trip_id).first()
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+def generate_base_plan(trip: Trip, mode: str, db: Session) -> dict:
+    """Shared base-plan generation (verified package or India-wide estimate).
 
-    if not req.consent_acknowledged:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Terms and conditions acknowledgement is mandatory to generate your itinerary."
-        )
-
+    Used by BOTH the classic single-plan flow (POST /{trip_id}/plan) and the
+    multi-plan flow (POST /{trip_id}/plan-multi) so every path agrees on
+    geography, destination coverage and verified data — one engine, never a
+    parallel implementation. Returns {version, total_cost, cost_breakdown, days}.
+    """
     profile_dict = trip.profile.questions_answers if trip.profile else {}
 
     # Real geography from the traveller's selected locations — never a default city.
@@ -99,7 +90,7 @@ def generate_trip_plan(
                     destination_name=destination_name,
                     start_date=trip.start_datetime.isoformat(),
                     end_date=trip.end_datetime.isoformat(),
-                    mode=req.mode,
+                    mode=mode,
                     profile=profile_dict,
                     source_coords=source_coords,
                     dest_coords=dest_coords
@@ -116,7 +107,7 @@ def generate_trip_plan(
                         destination_state=dst_loc.state or "",
                         start_date=trip.start_datetime.isoformat(),
                         end_date=trip.end_datetime.isoformat(),
-                        mode=req.mode,
+                        mode=mode,
                         profile=profile_dict,
                         source_coords=source_coords,
                         dest_coords=dest_coords,
@@ -131,7 +122,7 @@ def generate_trip_plan(
                 destination_state=dst_loc.state or "",
                 start_date=trip.start_datetime.isoformat(),
                 end_date=trip.end_datetime.isoformat(),
-                mode=req.mode,
+                mode=mode,
                 profile=profile_dict,
                 source_coords=source_coords,
                 dest_coords=dest_coords,
@@ -147,6 +138,28 @@ def generate_trip_plan(
         raise
     except ValueError as exc:
         _raise_uncovered("DESTINATION_NOT_COVERED", str(exc))
+
+    return itinerary_plan
+
+
+@router.post("/{trip_id}/plan", response_model=ItineraryResponse)
+def generate_trip_plan(
+    trip_id: str,
+    req: PlanTripRequest,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db)
+):
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if not req.consent_acknowledged:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Terms and conditions acknowledgement is mandatory to generate your itinerary."
+        )
+
+    itinerary_plan = generate_base_plan(trip, req.mode, db)
 
     breakdown = itinerary_plan["cost_breakdown"]
 

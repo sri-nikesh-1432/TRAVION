@@ -25,6 +25,24 @@ class SignupRequest(BaseModel):
     role: str = Field(..., pattern="^(USER|GUIDE)$")
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    # Mandatory onboarding: a valid phone number is required to create any
+    # account (traveller or guide). Validated server-side, stored as-is,
+    # and only ever displayed masked via app.services.privacy.mask_phone.
+    phone: str
+
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_valid(cls, v: str) -> str:
+        digits = "".join(c for c in v if c.isdigit())
+        if len(digits) < 10:
+            raise ValueError("A valid 10-digit Indian phone number is mandatory to create an account.")
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        if len(digits) != 10 or not digits.startswith(("6", "7", "8", "9")):
+            raise ValueError("Enter a valid Indian mobile number (10 digits, starting 6-9).")
+        return v
 
     @field_validator("password")
     @classmethod
@@ -227,6 +245,52 @@ class PaymentWebhookRequest(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
+
+# --- Multi-Plan & User-Controlled Itinerary Editing ---
+class PlanMultiRequest(BaseModel):
+    mode: str = Field(..., pattern="^(GUIDE_MODE|ADVENTUROUS_MODE)$")
+    consent_acknowledged: bool = True
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+
+class PlanOptionResponse(BaseModel):
+    type: str  # VALUE | RECOMMENDED | PREMIUM
+    label: str
+    tagline: str
+    total_cost: float
+    cost_breakdown: Dict[str, Any]
+    days: List[Dict[str, Any]]
+    budget_min: float
+    budget_max: float
+    within_budget: bool
+    warnings: List[str] = []
+
+class ChoosePlanRequest(BaseModel):
+    plan_type: str = Field(..., pattern="^(VALUE|RECOMMENDED|PREMIUM)$")
+
+class ItineraryChangeRequest(BaseModel):
+    kind: str = Field(..., pattern="^(remove|move_time|move_day|reorder|add)$")
+    stop_id: Optional[str] = None
+    new_time: Optional[str] = None
+    new_day: Optional[int] = Field(None, ge=0)
+    new_index: Optional[int] = Field(None, ge=0)
+    stop: Optional[Dict[str, Any]] = None  # required for kind=add
+
+class ItineraryChangeResponse(BaseModel):
+    itinerary: ItineraryResponse
+    warnings: List[str] = []
+    applied: bool
+
+class ExplorePlaceItem(BaseModel):
+    name: str
+    category: str
+    description: Optional[str] = None
+    lat: float
+    lng: float
+    entry_fee: float = 0.0
+    duration_minutes: int = 90
+    rating: Optional[float] = 4.6
+    source: str = "verified_api"
 
 # --- Replanning ---
 class ReplanTriggerRequest(BaseModel):

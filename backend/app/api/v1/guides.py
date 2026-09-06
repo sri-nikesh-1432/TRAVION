@@ -100,11 +100,10 @@ def get_assigned_trips(
                 "start_datetime": trip.start_datetime,
                 "end_datetime": trip.end_datetime,
                 "status": trip.status,
-                "total_cost": trip.total_cost,
-                "traveller": {
+                "total_cost": trip.total_cost,                "traveller": {
                     "name": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
                     "language": user.preferred_language if user else "English",
-                    "phone": user.emergency_contact_phone if user else None
+                    "phone": mask_phone(user.emergency_contact_phone) if user else None
                 }
             }
         })

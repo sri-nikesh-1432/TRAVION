@@ -122,7 +122,7 @@ export interface TripAssignment {
   guide?: {
     guide_id: string;
     name: string;
-    phone?: string;
+    phone?: string; // masked by the backend, e.g. "+91 830959****"
     rating: number;
     review_count: number;
     languages: string[];
@@ -138,6 +138,46 @@ export interface TripItinerary {
   cost_breakdown: CostBreakdown;
   days: ItineraryDay[];
   created_at: string;
+}
+
+/* ── Multi-plan & user-controlled itinerary editing ── */
+export interface PlanOption {
+  type: 'VALUE' | 'RECOMMENDED' | 'PREMIUM';
+  label: string;
+  tagline: string;
+  total_cost: number;
+  cost_breakdown: CostBreakdown;
+  days: ItineraryDay[];
+  budget_min: number;
+  budget_max: number;
+  within_budget: boolean;
+  warnings: string[];
+  recommended: boolean;
+}
+
+export interface ExplorePlace {
+  name: string;
+  category: string;
+  description?: string | null;
+  lat: number;
+  lng: number;
+  entry_fee: number;
+  duration_minutes: number;
+  rating?: number | null;
+  source: string;
+}
+
+export type ItineraryChange =
+  | { kind: 'remove'; stop_id: string }
+  | { kind: 'move_time'; stop_id: string; new_time: string }
+  | { kind: 'move_day'; stop_id: string; new_day: number; new_index?: number }
+  | { kind: 'reorder'; stop_id: string; new_day: number; new_index: number }
+  | { kind: 'add'; stop: ExplorePlace & { day?: number; time?: string } };
+
+export interface ItineraryChangeResponse {
+  itinerary: TripItinerary;
+  warnings: string[];
+  applied: boolean;
 }
 
 export interface TripItem {

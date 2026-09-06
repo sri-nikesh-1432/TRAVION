@@ -43,6 +43,17 @@ def _parse_budget(profile: Dict[str, Any]) -> float:
     raw = profile.get("budget")
     if raw is None:
         return 18000.0
+    # Budget envelopes {"min": x, "max": y} are stored by the 5-question
+    # interview; plan against the midpoint so no component overshoots the cap.
+    if isinstance(raw, dict):
+        try:
+            lo = float(raw.get("min") or 0)
+            hi = float(raw.get("max") or 0)
+        except (TypeError, ValueError):
+            return 18000.0
+        if hi <= 0:
+            return 18000.0
+        return (lo + hi) / 2.0 if lo > 0 else hi
     if isinstance(raw, (int, float)):
         return float(raw)
     text = str(raw)

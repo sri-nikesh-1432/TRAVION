@@ -4,7 +4,7 @@ from app.core.config import settings
 from app.core.db import engine, Base, SessionLocal
 from app.api.v1 import (
     auth, locations, trips, discovery, planning, guides, managers, admin,
-    payments, replanning, offline, reviews, chat
+    payments, replanning, offline, reviews, chat, trip_edit
 )
 from app.services.verified_data import VERIFIED_LOCATIONS
 from app.models.entities import Location, Identity, Guide, Manager, Admin, TripProfile, Itinerary
@@ -101,6 +101,7 @@ app.include_router(replanning.router, prefix=settings.API_V1_STR)
 app.include_router(offline.router, prefix=settings.API_V1_STR)
 app.include_router(reviews.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
+app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 def startup_seeding():

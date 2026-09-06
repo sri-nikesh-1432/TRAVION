@@ -1,7 +1,8 @@
 import {
   AuthSession, LocationItem, TripItem, TripItinerary, TripAssignment,
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
-  UserProfile, GuideProfile
+  UserProfile, GuideProfile, PlanOption, ItineraryChange,
+  ItineraryChangeResponse, ExplorePlace
 } from '../types';
 
 const API_BASE_URL =
@@ -186,6 +187,24 @@ export const api = {
   // Planning
   planTrip: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', consentAcknowledged = true) =>
     request<TripItinerary>(`/trips/${tripId}/plan`, { method: 'POST', body: JSON.stringify({ mode, consent_acknowledged: consentAcknowledged }) }),
+
+  // Multi-plan: exactly 3 budget-clamped options (VALUE / RECOMMENDED / PREMIUM)
+  planMulti: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', budgetMin?: number, budgetMax?: number) =>
+    request<PlanOption[]>(`/trips/${tripId}/plan-multi`, {
+      method: 'POST',
+      body: JSON.stringify({ mode, consent_acknowledged: true, budget_min: budgetMin, budget_max: budgetMax })
+    }),
+
+  choosePlan: (tripId: string, planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') =>
+    request<TripItinerary>(`/trips/${tripId}/choose-plan`, { method: 'POST', body: JSON.stringify({ plan_type: planType }) }),
+
+  // User-controlled itinerary editing with automatic recalculation
+  editItinerary: (tripId: string, change: ItineraryChange) =>
+    request<ItineraryChangeResponse>(`/trips/${tripId}/itinerary`, { method: 'PATCH', body: JSON.stringify(change) }),
+
+  // Unselected verified places that can be added anytime
+  exploreMore: (tripId: string) =>
+    request<ExplorePlace[]>(`/trips/${tripId}/itinerary/explore-more`),
 
   getItinerary: (tripId: string) =>
     request<TripItinerary>(`/trips/${tripId}/itinerary`),

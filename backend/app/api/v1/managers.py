@@ -7,7 +7,7 @@ from app.core.db import get_db
 from app.core.security import require_role
 from app.models.entities import (
     Guide, Trip, GuideAssignment, PaymentSplit, Payment, User, AuditLog,
-    Itinerary, Review,
+    Itinerary, Review, ChatMessage,
 )
 from app.schemas.schemas import AssignGuideRequest
 from app.services.matching_engine import GuideMatchingEngine
@@ -203,6 +203,27 @@ def assign_guide_to_trip(
 
     # Update trip status
     trip.status = "GUIDE_ASSIGNED"
+
+    # Guide synchronization: the guide receives the COMPLETE trip context in
+    # their chat channel the moment the manager confirms the assignment.
+    profile = trip.profile
+    db.add(ChatMessage(
+        trip_id=trip.id,
+        sender_role="AI",
+        sender_id="system",
+        sender_name="Travion",
+        channel="GUIDE",
+        message=(
+            f"New trip assigned: {trip.source_name} → {trip.destination_name}, "
+            f"{trip.start_datetime:%d %b %Y} to {trip.end_datetime:%d %b %Y}. "
+            f"Budget ₹{round(trip.total_cost or 0):,}. "
+            f"Preferences — party: {profile.party_type if profile else 'n/a'}; "
+            f"food: {profile.food_pref if profile else 'n/a'}; "
+            f"stay: {profile.stay_pref if profile else 'n/a'}; "
+            f"transport: {profile.transport_pref if profile else 'n/a'}. "
+            "The complete itinerary is visible in your trip view."
+        ),
+    ))
 
     # Audit log
     audit = AuditLog(

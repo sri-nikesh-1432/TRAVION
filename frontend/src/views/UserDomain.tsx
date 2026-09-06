@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
-  ItineraryStop, UserProfile
+  ItineraryStop, UserProfile, PlanOption
 } from '../types';
 import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
@@ -23,6 +23,8 @@ import { TripChatDrawer } from '../components/chat/TripChatDrawer';
 import { OfflineManager } from '../components/offline/OfflineManager';
 import { ReviewModal } from '../components/review/ReviewModal';
 import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
+import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
+import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
 
 declare global {
   interface Window {
@@ -56,15 +58,19 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   onLogout,
   isSandboxDemo = false
 }) => {
-  // Navigation views: 'search' | 'discovery' | 'planning' | 'workspace' | 'my_trips'
-  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'workspace' | 'my_trips'>('search');
-  
+  // Navigation views: 'search' | 'discovery' | 'planning' | 'plan_choice' | 'workspace' | 'my_trips'
+  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'plan_choice' | 'workspace' | 'my_trips'>('search');
+
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
 
   // Active Trip state
   const [activeTrip, setActiveTrip] = useState<TripItem | null>(null);
   const [itinerary, setItinerary] = useState<TripItinerary | null>(null);
+
+  // Multi-plan state (VALUE / RECOMMENDED / PREMIUM)
+  const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+  const [isChoosingPlan, setIsChoosingPlan] = useState(false);
   
   // Discovery Interview state
   const [currentQuestion, setCurrentQuestion] = useState<any>(null);
@@ -277,7 +283,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3. Confirm Mode & Trigger Planning
+  // 3. Confirm Mode → generate the THREE in-budget plans for user choice
   const handleConfirmMode = async (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') => {
     if (!activeTrip) return;
     setShowModeModal(false);
@@ -285,20 +291,49 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     setPlanError(null);
 
     try {
-      const itn = await api.planTrip(activeTrip.id, mode, true);
-      setItinerary(itn);
-      setActiveTrip(prev => prev ? { ...prev, mode, total_cost: itn.total_cost, status: mode === 'GUIDE_MODE' ? 'REQUESTED' : 'PLANNED' } : null);
-      
-      // Auto open Checkout
-      const checkout = await api.checkoutTrip(activeTrip.id);
-      setCheckoutData(checkout);
+      const plans = await api.planMulti(activeTrip.id, mode);
+      setActiveTrip(prev => prev ? { ...prev, mode } : null);
+      setPlanOptions(plans);
       setIsGeneratingPlan(false);
-      setShowCheckoutModal(true);
+      setCurrentView('plan_choice');
     } catch (err) {
-      console.error("Planning generation failed:", err);
+      console.error("Plan generation failed:", err);
       setIsGeneratingPlan(false);
       setPlanError(getPlanErrorMessage(err));
+      setCurrentView('discovery');
     }
+  };
+
+  // 3b. User picked one of the three plans → activate it & open checkout
+  const handleChoosePlan = async (planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') => {
+    if (!activeTrip) return;
+    setIsChoosingPlan(true);
+    setPlanError(null);
+    try {
+      const itn = await api.choosePlan(activeTrip.id, planType);
+      setItinerary(itn);
+      setActiveTrip(prev => prev ? {
+        ...prev,
+        total_cost: itn.total_cost,
+        status: prev.mode === 'GUIDE_MODE' ? 'REQUESTED' : 'PLANNED'
+      } : null);
+      setIsChoosingPlan(false);
+
+      // Auto open Checkout (same transparent flow as before)
+      const checkout = await api.checkoutTrip(activeTrip.id);
+      setCheckoutData(checkout);
+      setShowCheckoutModal(true);
+    } catch (err) {
+      console.error("Choosing plan failed:", err);
+      setIsChoosingPlan(false);
+      setPlanError(getPlanErrorMessage(err));
+    }
+  };
+
+  // 3c. Live itinerary edits (drag & drop / remove / add) — recalculated server-side
+  const handleItineraryChange = (updated: TripItinerary, _warnings: string[]) => {
+    setItinerary(updated);
+    setActiveTrip(prev => prev ? { ...prev, total_cost: updated.total_cost } : null);
   };
 
   // 4. Razorpay Checkout & Webhook Confirmation
@@ -664,6 +699,17 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
         )}
 
+        {/* VIEW 2b: Three-plan choice (VALUE / RECOMMENDED / PREMIUM) */}
+        {currentView === 'plan_choice' && activeTrip && (
+          <PlanChoiceCards
+            plans={planOptions}
+            destinationName={activeTrip.destination_name}
+            onSelect={handleChoosePlan}
+            onBack={() => { setPlanOptions([]); setCurrentView('search'); }}
+            busy={isChoosingPlan}
+          />
+        )}
+
         {/* VIEW 3: Live Trip Workspace (Desktop Split View + Map + Magnification Dock) */}
         {currentView === 'workspace' && itinerary && activeTrip && (
           <div>
@@ -708,6 +754,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <span>Simulate Weather Replan</span>
                 </button>
               </div>
+            </div>
+
+            {/* User-controlled Drag & Drop Itinerary Builder (remove/move/add with live recalc) */}
+            <div className="mb-6">
+              <ItineraryEditor
+                tripId={activeTrip.id}
+                itinerary={itinerary}
+                budgetMax={activeTrip.budget || itinerary.cost_breakdown?.budget || itinerary.total_cost}
+                onItineraryChange={handleItineraryChange}
+              />
             </div>
 
             {/* The Split View Component */}

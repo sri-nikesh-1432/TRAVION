@@ -26,103 +26,100 @@ def _as_list(value: Any) -> List[str]:
     return [str(value)]
 
 
+# ─── The 5 high-value questions ──────────────────────────────────────────────
+# Product decision: exactly five questions before the three plans are shown.
+# Q1 destination+dates are captured by trip creation (source/destination and
+# start/end datetimes), so the interview covers Q2–Q5 plus party composition.
 MASTER_QUESTIONS = [
     {
         "id": "budget",
-        "text": "What is your approximate total budget for this trip (in INR)?",
+        "text": "What is your total travel budget for this trip?",
         "type": "budget",
-        "options": ["₹8,000 - ₹12,000", "₹15,000 - ₹25,000", "₹30,000 - ₹50,000", "₹50,000+ Luxury"],
-        "placeholder": "e.g. 18000"
+        "options": ["₹10,000 - ₹15,000", "₹15,000 - ₹25,000", "₹25,000 - ₹50,000", "₹50,000+ Premium"],
+        "placeholder": "e.g. 18000",
     },
     {
         "id": "party",
         "text": "Who are you travelling with?",
         "type": "choice",
-        "options": ["Solo", "Couple", "Family with Kids", "Friends Group"],
-        "placeholder": None
+        "options": ["Solo", "Couple", "Family with Kids", "Friends Group", "Family with Seniors"],
+        "placeholder": None,
     },
     {
         "id": "experience",
-        "text": "What type of experience are you seeking? Select all that apply.",
+        "text": "What kind of experience do you want? Select all that apply.",
         "type": "multi_choice",
         "options": [
-            "Relaxed & Scenic", "Adventure & Treks", "Cultural & Heritage",
-            "Nature & Wildlife", "Culinary Exploration", "Spiritual & Peaceful",
-            "Beaches & Water Sports", "Nightlife & Entertainment"
+            "Adventure", "Relaxation", "Nature", "Culture", "Food",
+            "Shopping", "Spiritual", "Family", "Photography", "Mixed"
         ],
-        "placeholder": None
+        "placeholder": None,
     },
     {
-        "id": "food_pref",
-        "text": "What are your dietary or cuisine preferences? Select all that apply.",
+        "id": "transport_stay",
+        "text": "What are your transportation and accommodation preferences?",
         "type": "multi_choice",
         "options": [
-            "Pure Veg", "Veg & Non-Veg", "Vegan", "Halal", "Gluten-Free",
-            "Local Traditional Only", "Street Food", "Fine Dining"
+            "Scenic Train / Toy Train", "AC Sleeper Bus", "Flight", "Private Cab / Self Drive",
+            "Budget Hostel & Guesthouse", "Homestay & Heritage Cottage", "3 Star Cozy Boutique",
+            "4 Star Resort & Spa", "5 Star Luxury Heritage"
         ],
-        "placeholder": None
+        "placeholder": None,
     },
     {
-        "id": "stay_pref",
-        "text": "What is your preferred style of stay?",
-        "type": "choice",
-        "options": [
-            "Budget Hostel & Guesthouse", "Homestay & Heritage Cottage",
-            "3 Star Cozy Boutique", "4 Star Resort & Spa", "5 Star Luxury Heritage"
-        ],
-        "placeholder": None
-    },
-    {
-        "id": "transport_pref",
-        "text": "How would you prefer to travel between cities?",
-        "type": "choice",
-        "options": [
-            "Scenic Train / Toy Train", "AC Sleeper Bus",
-            "Private Cab / Self Drive", "Fastest Available"
-        ],
-        "placeholder": None
-    },
-    {
-        "id": "activities",
-        "text": "Which activities interest you most? Select all that apply.",
+        "id": "restrictions",
+        "text": "Any must-have preferences or restrictions? Select all that apply.",
         "type": "multi_choice",
         "options": [
-            "Hiking & Treks", "Waterfalls & Nature", "Temples & Heritage",
-            "Wildlife & Safaris", "Museums & Culture", "Beaches",
-            "Shopping & Local Markets", "Photography", "Adventure Sports",
-            "Food Trails", "Spiritual Sites"
+            "Vegetarian", "Non-vegetarian", "Jain", "Halal", "Vegan",
+            "Child-friendly", "Senior-friendly", "Wheelchair accessibility", "Low walking",
+            "High adventure", "Pure Veg"
         ],
-        "placeholder": None
+        "placeholder": None,
     },
-    {
-        "id": "pace",
-        "text": "What travel pace feels right for you?",
-        "type": "choice",
-        "options": ["Relaxed", "Balanced", "Fast-Paced"],
-        "placeholder": None
-    },
-    {
-        "id": "walking_tolerance",
-        "text": "How much walking are you comfortable with for sightseeing?",
-        "type": "choice",
-        "options": [
-            "Light (Under 3,000 steps/day)", "Moderate (3,000 - 8,000 steps/day)",
-            "Active / High (8,000+ steps/day)"
-        ],
-        "placeholder": None
-    },
-    {
-        "id": "priority",
-        "text": "What is most important to you when Travion plans this trip? Select all that apply.",
-        "type": "multi_choice",
-        "options": [
-            "Comfort & Relaxation", "Maximum Exploration & Hidden Gems",
-            "Safety & Verified Support", "Balanced Value", "Lowest Cost",
-            "Unique Local Experiences"
-        ],
-        "placeholder": None
-    }
 ]
+
+# Legacy-compatible mapping: downstream consumers (ai_orchestrator, india_planner,
+# chat assistant, replanning engine) read profile.transport_pref / stay_pref /
+# food_pref / walking_tolerance / priority. The 5-question answers are mapped
+# into those exact fields so NOTHING downstream changes.
+
+_TRANSPORT_WORDS = ("train", "bus", "flight", "cab", "self drive")
+_STAY_WORDS = ("hostel", "homestay", "3 star", "4 star", "5 star")
+
+
+def _split_transport_stay(selections: List[str]) -> Dict[str, str]:
+    transport = [s for s in selections if any(w in s.lower() for w in _TRANSPORT_WORDS)]
+    stay = [s for s in selections if any(w in s.lower() for w in _STAY_WORDS)]
+    return {
+        "transport_pref": _join(transport) or "Fastest Available",
+        "stay_pref": _join(stay) or "3 Star Cozy Boutique",
+    }
+
+
+def _food_from_restrictions(selections: List[str]) -> str:
+    food = [s for s in selections if s in ("Vegetarian", "Non-vegetarian", "Jain", "Halal", "Vegan", "Pure Veg")]
+    if not food:
+        return "Veg & Non-Veg"
+    rename = {"Vegetarian": "Pure Veg", "Pure Veg": "Pure Veg", "Vegan": "Vegan", "Jain": "Jain", "Halal": "Halal", "Non-vegetarian": "Veg & Non-Veg"}
+    return rename.get(food[0], "Veg & Non-Veg")
+
+
+def _walking_from_restrictions(selections: List[str]) -> str:
+    if "Wheelchair accessibility" in selections or "Low walking" in selections:
+        return "Light (Under 3,000 steps/day)"
+    if "High adventure" in selections:
+        return "Active / High (8,000+ steps/day)"
+    return "Moderate (3,000 - 8,000 steps/day)"
+
+
+def _priority_from_answers(answers: Dict[str, Any]) -> str:
+    exp = _as_list(answers.get("experience"))
+    if "Relaxation" in exp:
+        return "Comfort & Relaxation"
+    if "Adventure" in exp:
+        return "Maximum Exploration & Hidden Gems"
+    return "Balanced Value"
 
 
 @router.post("/{trip_id}/discovery/next", response_model=DiscoveryQuestionResponse)
@@ -161,18 +158,38 @@ def get_next_discovery_question(
         profile.questions_answers = answers
         profile.party_type = _join(answers.get("party") or "Solo")
         profile.experience_type = _join(answers.get("experience")) or "Relaxed & Scenic"
-        profile.food_pref = _join(answers.get("food_pref")) or "Veg & Non-Veg"
-        profile.stay_pref = _join(answers.get("stay_pref")) or "3 Star Cozy Boutique"
-        profile.transport_pref = _join(answers.get("transport_pref")) or "Fastest Available"
-        profile.walking_tolerance = _join(answers.get("walking_tolerance")) or "Moderate"
-        profile.priority = _join(answers.get("priority")) or "Balanced Value"
 
-        # Extract budget if numeric or string
+        ts = _split_transport_stay(_as_list(answers.get("transport_stay")))
+        profile.transport_pref = ts["transport_pref"]
+        profile.stay_pref = ts["stay_pref"]
+        profile.food_pref = _food_from_restrictions(_as_list(answers.get("restrictions")))
+        profile.walking_tolerance = _walking_from_restrictions(_as_list(answers.get("restrictions")))
+        profile.priority = _priority_from_answers(answers)
+        restrictions = _as_list(answers.get("restrictions"))
+        profile.specific_places = [r for r in restrictions if r not in (
+            "Vegetarian", "Non-vegetarian", "Jain", "Halal", "Vegan", "Pure Veg",
+        )]
+
+        # Extract budget if numeric or string; also store the explicit envelope
+        # (min/max) so the strict budget engine can clamp all three plans.
         b_val = answers.get("budget", 15000)
-        if isinstance(b_val, str):
-            digits = "".join(c for c in b_val.split("-")[0] if c.isdigit())
-            trip.budget = float(digits) if digits else 15000.0
+        if isinstance(b_val, dict):
+            profile.questions_answers = {**answers, "budget": b_val}
+            trip.budget = float(b_val.get("max") or 15000)
+        elif isinstance(b_val, str):
+            parts = [p for p in b_val.replace(",", "").split("-") if p.strip().replace(".", "").isdigit()]
+            if len(parts) >= 2:
+                profile.questions_answers = {**answers, "budget": {"min": float(parts[0]), "max": float(parts[1])}}
+                trip.budget = float(parts[1])
+            else:
+                joined = "".join(c for c in b_val if c.isdigit())
+                if joined:
+                    profile.questions_answers = {**answers, "budget": {"min": float(joined) * 0.8, "max": float(joined)}}
+                    trip.budget = float(joined)
+                else:
+                    trip.budget = 15000.0
         elif isinstance(b_val, (int, float)):
+            profile.questions_answers = {**answers, "budget": {"min": float(b_val) * 0.8, "max": float(b_val)}}
             trip.budget = float(b_val)
 
         trip.status = "PLANNED"
