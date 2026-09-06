@@ -5,13 +5,20 @@ SQLAlchemy==2.0.34
 pydantic==2.13.4
 python-dotenv==1.2.2
 
-# PostgreSQL driver for production (Render) — DATABASE_URL=postgresql://...
+# Email validation — required by Pydantic EmailStr
+email-validator==2.3.0
+
+# PostgreSQL driver for production (Render)
 psycopg2-binary==2.9.9
+
+# Authentication / security
 passlib==1.7.4
 bcrypt==4.0.1
 PyJWT==2.13.0
+
+# HTTP / external API requests
 requests==2.34.2
+httpx==0.28.1
 
 # Development / test dependencies
 pytest==9.1.1
-httpx==0.28.1
