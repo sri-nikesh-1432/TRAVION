@@ -35,7 +35,7 @@ services:
       # Production CORS: only the deployed frontend origin.
       # (app/main.py also allows local dev origins in its code fallback.)
       - key: CORS_ALLOW_ORIGINS
-        value: https://travion18.netlify.app
+        value: https://travions.netlify.app,https://travion18.netlify.app
       # Optional integrations — set real values in the Render dashboard.
       # sync: false = prompt for value at deploy time; secrets are never stored here.
       - key: GEMINI_API_KEY

@@ -24,7 +24,7 @@ class Settings(BaseModel):
     # CORS allow-list (comma-separated). Defaults to local dev origins.
     CORS_ALLOW_ORIGINS: str = os.getenv(
         "CORS_ALLOW_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,https://travion18.netlify.app",
+        "http://localhost:5173,http://127.0.0.1:5173,https://travions.netlify.app,https://travion18.netlify.app",
     )
     
     # External APIs
