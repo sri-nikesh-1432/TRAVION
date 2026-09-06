@@ -27,7 +27,7 @@ from app.schemas.schemas import (
 )
 from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import build_plans, recalculate_change
-from app.services.verified_data import VERIFIED_ATTRACTIONS
+from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
 
 router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 
@@ -136,6 +136,81 @@ def _in_plan(days: List[Dict[str, Any]], name: str) -> bool:
     return False
 
 
+# ── 0. Destination discovery catalog: REAL verified places only ─────────────
+
+@router.get("/{trip_id}/destination-catalog")
+def destination_catalog(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Everything the discovery screen needs — grouped, verified, no inventions.
+
+    attractions/stays/food come straight from the verified data service; every
+    item carries `verified: true` so the UI can show the ✓ Verified badge.
+    Places already in the active itinerary are flagged `already_in_plan`.
+    """
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    days = itin.days_data if itin else []
+
+    dest = trip.destination_name
+    attractions = VERIFIED_ATTRACTIONS.get(dest) or []
+    stays = VERIFIED_STAYS.get(dest) or []
+    foods = VERIFIED_FOOD.get(dest) or []
+
+    def _attr(a: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "name": a.get("name", ""),
+            "category": a.get("category", "attraction"),
+            "description": a.get("description"),
+            "lat": a.get("lat"),
+            "lng": a.get("lng"),
+            "entry_fee": a.get("entry_fee", 0),
+            "duration_minutes": a.get("duration_minutes", 90),
+            "rating": a.get("rating"),
+            "source": a.get("source", "verified_api"),
+            "verified": True,
+            "already_in_plan": _in_plan(days, a.get("name", "")),
+        }
+
+    def _stay(s: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "name": s.get("name", ""),
+            "tier": s.get("tier", ""),
+            "price_per_night": s.get("price_per_night", 0),
+            "rating": s.get("rating"),
+            "amenities": s.get("amenities") or [],
+            "source": s.get("source", "verified_api"),
+            "verified": True,
+            "already_in_plan": _in_plan(days, s.get("name", "")),
+        }
+
+    def _food(f: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "name": f.get("name", ""),
+            "cuisine": f.get("cuisine", ""),
+            "veg_type": f.get("veg_type", ""),
+            "avg_cost_for_two": f.get("avg_cost_for_two", 0),
+            "rating": f.get("rating"),
+            "must_try": f.get("must_try"),
+            "source": f.get("source", "verified_api"),
+            "verified": True,
+            "already_in_plan": _in_plan(days, f.get("name", "")),
+        }
+
+    return {
+        "destination": dest,
+        "verified_only": True,
+        "counts": {"attractions": len(attractions), "stays": len(stays), "food": len(foods)},
+        "must_visit": [_attr(a) for a in attractions],
+        "stays": [_stay(s) for s in stays],
+        "food": [_food(f) for f in foods],
+    }
+
+
 # ── 1. Three in-budget plans ────────────────────────────────────────────────
 
 @router.post("/{trip_id}/plan-multi")
@@ -158,24 +233,41 @@ def plan_multi(
     if bmin >= bmax:
         bmin = max(0.0, bmax * 0.8)
 
+    # Selections are HARD PREFERENCES: persist them so /choose-plan and any
+    # regeneration reproduce the exact same three plans deterministically.
+    profile = dict(profile or {})
+    profile["selected_places"] = req.selected_places or []
+    profile["selected_food"] = req.selected_food or []
+    profile["selected_stay_tiers"] = {k: v for k, v in (req.stay_tiers or {}).items() if v}
+    if trip.profile:
+        trip.profile.questions_answers = profile
+
     base = generate_base_plan(trip, req.mode, db)
     base.setdefault("destination", trip.destination_name)
-    plans = build_plans(base, bmin, bmax)
+    plans = build_plans(
+        base, bmin, bmax,
+        selected_places=req.selected_places,
+        selected_food=req.selected_food,
+        stay_tiers=req.stay_tiers or None,
+        profile_stay_pref=str(profile.get("stay_pref") or ""),
+    )
 
-    # Stash the three options on the trip record (transient JSON on TripProfile
-    # would pollute the interview data; keep them in-memory per request instead
-    # — choose-plan regenerates deterministically from the same base engine).
     return [
         {
             "type": p["type"],
             "label": p["label"],
             "tagline": p["tagline"],
+            "base_plan_cost": p["base_plan_cost"],
+            "platform_fee": p["platform_fee"],
+            "final_total": p["final_total"],
             "total_cost": p["total_cost"],
             "cost_breakdown": p["cost_breakdown"],
             "days": p["days"],
             "budget_min": bmin,
             "budget_max": bmax,
+            "remaining_budget": p["remaining_budget"],
             "within_budget": p["within_budget"],
+            "highlights": p["highlights"],
             "warnings": p["warnings"],
             "recommended": p["type"] == "RECOMMENDED",
         }
@@ -194,12 +286,18 @@ def choose_plan(
 ):
     trip = _own_trip(trip_id, current, db)
 
-    profile = trip.profile.questions_answers if trip.profile else {}
+    profile = dict(trip.profile.questions_answers if trip.profile else {})
     env = _budget_envelope(profile, trip.budget)
     mode = trip.mode or "ADVENTUROUS_MODE"
     base = generate_base_plan(trip, mode, db)
     base.setdefault("destination", trip.destination_name)
-    plans = build_plans(base, env["min"], env["max"])
+    plans = build_plans(
+        base, env["min"], env["max"],
+        selected_places=profile.get("selected_places") or [],
+        selected_food=profile.get("selected_food") or [],
+        stay_tiers=profile.get("selected_stay_tiers") or None,
+        profile_stay_pref=str(profile.get("stay_pref") or ""),
+    )
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:
         raise HTTPException(status_code=400, detail="Unknown plan type.")

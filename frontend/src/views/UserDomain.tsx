@@ -25,6 +25,7 @@ import { ReviewModal } from '../components/review/ReviewModal';
 import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
 import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
 import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
+import { DiscoverySelect } from '../components/discovery-select/DiscoverySelect';
 
 declare global {
   interface Window {
@@ -58,8 +59,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   onLogout,
   isSandboxDemo = false
 }) => {
-  // Navigation views: 'search' | 'discovery' | 'planning' | 'plan_choice' | 'workspace' | 'my_trips'
-  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'plan_choice' | 'workspace' | 'my_trips'>('search');
+  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'workspace' | 'my_trips'
+  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'workspace' | 'my_trips'>('search');
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -71,6 +72,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // Multi-plan state (VALUE / RECOMMENDED / PREMIUM)
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
   const [isChoosingPlan, setIsChoosingPlan] = useState(false);
+  const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
+  const [selectedFood, setSelectedFood] = useState<string[]>([]);
   
   // Discovery Interview state
   const [currentQuestion, setCurrentQuestion] = useState<any>(null);
@@ -283,16 +286,27 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3. Confirm Mode → generate the THREE in-budget plans for user choice
-  const handleConfirmMode = async (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') => {
+  // 3. Confirm Mode → destination discovery (user selects REAL places first)
+  const handleConfirmMode = (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') => {
     if (!activeTrip) return;
     setShowModeModal(false);
+    setPlanError(null);
+    setActiveTrip(prev => prev ? { ...prev, mode } : null);
+    setCurrentView('discovery_select');
+  };
+
+  // 3a. Selections made → generate the THREE in-budget plans around them
+  const handleGeneratePlans = async (places: string[], foods: string[]) => {
+    if (!activeTrip) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
-
+    setSelectedPlaces(places);
+    setSelectedFood(foods);
     try {
-      const plans = await api.planMulti(activeTrip.id, mode);
-      setActiveTrip(prev => prev ? { ...prev, mode } : null);
+      const plans = await api.planMulti(activeTrip.id, activeTrip.mode || 'ADVENTUROUS_MODE', {
+        selected_places: places,
+        selected_food: foods
+      });
       setPlanOptions(plans);
       setIsGeneratingPlan(false);
       setCurrentView('plan_choice');
@@ -300,7 +314,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       console.error("Plan generation failed:", err);
       setIsGeneratingPlan(false);
       setPlanError(getPlanErrorMessage(err));
-      setCurrentView('discovery');
+      setCurrentView('discovery_select');
     }
   };
 
@@ -699,13 +713,24 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
         )}
 
+        {/* VIEW 2a: Destination discovery — user selects REAL verified places */}
+        {currentView === 'discovery_select' && activeTrip && (
+          <DiscoverySelect
+            tripId={activeTrip.id}
+            destinationName={activeTrip.destination_name}
+            onConfirm={handleGeneratePlans}
+            onBack={() => { setCurrentView('search'); }}
+            busy={isGeneratingPlan}
+          />
+        )}
+
         {/* VIEW 2b: Three-plan choice (VALUE / RECOMMENDED / PREMIUM) */}
         {currentView === 'plan_choice' && activeTrip && (
           <PlanChoiceCards
             plans={planOptions}
             destinationName={activeTrip.destination_name}
             onSelect={handleChoosePlan}
-            onBack={() => { setPlanOptions([]); setCurrentView('search'); }}
+            onBack={() => { setPlanOptions([]); setCurrentView('discovery_select'); }}
             busy={isChoosingPlan}
           />
         )}

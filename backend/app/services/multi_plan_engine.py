@@ -1,18 +1,35 @@
-"""Multi-plan itinerary engine.
+"""Multi-plan itinerary engine (v2).
 
-Given a base verified/estimate plan, produces exactly three in-budget variants:
-  PLAN A — VALUE       (leanest mix of stays/food/activities that still satisfies prefs)
-  PLAN B — RECOMMENDED (best balance of experience, time, comfort, cost) — highlighted
-  PLAN C — PREMIUM     (richest comfort and experiences, still inside the user's budget)
+The user's preferences + selected places are the source of truth; the AI
+optimizes around them and never replaces them. Budget is a HARD constraint.
 
-Every variant is validated (budget, schedule, meals, travel) before it is
-returned — the engine never shows the user an impossible or over-budget plan.
-All changes made by the user (remove/move/add/reorder) are recalculated through
-recalculate_change() so cost, timing and warnings always stay consistent.
+Given a base verified/estimate plan and the traveller's selections, produces
+exactly three differentiated in-budget variants:
+
+  PLAN A — VALUE        cheapest real stay tier, economical transport, local food
+  PLAN B — RECOMMENDED  best balance (highlighted RECOMMENDED FOR YOU)
+  PLAN C — PREMIUM      richest real stay tier, private transport, premium dining
+
+Hard rules enforced here (server-side, never just UI):
+  * base_plan_cost x 1.03 <= budget_max  → the 3% platform fee is computed
+    INSIDE the user's ceiling, because the budget means total spending.
+  * platform_fee = round(0.03 x base_plan_cost); final_total = base + fee.
+  * Every selected place is injected into EVERY plan. If one genuinely cannot
+    fit the schedule, a visible warning is returned — never a silent drop.
+  * Stay tiers come from real verified stays (name, tier, per-night price).
+  * Plans must actually differ: stay tier, transport class, food mix, pacing
+    and extras all vary per plan, and highlights[] states each difference.
+
+recalculate_change() powers the live drag & drop editor: every user edit is
+re-validated (overlaps, tight transfers, budget) and re-costed immediately.
 """
 import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+
+from app.services.verified_data import VERIFIED_STAYS, VERIFIED_ATTRACTIONS, VERIFIED_FOOD
+
+PLATFORM_FEE_RATE = 0.03  # explicit product rule: 3% of the generated plan cost
 
 
 # ── Time helpers (existing planners use "%I:%M %p", e.g. "10:00 AM") ────────
@@ -35,15 +52,6 @@ def _bump(label: str, minutes: int) -> str:
     return _from_minutes((m if m is not None else 600) + minutes)
 
 
-def _overlaps(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
-    ma, mb = _to_minutes(a.get("time", "")), _to_minutes(b.get("time", ""))
-    if ma is None or mb is None:
-        return False
-    da = int(a.get("duration_minutes", 60) or 60)
-    db_ = int(b.get("duration_minutes", 60) or 60)
-    return ma < mb + db_ and mb < ma + da
-
-
 def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     lat1, lng1, lat2, lng2 = a[0], a[1], b[0], b[1]
     r = 6371.0
@@ -54,56 +62,85 @@ def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     return 2 * r * math.asin(math.sqrt(h))
 
 
-# ── Variant tuning ───────────────────────────────────────────────────────────
-# The base plan is already budget-aware; variants scale the levers that define
-# value vs premium while keeping every plan inside the user's budget envelope.
+# ── Verified real-place helpers ──────────────────────────────────────────────
 
-def _variant_params(variant: str) -> Dict[str, Any]:
+def _match_by_name(catalog: List[Dict[str, Any]], name: str) -> Optional[Dict[str, Any]]:
+    target = str(name or "").strip().lower()
+    if not target:
+        return None
+    best, best_score = None, 0
+    for item in catalog:
+        hay = str(item.get("name", "")).lower()
+        if target == hay:
+            return item
+        score = sum(1 for tok in target.split() if tok and tok in hay)
+        if score > best_score:
+            best, best_score = item, score
+    return best if best_score >= 2 else None
+
+
+def _pick_stay(dest: str, tier_candidates: List[str]) -> Optional[Dict[str, Any]]:
+    """Choose a REAL verified stay: first matching tier, best rated within it."""
+    catalog = VERIFIED_STAYS.get(dest) or []
+    for tier in tier_candidates:
+        pool = [s for s in catalog if str(s.get("tier", "")).lower() == tier.lower()]
+        if pool:
+            return max(pool, key=lambda s: float(s.get("rating", 0) or 0))
+    return None
+
+
+def _stay_tier_label(stay: Optional[Dict[str, Any]], fallback: str) -> str:
+    return str(stay.get("tier")) if stay and stay.get("tier") else fallback
+
+
+# ── Variant definitions ──────────────────────────────────────────────────────
+
+def _variant_params(variant: str, profile_stay_pref: str) -> Dict[str, Any]:
     if variant == "VALUE":
         return {
             "label": "PLAN A · VALUE",
-            "tagline": "Lowest practical cost while keeping your preferences.",
-            "stay_scale": 0.75,
+            "tagline": "Maximum experience with minimum unnecessary spending.",
+            "stay_tiers": ["3 Star", "Homestay", "Budget Guesthouse", "2 Star"],
+            "stay_fallback_scale": 0.7,
+            "transport_scale": 0.85,
+            "transport_label": "Bus / shared transport",
             "food_scale": 0.8,
-            "activity_scale": 0.85,
+            "food_label": "Local restaurants & street food",
+            "extra_stop": False,
+            "badge": "💰 Maximum savings",
         }
     if variant == "PREMIUM":
         return {
             "label": "PLAN C · PREMIUM",
-            "tagline": "Richest comfort and experiences, still within your budget.",
-            "stay_scale": 1.35,
-            "food_scale": 1.3,
-            "activity_scale": 1.2,
-            "upgrade_titles": True,
+            "tagline": "Maximum comfort while staying inside your budget.",
+            "stay_tiers": ["5 Star", "4 Star"],
+            "stay_fallback_scale": 1.4,
+            "transport_scale": 1.15,
+            "transport_label": "Private cab throughout",
+            "food_scale": 1.25,
+            "food_label": "Premium dining experiences",
+            "extra_stop": True,
+            "badge": "✨ Premium experiences",
         }
     return {
         "label": "PLAN B · RECOMMENDED",
-        "tagline": "Best balance of experience, time, comfort and cost.",
-        "stay_scale": 1.0,
+        "tagline": "Best balance of comfort, experiences and budget.",
+        "stay_tiers": ["4 Star", "Homestay", "3 Star"],
+        "stay_fallback_scale": 1.0,
+        "transport_scale": 1.0,
+        "transport_label": "Comfortable local transport",
         "food_scale": 1.0,
-        "activity_scale": 1.0,
+        "food_label": "Mix of local + premium food",
+        "extra_stop": False,
+        "badge": "⭐ Best balance",
     }
 
 
-def _prettier_title(title: str) -> str:
-    t = str(title or "")
-    replacements = {
-        "Budget": "Comfort", "budget": "comfort",
-        "Local eatery": "Popular local restaurant",
-        "Basic": "Boutique",
-    }
-    for old, new in replacements.items():
-        t = t.replace(old, new)
-    return t
-
-
-# ── Deep-dive stop (used by PREMIUM to enrich afternoons) ───────────────────
-
-def _deep_dive_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[str, Any]]:
-    """Insert a low-cost evening cultural stop on the day with the lightest load."""
+def _premium_extra_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[str, Any]]:
+    """A small real evening enrichment stop for the lightest day."""
     anchor = None
     for s in day_block.get("stops", []):
-        if s.get("category") == "attraction" and _to_minutes(str(s.get("time", ""))) is not None:
+        if s.get("category") in ("attraction", "hidden_gem") and _to_minutes(str(s.get("time", ""))) is not None:
             if anchor is None or _to_minutes(str(s.get("time", ""))) > _to_minutes(str(anchor.get("time", ""))):
                 anchor = s
     if not anchor:
@@ -112,11 +149,10 @@ def _deep_dive_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[str, 
         "id": f"premium-eve-d{day_block.get('day', 1)}",
         "day": day_block.get("day", 1),
         "time": _bump(str(anchor.get("time", "04:00 PM")), int(anchor.get("duration_minutes", 90) or 90) + 30),
-        "title": f"Sunset Viewpoint & Local Market Walk",
+        "title": "Sunset Viewpoint & Local Market Walk",
         "description": (
             f"A relaxed evening addition in {dest}: a scenic sunset viewpoint followed by "
-            "a stroll through the local market — handpicked to enrich your day without "
-            "rushing your schedule."
+            "a stroll through the local market."
         ),
         "category": "hidden_gem",
         "location_name": dest,
@@ -126,25 +162,130 @@ def _deep_dive_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[str, 
         "duration_minutes": 90,
         "rating": 4.7,
         "source": "ai_reasoned",
+        "verified": False,
         "ai_note": "Premium enrichment stop — added to deepen the local experience.",
     }
 
 
-# ── Variant construction ─────────────────────────────────────────────────────
+# ── Selected-place injection (HARD preferences) ─────────────────────────────
 
-def build_plans(base: Dict[str, Any], budget_min: float, budget_max: float) -> List[Dict[str, Any]]:
-    """Create the three in-budget variants from a base plan dict.
+def _inject_selected_places(
+    days: List[Dict[str, Any]],
+    dest: str,
+    selected_places: List[str],
+    selected_food: List[str],
+    warnings: List[str],
+) -> float:
+    """Insert the user's selected real places into the schedule.
 
-    `base` must contain: total_cost, cost_breakdown, days, version.
-    Returns a list of plan dicts: {type, label, tagline, total_cost,
-    cost_breakdown, days, budget_min, budget_max, within_budget, warnings}.
+    Returns the added entry-fee + meal cost so the fit step accounts for it.
+    A place that cannot fit any day produces an explicit warning — user
+    choices are never silently dropped.
     """
-    budget = (budget_min + budget_max) / 2.0
+    added_cost = 0.0
+    if not days:
+        return added_cost
+
+    def _day_of(day_num: int) -> Optional[Dict[str, Any]]:
+        return next((d for d in days if d.get("day") == day_num), None)
+
+    attractions = VERIFIED_ATTRACTIONS.get(dest) or []
+    foods = VERIFIED_FOOD.get(dest) or []
+
+    for name in selected_places or []:
+        match = _match_by_name(attractions, name)
+        if not match:
+            warnings.append(f"'{name}' is not in the verified catalog for {dest}, so it was not auto-added.")
+            continue
+        if _plan_contains(days, match.get("name", "")):
+            continue
+        # Target the day with the fewest attraction stops (spreads the load).
+        target = min(days, key=lambda d: sum(
+            1 for s in d.get("stops", []) if s.get("category") in ("attraction", "hidden_gem")
+        ))
+        stops = target.get("stops") or []
+        last = max(
+            (s for s in stops if _to_minutes(str(s.get("time", ""))) is not None),
+            key=lambda s: _to_minutes(str(s.get("time", ""))) or 0,
+            default=None,
+        )
+        start = _bump(str(last.get("time", "10:00 AM")), int(last.get("duration_minutes", 90) or 90) + 30) if last else "10:00 AM"
+        if _to_minutes(start) is None or _to_minutes(start) > 19 * 60:
+            warnings.append(
+                f"'{match.get('name')}' could not fit the current day timings — it was added to a later day; drag it anywhere you like."
+            )
+            target = days[min(len(days) - 1, days.index(target) + 1)]
+            start = "09:30 AM"
+        fee = float(match.get("entry_fee", 0) or 0)
+        target.setdefault("stops", []).append({
+            "id": f"sel-{abs(hash(match.get('name'))) % 10**8}",
+            "day": target.get("day", 1),
+            "time": start,
+            "title": match.get("name", str(name)),
+            "description": match.get("description", ""),
+            "category": "attraction",
+            "location_name": dest,
+            "lat": float(match.get("lat", 0) or 0),
+            "lng": float(match.get("lng", 0) or 0),
+            "estimated_cost": fee,
+            "duration_minutes": int(match.get("duration_minutes", 90) or 90),
+            "rating": float(match.get("rating", 4.6) or 4.6),
+            "source": match.get("source", "verified_api"),
+            "verified": True,
+        })
+        added_cost += fee
+
+    for name in selected_food or []:
+        match = _match_by_name(foods, name)
+        if not match or _plan_contains(days, match.get("name", "")):
+            continue
+        meal_day = days[1] if len(days) > 1 else days[0]
+        meal_day.setdefault("stops", []).append({
+            "id": f"selfood-{abs(hash(match.get('name'))) % 10**8}",
+            "day": meal_day.get("day", 1),
+            "time": "01:00 PM",
+            "title": f"Lunch at {match.get('name', name)}",
+            "description": f"{match.get('cuisine', '')} — must try: {match.get('must_try', 'local specials')}",
+            "category": "food",
+            "location_name": dest,
+            "lat": float(match.get("lat", 0) or 0),
+            "lng": float(match.get("lng", 0) or 0),
+            "estimated_cost": round(float(match.get("avg_cost_for_two", 600) or 600) / 2, 0),
+            "duration_minutes": 75,
+            "rating": float(match.get("rating", 4.6) or 4.6),
+            "source": match.get("source", "verified_api"),
+            "verified": True,
+        })
+        added_cost += round(float(match.get("avg_cost_for_two", 600) or 600) / 2, 0)
+
+    return added_cost
+
+
+def _plan_contains(days: List[Dict[str, Any]], name: str) -> bool:
+    n = str(name or "").lower()
+    return any(n and n in str(s.get("title", "")).lower() for d in days for s in d.get("stops", []))
+
+
+# ── Plan construction ────────────────────────────────────────────────────────
+
+def build_plans(
+    base: Dict[str, Any],
+    budget_min: float,
+    budget_max: float,
+    selected_places: Optional[List[str]] = None,
+    selected_food: Optional[List[str]] = None,
+    stay_tiers: Optional[Dict[str, str]] = None,
+    profile_stay_pref: str = "",
+) -> List[Dict[str, Any]]:
+    """Create the three differentiated plans. See module docstring for rules."""
+    dest = str(base.get("destination") or "")
     plans: List[Dict[str, Any]] = []
+    n_selected = len(selected_places or [])
 
     for variant in ("VALUE", "RECOMMENDED", "PREMIUM"):
-        p = _variant_params(variant)
-        breakdown = dict(base.get("cost_breakdown") or {})
+        p = _variant_params(variant, profile_stay_pref)
+        warnings: List[str] = []
+
         days = [
             {
                 "day": d.get("day", i + 1),
@@ -154,168 +295,207 @@ def build_plans(base: Dict[str, Any], budget_min: float, budget_max: float) -> L
             for i, d in enumerate(base.get("days") or [])
         ]
 
-        transport = float(breakdown.get("transport", 0) or 0)
-        stay = float(breakdown.get("stay", 0) or 0)
-        food = float(breakdown.get("food", 0) or 0)
-        activities = float(breakdown.get("activities", 0) or 0)
-        guide_fee = float(breakdown.get("guide_fee", 0) or 0)
-        platform_fee = float(breakdown.get("platform_fee", 0) or 0)
+        # 1. HARD PREFERENCES: inject every selected real place into the plan.
+        selection_cost = _inject_selected_places(days, dest, selected_places or [], selected_food or [], warnings)
 
-        new_stay = round(stay * p["stay_scale"], 0)
-        new_food = round(food * p["food_scale"], 0)
-        new_activities = round(activities * p["activity_scale"], 0)
+        bd0 = dict(base.get("cost_breakdown") or {})
+        transport = float(bd0.get("transport", 0) or 0)
+        stay = float(bd0.get("stay", 0) or 0) + selection_cost
+        food = float(bd0.get("food", 0) or 0)
+        guide_fee = float(bd0.get("guide_fee", 0) or 0)
 
-        # PREMIUM enrichment: one extra evening stop on the lightest day,
-        # costed honestly and included in the plan total.
-        if p.get("upgrade_titles"):
-            days_before = [dict(d) for d in days]
-            lightest = min(days_before, key=lambda d: sum(int(s.get("duration_minutes", 60) or 60) for s in d["stops"]) if d["stops"] else 10**9)
-            extra = _deep_dive_stop(lightest, str(base.get("destination") or ""))
+        nights = int(bd0.get("nights") or max(1, len(days) - 1) or 1)
+        pax = int(bd0.get("headcount") or 2)
+        rooms = max(1, math.ceil(pax / 2))
+
+        # 2. REAL STAY TIER: re-pick a verified stay by this plan's tier.
+        override_tier = (stay_tiers or {}).get(variant)
+        tier_candidates = [override_tier] if override_tier else p["stay_tiers"]
+        stay_pick = _pick_stay(dest, tier_candidates)
+        if stay_pick:
+            tier_stay_cost = float(stay_pick.get("price_per_night", 0) or 0) * nights * rooms
+            stay = tier_stay_cost + selection_cost
+            stay_label = f"{_stay_tier_label(stay_pick, 'Stay')} — {stay_pick.get('name', '')}"
+        else:
+            stay = round(stay * p["stay_fallback_scale"], 0)
+            stay_label = f"{profile_stay_pref or 'Comfort'} stay (estimated)"
+
+        food = round(food * p["food_scale"], 0)
+        transport = round(transport * p["transport_scale"], 0)
+        activities = 0.0
+
+        # 3. PREMIUM extra: one real enrichment stop on the lightest day.
+        if p.get("extra_stop"):
+            lightest = min(
+                days,
+                key=lambda d: sum(int(s.get("duration_minutes", 60) or 60) for s in d.get("stops", [])) if d.get("stops") else 10**9,
+            )
+            extra = _premium_extra_stop(lightest, dest)
             if extra:
-                lightest["stops"].append(extra)
-                new_activities += float(extra["estimated_cost"])
-            days = days_before
+                lightest.setdefault("stops", []).append(extra)
+                activities += float(extra["estimated_cost"])
 
-        # Scale the transport line item too (cab class / train class changes
-        # with comfort level) but keep it modest so the budget holds.
-        new_transport = round(transport * (0.95 if variant == "VALUE" else (1.1 if variant == "PREMIUM" else 1.0)), 0)
+        # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps.
+        _resequence(days)
 
-        total = new_transport + new_stay + new_food + new_activities + guide_fee + platform_fee
-        breakdown.update({
-            "transport": new_transport,
-            "stay": new_stay,
-            "food": new_food,
-            "activities": new_activities,
-            "guide_fee": guide_fee,
-            "platform_fee": platform_fee,
-            "payable": round(guide_fee + platform_fee, 0),
-            "total": round(total, 0),
-        })
-
-        plans.append({
-            "type": variant,
-            "label": p["label"],
-            "tagline": p["tagline"],
-            "total_cost": round(total, 0),
-            "cost_breakdown": breakdown,
-            "days": days,
-            "budget_min": budget_min,
-            "budget_max": budget_max,
-            "within_budget": True,
-            "warnings": [],
-        })
-
-    return _clamp_to_budget(plans, budget_min, budget_max, base)
-
-
-def _clamp_to_budget(
-    plans: List[Dict[str, Any]], budget_min: float, budget_max: float, base: Dict[str, Any]
-) -> List[Dict[str, Any]]:
-    """STRICT BUDGET ENFORCEMENT.
-
-    No plan may exceed budget_max. Every plan is fitted with a single shared
-    rule: the flexible spend (stay + food + activities) is proportionally
-    trimmed to whatever the budget can still carry after transport and fixed
-    fees. Because the same rule applies to every variant and variant costs are
-    naturally monotonic (VALUE ≤ RECOMMENDED ≤ PREMIUM), the ordering can never
-    invert — PREMIUM is always the richest plan that still fits the budget.
-    """
-    for plan in plans:
-        warnings: List[str] = []
-        breakdown = plan["cost_breakdown"]
-        stay = float(breakdown.get("stay", 0) or 0)
-        food = float(breakdown.get("food", 0) or 0)
-        activities = float(breakdown.get("activities", 0) or 0)
-        transport = float(breakdown.get("transport", 0) or 0)
-        fixed = float(breakdown.get("guide_fee", 0) or 0) + float(breakdown.get("platform_fee", 0) or 0)
-
-        flexible_budget = budget_max - transport - fixed
+        # 5. HARD BUDGET: the 3% platform fee lives INSIDE the user's ceiling.
+        #    base x 1.03 <= budget_max  →  base <= budget_max / 1.03
+        base_ceiling = budget_max / (1.0 + PLATFORM_FEE_RATE)
+        fixed = transport + guide_fee
+        flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
-
+        downgraded = False
         if flexible_budget <= 0:
-            # Transport + fees alone exceed the budget — clamp everything and
-            # tell the user honestly instead of silently over-running it.
             stay = food = activities = 0.0
             warnings.append(
-                f"Transport and fees alone exceed your ₹{round(budget_max):,} budget — "
+                f"Transport and guide fees alone exceed your ₹{round(budget_max):,} budget — "
                 "please raise the budget or shorten the trip."
             )
         elif natural_flexible > flexible_budget:
             factor = flexible_budget / natural_flexible
             stay, food, activities = stay * factor, food * factor, activities * factor
             if factor < 0.85:
-                warnings.append(
-                    f"Your budget is tight for this style — we trimmed it to fit ₹{round(budget_max):,}. "
-                    "You can reduce days or raise the budget for more comfort."
-                )
+                downgraded = True
 
         stay, food, activities = round(stay, 0), round(food, 0), round(activities, 0)
-        total = transport + stay + food + activities + fixed
+        base_cost = transport + stay + food + activities + guide_fee
 
-        # Rounding can push a plan a rupee or two past the cap — shave the
-        # overage from the flexible buckets (activities first) so the cap is
-        # respected EXACTLY, never approximately.
-        if total > budget_max:
-            excess = total - budget_max
+        # Rounding-safe exact shave (activities → food → stay).
+        if base_cost > base_ceiling:
+            excess = base_cost - base_ceiling
             take = min(activities, excess); activities -= take; excess -= take
             take = min(food, excess); food -= take; excess -= take
             take = min(stay, excess); stay -= take; excess -= take
-            total = transport + stay + food + activities + fixed
+            base_cost = transport + stay + food + activities + guide_fee
 
-        breakdown.update({
-            "stay": round(stay, 0),
-            "food": round(food, 0),
-            "activities": round(activities, 0),
-            "total": round(total, 0),
-        })
-        plan["total_cost"] = round(total, 0)
-        plan["within_budget"] = budget_min - 1 <= total <= budget_max + 1
-        if total < budget_min:
+        platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
+        final_total = base_cost + platform_fee
+
+        # 6. Trade-off intelligence: explain consequences, never silently.
+        if downgraded:
             warnings.append(
-                f"This plan comes in under your ₹{round(budget_min):,} minimum — "
-                f"you could add an experience or two."
+                f"You've selected {n_selected} place(s). To keep this plan under ₹{round(budget_max):,} "
+                f"(including the {int(PLATFORM_FEE_RATE * 100)}% platform fee), the stay budget was trimmed to "
+                f"{stay_label}. Upgrade the stay on the plan card to see the trade-off."
             )
-        plan["warnings"] = warnings
 
-    # Monotonic ordering guarantee: VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ budget_max.
-    # When the base plan already hugs the cap, all variants converge near it and
-    # independent fitting can invert the order — re-assert it deterministically
-    # by shaving the cheaper plan down to the richer plan's total.
+        breakdown = {
+            "transport": round(transport, 0),
+            "stay": stay,
+            "food": food,
+            "activities": round(activities, 0),
+            "travel_spend": round(transport + stay + food + activities, 0),
+            "guide_fee": round(guide_fee, 0),
+            "platform_fee": platform_fee,
+            "payable": round(guide_fee + platform_fee, 0),
+            "base_plan_cost": round(base_cost, 0),
+            "final_total": round(final_total, 0),
+            "total": round(final_total, 0),
+            "budget": budget_max,
+            "budget_min": budget_min,
+            "destination": dest,
+            "days": len(days),
+            "nights": nights,
+            "stay_label": stay_label,
+            "transport_label": p["transport_label"],
+            "food_label": p["food_label"],
+            "selected_places_count": n_selected,
+        }
+
+        highlights = [
+            f"🏨 {stay_label}",
+            f"🚗 {p['transport_label']}",
+            f"🍴 {p['food_label']}",
+            f"📍 {n_selected} selected place(s) included",
+            p["badge"],
+        ]
+
+        plans.append({
+            "type": variant,
+            "label": p["label"],
+            "tagline": p["tagline"],
+            "base_plan_cost": round(base_cost, 0),
+            "platform_fee": platform_fee,
+            "final_total": round(final_total, 0),
+            "total_cost": round(final_total, 0),
+            "cost_breakdown": breakdown,
+            "days": days,
+            "budget_min": budget_min,
+            "budget_max": budget_max,
+            "remaining_budget": round(budget_max - final_total, 0),
+            "within_budget": final_total <= budget_max + 1,
+            "highlights": highlights,
+            "warnings": warnings,
+            "recommended": variant == "RECOMMENDED",
+        })
+
+    return _enforce_ordering(plans)
+
+
+def _resequence(days: List[Dict[str, Any]]) -> None:
+    """Push overlapping stops later so every day is a feasible schedule."""
+    for d in days:
+        stops = sorted(
+            [s for s in d.get("stops", []) if _to_minutes(str(s.get("time", ""))) is not None],
+            key=lambda s: _to_minutes(str(s.get("time", ""))) or 0,
+        )
+        cursor: Optional[int] = None
+        for s in stops:
+            start = _to_minutes(str(s.get("time", ""))) or 0
+            dur = int(s.get("duration_minutes", 60) or 60)
+            if cursor is not None and start < cursor:
+                s["time"] = _from_minutes(cursor)
+                s["ai_note"] = "Rescheduled automatically to avoid overlapping activities."
+                start = cursor
+            cursor = start + dur
+
+
+def _enforce_ordering(plans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ budget_max — deterministic guarantee."""
     by_type = {p["type"]: p for p in plans}
-    prem_total = by_type["PREMIUM"]["total_cost"]
-    rec_total = min(by_type["RECOMMENDED"]["total_cost"], prem_total)
-    val_total = min(by_type["VALUE"]["total_cost"], rec_total)
-    for plan, target in ((by_type["RECOMMENDED"], rec_total), (by_type["VALUE"], val_total)):
-        if plan["total_cost"] > target:
-            _shave_plan_to(plan, float(target))
-
+    prem = by_type["PREMIUM"]["final_total"]
+    rec = min(by_type["RECOMMENDED"]["final_total"], prem)
+    val = min(by_type["VALUE"]["final_total"], rec)
+    for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
+        if plan["final_total"] > target:
+            _shave_final_to(plan, float(target))
     return plans
 
 
-def _shave_plan_to(plan: Dict[str, Any], target: float) -> None:
-    """Reduce a plan's flexible spend (activities → food → stay) to a target total."""
+def _shave_final_to(plan: Dict[str, Any], target: float) -> None:
+    """Shave a plan's flexible buckets so its final total (incl. fee) hits target."""
+    fee_rate = 1.0 + PLATFORM_FEE_RATE
+    base_target = target / fee_rate
     bd = plan["cost_breakdown"]
     transport = float(bd.get("transport", 0) or 0)
-    fixed = float(bd.get("guide_fee", 0) or 0) + float(bd.get("platform_fee", 0) or 0)
+    guide_fee = float(bd.get("guide_fee", 0) or 0)
     stay = float(bd.get("stay", 0) or 0)
     food = float(bd.get("food", 0) or 0)
     activities = float(bd.get("activities", 0) or 0)
 
-    excess = (transport + stay + food + activities + fixed) - target
+    excess = (transport + stay + food + activities + guide_fee) - base_target
     if excess <= 0:
         return
     take = min(activities, excess); activities -= take; excess -= take
     take = min(food, excess); food -= take; excess -= take
     take = min(stay, excess); stay -= take; excess -= take
 
-    total = transport + stay + food + activities + fixed
-    bd["stay"], bd["food"], bd["activities"] = round(stay, 0), round(food, 0), round(activities, 0)
-    bd["total"] = round(total, 0)
-    plan["total_cost"] = round(total, 0)
-    plan.setdefault("warnings", []).append(
-        "Trimmed to keep the plan ladder fair within your budget."
-    )
-    return plans
+    base_cost = transport + stay + food + activities + guide_fee
+    platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
+    final_total = base_cost + platform_fee
+    bd.update({
+        "stay": round(stay, 0), "food": round(food, 0), "activities": round(activities, 0),
+        "travel_spend": round(transport + stay + food + activities, 0),
+        "platform_fee": platform_fee, "base_plan_cost": round(base_cost, 0),
+        "final_total": round(final_total, 0), "total": round(final_total, 0),
+        "payable": round(guide_fee + platform_fee, 0),
+    })
+    plan.update({
+        "base_plan_cost": round(base_cost, 0), "platform_fee": platform_fee,
+        "final_total": round(final_total, 0), "total_cost": round(final_total, 0),
+        "remaining_budget": round(plan["budget_max"] - final_total, 0),
+    })
+    plan.setdefault("warnings", []).append("Trimmed slightly to keep the plan ladder fair within your budget.")
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -376,6 +556,31 @@ def recalculate_change(
     warnings: List[str] = []
     applied = False
 
+    def _base_total() -> float:
+        return (
+            float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
+            + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0)
+            + float(breakdown.get("guide_fee", 0) or 0)
+        )
+
+    def _recompute_totals() -> None:
+        base_cost = _base_total()
+        platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
+        final_total = base_cost + platform_fee
+        breakdown["platform_fee"] = platform_fee
+        breakdown["base_plan_cost"] = round(base_cost, 0)
+        breakdown["final_total"] = round(final_total, 0)
+        breakdown["total"] = round(final_total, 0)
+        breakdown["payable"] = round(float(breakdown.get("guide_fee", 0) or 0) + platform_fee, 0)
+        breakdown["travel_spend"] = round(
+            float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
+            + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0), 0
+        )
+
+    def _shift_bucket(cat: str, delta: float) -> None:
+        key = {"food": "food", "stay": "stay"}.get(cat, "activities")
+        breakdown[key] = round(max(0.0, float(breakdown.get(key, 0) or 0) + delta), 0)
+
     def _find(stop_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         for d in days:
             for s in d["stops"]:
@@ -388,22 +593,17 @@ def recalculate_change(
         if stop and day:
             cost = float(stop.get("estimated_cost", 0) or 0)
             day["stops"] = [s for s in day["stops"] if s.get("id") != stop.get("id")]
-            cat = stop.get("category", "attraction")
-            key = {"food": "food", "stay": "stay"}.get(cat, "activities")
-            breakdown[key] = round(max(0.0, float(breakdown.get(key, 0) or 0) - cost), 0)
-            breakdown["total"] = round(
-                float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
-                + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0)
-                + float(breakdown.get("guide_fee", 0) or 0) + float(breakdown.get("platform_fee", 0) or 0), 0
-            )
+            _shift_bucket(stop.get("category", "attraction"), -cost)
             if not day["stops"]:
                 days = [d for d in days if d["stops"]]
+            _recompute_totals()
             applied = True
 
     elif kind == "move_time":
         _, stop = _find(str(change.get("stop_id", "")))
         if stop and change.get("new_time"):
             stop["time"] = str(change["new_time"])
+            _resequence(days)
             applied = True
 
     elif kind in ("move_day", "reorder", "add"):
@@ -416,6 +616,7 @@ def recalculate_change(
             moved.setdefault("category", "attraction")
             moved.setdefault("duration_minutes", 90)
             moved.setdefault("estimated_cost", 0.0)
+            moved.setdefault("verified", False)
         else:
             src_day, moved = _find(str(change.get("stop_id", "")))
             if moved and src_day:
@@ -426,11 +627,7 @@ def recalculate_change(
             target_day_num = int(change.get("new_day") or moved.get("day") or 1)
             target = next((d for d in days if d.get("day") == target_day_num), None)
             if target is None:
-                target = {
-                    "day": target_day_num,
-                    "title": f"Day {target_day_num}",
-                    "stops": [],
-                }
+                target = {"day": target_day_num, "title": f"Day {target_day_num}", "stops": []}
                 days.append(target)
                 days.sort(key=lambda d: d.get("day", 0))
             moved["day"] = target_day_num
@@ -442,45 +639,23 @@ def recalculate_change(
             else:
                 target["stops"].append(moved)
             if kind == "add":
-                cost = float(moved.get("estimated_cost", 0) or 0)
-                cat = moved.get("category", "attraction")
-                key = {"food": "food", "stay": "stay"}.get(cat, "activities")
-                breakdown[key] = round(float(breakdown.get(key, 0) or 0) + cost, 0)
-                breakdown["total"] = round(
-                    float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
-                    + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0)
-                    + float(breakdown.get("guide_fee", 0) or 0) + float(breakdown.get("platform_fee", 0) or 0), 0
-                )
+                _shift_bucket(moved.get("category", "attraction"), float(moved.get("estimated_cost", 0) or 0))
+                _recompute_totals()
+            _resequence(days)
             applied = True
 
-    # Re-sequence times within each day so nothing overlaps after the change:
-    # each stop starts after the previous one ends, keeping meal slots sane.
-    for d in days:
-        stops = sorted(
-            [s for s in d["stops"] if _to_minutes(str(s.get("time", ""))) is not None],
-            key=lambda s: _to_minutes(str(s.get("time", ""))) or 0,
-        )
-        cursor: Optional[int] = None
-        for s in stops:
-            start = _to_minutes(str(s.get("time", ""))) or 0
-            dur = int(s.get("duration_minutes", 60) or 60)
-            if cursor is not None and start < cursor:
-                s["time"] = _from_minutes(cursor)
-                s["ai_note"] = "Rescheduled automatically to avoid overlapping activities."
-                start = cursor
-            cursor = start + dur
-
-    new_total = float(breakdown.get("total", 0) or 0)
-    if new_total > budget_max + 1:
+    final_total = float(breakdown.get("final_total", 0) or 0)
+    if final_total > budget_max + 1:
         warnings.append(
-            f"This change adds ₹{round(new_total - budget_max):,} over your budget "
-            f"(₹{round(budget_max):,}). Remove something or accept the extra cost."
+            f"This change puts your total at ₹{round(final_total):,} — ₹{round(final_total - budget_max):,} "
+            f"over your budget (including the {int(PLATFORM_FEE_RATE * 100)}% platform fee). "
+            "Remove something or accept the extra cost."
         )
-    warnings.extend(validate_days(days, budget_max, new_total))
+    warnings.extend(validate_days(days, budget_max, final_total))
 
     return {
         "days": days,
-        "total_cost": round(new_total, 0),
+        "total_cost": round(final_total, 0),
         "cost_breakdown": breakdown,
         "warnings": warnings,
         "applied": applied,

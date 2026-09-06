@@ -145,14 +145,65 @@ export interface PlanOption {
   type: 'VALUE' | 'RECOMMENDED' | 'PREMIUM';
   label: string;
   tagline: string;
+  base_plan_cost: number;
+  platform_fee: number;
+  final_total: number;
   total_cost: number;
   cost_breakdown: CostBreakdown;
   days: ItineraryDay[];
   budget_min: number;
   budget_max: number;
+  remaining_budget: number;
   within_budget: boolean;
+  highlights: string[];
   warnings: string[];
   recommended: boolean;
+}
+
+export interface CatalogPlace {
+  name: string;
+  category: string;
+  description?: string | null;
+  lat?: number;
+  lng?: number;
+  entry_fee?: number;
+  duration_minutes?: number;
+  rating?: number | null;
+  source: string;
+  verified: boolean;
+  already_in_plan: boolean;
+}
+
+export interface CatalogStay {
+  name: string;
+  tier: string;
+  price_per_night: number;
+  rating?: number | null;
+  amenities: string[];
+  source: string;
+  verified: boolean;
+  already_in_plan: boolean;
+}
+
+export interface CatalogFood {
+  name: string;
+  cuisine: string;
+  veg_type: string;
+  avg_cost_for_two: number;
+  rating?: number | null;
+  must_try?: string | null;
+  source: string;
+  verified: boolean;
+  already_in_plan: boolean;
+}
+
+export interface DestinationCatalog {
+  destination: string;
+  verified_only: boolean;
+  counts: { attractions: number; stays: number; food: number };
+  must_visit: CatalogPlace[];
+  stays: CatalogStay[];
+  food: CatalogFood[];
 }
 
 export interface ExplorePlace {
@@ -165,6 +216,7 @@ export interface ExplorePlace {
   duration_minutes: number;
   rating?: number | null;
   source: string;
+  verified?: boolean;
 }
 
 export type ItineraryChange =

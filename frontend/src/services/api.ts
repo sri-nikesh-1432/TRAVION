@@ -2,7 +2,7 @@ import {
   AuthSession, LocationItem, TripItem, TripItinerary, TripAssignment,
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
   UserProfile, GuideProfile, PlanOption, ItineraryChange,
-  ItineraryChangeResponse, ExplorePlace
+  ItineraryChangeResponse, ExplorePlace, DestinationCatalog
 } from '../types';
 
 const API_BASE_URL =
@@ -188,11 +188,25 @@ export const api = {
   planTrip: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', consentAcknowledged = true) =>
     request<TripItinerary>(`/trips/${tripId}/plan`, { method: 'POST', body: JSON.stringify({ mode, consent_acknowledged: consentAcknowledged }) }),
 
-  // Multi-plan: exactly 3 budget-clamped options (VALUE / RECOMMENDED / PREMIUM)
-  planMulti: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', budgetMin?: number, budgetMax?: number) =>
+  // Destination discovery: REAL verified places for the trip's destination
+  getDestinationCatalog: (tripId: string) =>
+    request<DestinationCatalog>(`/trips/${tripId}/destination-catalog`),
+
+  // Multi-plan: exactly 3 budget-clamped options built around the user's selections
+  planMulti: (
+    tripId: string,
+    mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE',
+    selections?: { selected_places?: string[]; selected_food?: string[]; stay_tiers?: Record<string, string> }
+  ) =>
     request<PlanOption[]>(`/trips/${tripId}/plan-multi`, {
       method: 'POST',
-      body: JSON.stringify({ mode, consent_acknowledged: true, budget_min: budgetMin, budget_max: budgetMax })
+      body: JSON.stringify({
+        mode,
+        consent_acknowledged: true,
+        ...(selections?.selected_places?.length ? { selected_places: selections.selected_places } : {}),
+        ...(selections?.selected_food?.length ? { selected_food: selections.selected_food } : {}),
+        ...(selections?.stay_tiers && Object.keys(selections.stay_tiers).length ? { stay_tiers: selections.stay_tiers } : {})
+      })
     }),
 
   choosePlan: (tripId: string, planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') =>

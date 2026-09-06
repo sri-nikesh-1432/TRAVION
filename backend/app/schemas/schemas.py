@@ -252,6 +252,13 @@ class PlanMultiRequest(BaseModel):
     consent_acknowledged: bool = True
     budget_min: Optional[float] = None
     budget_max: Optional[float] = None
+    # User-selected REAL places (destination discovery) — hard preferences the
+    # planner must include, never replace.
+    selected_places: List[str] = []
+    selected_food: List[str] = []
+    # Optional per-plan stay tier override, e.g. {"PREMIUM": "5 Star"} from the
+    # plan card's star +/- control.
+    stay_tiers: Dict[str, str] = {}
 
 class PlanOptionResponse(BaseModel):
     type: str  # VALUE | RECOMMENDED | PREMIUM
