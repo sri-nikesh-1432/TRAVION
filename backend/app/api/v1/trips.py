@@ -74,7 +74,7 @@ def search_and_create_trip(
         start_datetime=start_dt,
         end_datetime=end_dt,
         status="DRAFT",
-        budget=15000.0,
+        budget=None,
         total_cost=0.0
     )
     db.add(trip)

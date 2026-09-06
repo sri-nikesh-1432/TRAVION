@@ -945,3 +945,23 @@ VERIFIED_SAFETY_INFO = {
         ]
     }
 }
+
+
+def _merge_curated_places():
+    from app.services.destination_places import DESTINATION_PLACES
+
+    def _merge(catalog, destination, extra_entries):
+        existing = catalog.setdefault(destination, [])
+        existing_names = {item.get("name") for item in existing}
+        for entry in extra_entries:
+            if entry.get("name") in existing_names:
+                continue
+            existing.append(entry)
+
+    for destination, data in DESTINATION_PLACES.items():
+        _merge(VERIFIED_STAYS, destination, data.get("stays", []))
+        _merge(VERIFIED_FOOD, destination, data.get("food", []))
+        _merge(VERIFIED_ATTRACTIONS, destination, data.get("attractions", []))
+
+
+_merge_curated_places()

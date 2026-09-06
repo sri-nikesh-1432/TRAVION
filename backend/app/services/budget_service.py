@@ -19,6 +19,27 @@ from typing import Any, Dict, Optional, Tuple
 
 PLATFORM_FEE_RATE = 0.03
 
+PLAN_MIN_BUDGET = 1000.0
+PLAN_MAX_BUDGET = 5_000_000.0
+
+
+def sanitize_envelope(budget_min: float, budget_max: float) -> Tuple[float, float]:
+    """Guard against implausible budgets (billion-scale values produced by
+    malformed parsing) and zero/negative envelopes with bounded sane defaults."""
+    lo = float(budget_min or 0.0)
+    hi = float(budget_max or 0.0)
+    if not (PLAN_MIN_BUDGET <= hi <= PLAN_MAX_BUDGET):
+        hi = 50000.0
+    if not (PLAN_MIN_BUDGET <= lo <= hi):
+        lo = hi * 0.8
+    return (round(lo, 0), round(hi, 0))
+
+
+def fit_to_budget(base_plan_cost: float, user_max_budget: float) -> float:
+    """Clamp a generated base cost so the total incl. fee never exceeds max."""
+    ceiling = base_ceiling_for(user_max_budget)
+    return round(min(float(base_plan_cost), ceiling), 0)
+
 
 def parse_budget(value: Any, fallback: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
     """Parse any user budget expression into (min, max) without exploding.

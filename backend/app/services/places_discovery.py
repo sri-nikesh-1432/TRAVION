@@ -497,6 +497,19 @@ def _discover_osm(destination: str, resolved: Dict[str, Any]) -> Dict[str, List[
 
 # ── Verified catalog + local index (fallback, always available) ─────────────
 
+# Real curated entries that read as experiences/activities (matched against the
+# item's name/description). These are the same verified places, surfaced in the
+# activities bucket so it is never empty for a covered destination.
+_ACTIVITY_KEYWORDS = (
+    "rafting", "kayak", "boating", "boat ride", "cruise", "shikara", "dolphin",
+    "snorkel", "scuba", "diving", "sailing", "surf", "watersports", "water sport",
+    "safari", "jeep", "trek", "hike", "trail", "gondola", "cable car", "ropeway",
+    "glacier", "paragliding", "zip", "bungee", "cycling", "elephant", "horse ride",
+    "camping", "toy train", "mountain railway", "ridge walk", "climb", "glider",
+    "canopy", "hot air balloon", "snowboard", "ski",
+)
+
+
 def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
     """Travion's curated verified data (real names, ratings, fees)."""
     out: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
@@ -506,6 +519,36 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "place_id": None,
             "name": a.get("name", ""),
             "category": "must_visit",
+            "latitude": a.get("lat"), "longitude": a.get("lng"),
+            "address": None,
+            "rating": a.get("rating"),
+            "review_count": None,
+            "opening_hours": None,
+            "website": None,
+            "photos": [],
+            "source": a.get("source", "verified_api"),
+            "verified": True,
+            "entry_fee": a.get("entry_fee"),
+            "price_per_night": None,
+            "duration_minutes": a.get("duration_minutes", 90),
+            "duration_is_estimate": False,
+        })
+    attractions = VERIFIED_ATTRACTIONS.get(destination) or []
+    activity_like = [
+        a for a in attractions
+        if any(k in f"{a.get('name', '')} {a.get('description', '')}".lower()
+               for k in _ACTIVITY_KEYWORDS)
+    ]
+    # When no curated entry is activity-flavoured, fall back to the top
+    # must-visit entries so the Activities bucket is never empty for a real
+    # destination (they are genuinely things a traveller does there).
+    activity_pool = activity_like or list(attractions)
+    for a in activity_pool[:6]:
+        out["activities"].append({
+            "id": f"cata_{_norm(a.get('name', ''))[:40]}",
+            "place_id": None,
+            "name": a.get("name", ""),
+            "category": "activities",
             "latitude": a.get("lat"), "longitude": a.get("lng"),
             "address": None,
             "rating": a.get("rating"),
@@ -733,9 +776,16 @@ def discover_destination(
         buckets = {"must_visit": [], "food": [], "activities": [], "stays": []}
         source = None
 
-    # Keyless live tier: run OpenStreetMap whenever we have an anchor and live
-    # data is still thin for the must-visit category.
-    if anchor and len(buckets["must_visit"]) < 4:
+    # The curated verified catalog is evaluated BEFORE deciding whether live
+    # tiers are even needed: for a destination the catalog fully covers we skip
+    # the (rate-limited, sometimes slow) Overpass tier entirely — curated real
+    # stays/food/attractions are sufficient and always deterministic.
+    catalog = _catalog_items(destination)
+    catalog_sufficient = len(catalog["must_visit"]) >= 4 and bool(catalog["stays"])
+
+    # Keyless live tier: run OpenStreetMap only when the curated catalog is
+    # thin for must-visit (i.e. genuinely uncovered destinations).
+    if anchor and not catalog_sufficient and len(buckets["must_visit"]) < 4:
         try:
             osm = _discover_osm(destination, anchor)
         except Exception:
@@ -747,7 +797,6 @@ def discover_destination(
             source = "openstreetmap"
 
     # Curated verified data is layered on top of whatever live sources gave us.
-    catalog = _catalog_items(destination)
     for k, v in catalog.items():
         buckets[k].extend(v)
 

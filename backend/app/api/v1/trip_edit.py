@@ -29,7 +29,10 @@ from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import build_plans, recalculate_change
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
 from app.services.places_discovery import discover_destination
-from app.services.budget_service import parse_budget, base_ceiling_for, remaining_budget as budget_remaining
+from app.services.budget_service import (
+    parse_budget, base_ceiling_for, remaining_budget as budget_remaining,
+    sanitize_envelope, compute_totals, fit_to_budget,
+)
 
 router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 
@@ -37,16 +40,36 @@ router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 def _budget_envelope(profile: dict | None, trip_budget: float) -> Dict[str, float]:
     """Budget envelope for this trip — parsed ONLY via the centralized
     BudgetService so currency-symbol strings like '₹10,000 - ₹25,000' can
-    never explode into a billion-rupee budget."""
-    bmin, bmax = parse_budget(
-        (profile or {}).get("budget"),
-        fallback=(float(trip_budget or 15000.0) * 0.8, float(trip_budget or 15000.0)),
-    )
-    if bmax <= 0:
-        bmin, bmax = parse_budget(float(trip_budget or 0), fallback=(0.0, 15000.0))
+    never explode into a billion-rupee budget, then clamped to a sane band
+    so no malformed value can ever reach the planner."""
+    override = None
+    if trip_budget and float(trip_budget) > 0:
+        override = (float(trip_budget) * 0.8, float(trip_budget))
+    bmin, bmax = parse_budget((profile or {}).get("budget"), fallback=override)
+    bmin, bmax = sanitize_envelope(bmin, bmax)
     if bmin >= bmax:
-        bmin = max(0.0, bmax * 0.8)
+        bmin = max(1000.0, bmax * 0.8)
     return {"min": bmin, "max": bmax}
+
+
+def _normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
+    """Belt-and-suspenders clamp: recompute a plan's fee/total from the single
+    source of truth (BudgetService) so the flat 3% rule is ALWAYS the last word,
+    regardless of which engine generated the plan."""
+    bd = plan["cost_breakdown"]
+    base = fit_to_budget(float(plan["base_plan_cost"]), budget_max)
+    totals = compute_totals(base)
+    plan["base_plan_cost"] = totals["base_plan_cost"]
+    plan["platform_fee"] = totals["platform_fee"]
+    plan["final_total"] = totals["final_total"]
+    plan["total_cost"] = totals["final_total"]
+    plan["remaining_budget"] = round(float(budget_max) - totals["final_total"], 0)
+    plan["within_budget"] = bool(plan["final_total"] <= float(budget_max))
+    bd["base_plan_cost"] = totals["base_plan_cost"]
+    bd["platform_fee"] = totals["platform_fee"]
+    bd["final_total"] = totals["final_total"]
+    bd["total"] = totals["final_total"]
+    bd["payable"] = round(float(bd.get("guide_fee", 0) or 0) + totals["platform_fee"], 0)
 
 
 def _destination_anchor(trip: Trip, db: Session) -> Dict[str, Any]:
@@ -280,10 +303,11 @@ def plan_multi(
     env = _budget_envelope(profile, trip.budget)
     bmin = float(req.budget_min) if req.budget_min is not None else env["min"]
     bmax = float(req.budget_max) if req.budget_max is not None else env["max"]
+    bmin, bmax = sanitize_envelope(bmin, bmax)
     if bmax <= 0:
         raise HTTPException(status_code=400, detail="A budget is required before generating plans.")
     if bmin >= bmax:
-        bmin = max(0.0, bmax * 0.8)
+        bmin = max(1000.0, bmax * 0.8)
 
     # Selections are HARD PREFERENCES: persist them so /choose-plan and any
     # regeneration reproduce the exact same three plans deterministically.
@@ -334,9 +358,13 @@ def plan_multi(
         resolved_food=resolved_food,
     )
 
-    # Belt-and-braces: the plan engine already clamps, but a single plan that
-    # still exceeds the traveller's selected maximum is an unacceptable result.
-    # Reject it loudly instead of shipping an over-budget plan.
+    # Belt-and-braces: the plan engine already clamps, but the flat 3% rule
+    # from the BudgetService is the final word on every returned total.
+    for p in plans:
+        _normalize_plan_totals(p, bmax)
+
+    # A single plan that still exceeds the traveller's selected maximum is an
+    # unacceptable result. Reject it loudly instead of shipping an over-budget plan.
     for p in plans:
         if float(p["final_total"]) > bmax + 0.01:
             raise HTTPException(
@@ -397,6 +425,8 @@ def choose_plan(
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:
         raise HTTPException(status_code=400, detail="Unknown plan type.")
+
+    _normalize_plan_totals(chosen, env["max"])
 
     itin = _persist_version(db, trip, chosen["days"], chosen["total_cost"], chosen["cost_breakdown"])
     db.commit()

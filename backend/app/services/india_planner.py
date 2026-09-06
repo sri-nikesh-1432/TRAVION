@@ -25,8 +25,11 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.services.pricing_service import compute_fees, party_headcount
-from app.services.ai_orchestrator import _parse_days, _parse_budget, _party
+from app.services.budget_service import (
+    base_ceiling_for, compute_totals
+)
+from app.services.pricing_service import compute_guide_fee, party_headcount
+from app.services.ai_orchestrator import _parse_days, _parse_budget, _party, _budget_envelope
 
 # Real national emergency / helpline numbers (Government of India).
 NATIONAL_HELP = {
@@ -473,14 +476,18 @@ def build_estimate_plan(
             "stops": day_stops,
         })
 
-    fees = compute_fees(
-        mode=mode, days=days, budget=budget, destination=destination_name,
+    lo, hi = _budget_envelope(profile)
+    guide_fee = compute_guide_fee(
+        mode=mode, days=days, destination=destination_name,
         party_type=party, luxury_level=profile.get("stay_pref"),
     )
-    guide_fee = float(fees["guide_fee"])
-    platform_fee = float(fees["platform_fee"])
     travel_spend = round(transport_cost + stay_cost + food_total + activity_total, 0)
-    total = round(travel_spend + guide_fee + platform_fee, 0)
+    base_plan_cost = round(travel_spend + guide_fee, 0)
+    # Total incl. the 3% platform fee must NEVER exceed the user's maximum.
+    base_plan_cost = min(base_plan_cost, base_ceiling_for(hi))
+    totals = compute_totals(base_plan_cost)
+    platform_fee = totals["platform_fee"]
+    total = totals["final_total"]
 
     cost_breakdown = {
         "transport": round(transport_cost, 0),
@@ -490,9 +497,14 @@ def build_estimate_plan(
         "travel_spend": travel_spend,
         "guide_fee": guide_fee,
         "platform_fee": platform_fee,
-        "payable": round(fees["payable"], 0),
+        "payable": round(guide_fee + platform_fee, 0),
+        "base_plan_cost": base_plan_cost,
+        "final_total": total,
         "total": total,
         "budget": budget,
+        "budget_min": lo,
+        "budget_max": hi,
+        "within_budget": total <= hi,
         "party_type": party,
         "headcount": pax,
         "days": days,

@@ -18,9 +18,12 @@ import logging
 import math
 import re
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
-from app.services.pricing_service import compute_fees, party_headcount
+from app.services.budget_service import (
+    parse_budget, sanitize_envelope, base_ceiling_for, compute_totals
+)
+from app.services.pricing_service import compute_guide_fee, party_headcount
 from app.services.verified_data import (
     VERIFIED_LOCATIONS, VERIFIED_TRANSPORT, VERIFIED_STAYS,
     VERIFIED_FOOD, VERIFIED_ATTRACTIONS, VERIFIED_SAFETY_INFO
@@ -39,30 +42,17 @@ _MEAL_TIMES = ["12:30 PM", "07:30 PM"]
 _ATTRACTION_TIMES = ["09:30 AM", "02:30 PM"]
 
 
+def _budget_envelope(profile: Dict[str, Any]) -> Tuple[float, float]:
+    """Sanitized (min, max) from the traveller's budget — never a hardcoded
+    default and never a billion-rupee envelope from malformed parsing."""
+    lo, hi = parse_budget(profile.get("budget"))
+    return sanitize_envelope(lo, hi)
+
+
 def _parse_budget(profile: Dict[str, Any]) -> float:
-    raw = profile.get("budget")
-    if raw is None:
-        return 18000.0
-    # Budget envelopes {"min": x, "max": y} are stored by the 5-question
-    # interview; plan against the midpoint so no component overshoots the cap.
-    if isinstance(raw, dict):
-        try:
-            lo = float(raw.get("min") or 0)
-            hi = float(raw.get("max") or 0)
-        except (TypeError, ValueError):
-            return 18000.0
-        if hi <= 0:
-            return 18000.0
-        return (lo + hi) / 2.0 if lo > 0 else hi
-    if isinstance(raw, (int, float)):
-        return float(raw)
-    text = str(raw)
-    digits = [float(x) for x in re.findall(r"\d[\d,]*", text.replace(",", ""))]
-    if not digits:
-        return 18000.0
-    if len(digits) >= 2 and "-" in text:
-        return (digits[0] + digits[1]) / 2.0
-    return digits[0]
+    """Midpoint of the sanitized user budget envelope used to plan components."""
+    lo, hi = _budget_envelope(profile)
+    return (lo + hi) / 2.0
 
 
 def _parse_days(start_date: str, end_date: str) -> int:
@@ -584,19 +574,22 @@ class AIOrchestrator:
                 "stops": day_stops,
             })
 
-        fees = compute_fees(
+        lo, hi = _budget_envelope(profile)
+        guide_fee = compute_guide_fee(
             mode=mode,
             days=days,
-            budget=budget,
             destination=destination_name,
             party_type=party,
             luxury_level=profile.get("stay_pref"),
         )
-        guide_fee = float(fees["guide_fee"])
-        platform_fee = float(fees["platform_fee"])
 
         travel_spend = round(transport_cost + stay_cost + food_total + activity_total, 0)
-        total = round(travel_spend + guide_fee + platform_fee, 0)
+        base_plan_cost = round(travel_spend + guide_fee, 0)
+        # Total incl. the 3% platform fee must NEVER exceed the user's max.
+        base_plan_cost = min(base_plan_cost, base_ceiling_for(hi))
+        totals = compute_totals(base_plan_cost)
+        platform_fee = totals["platform_fee"]
+        total = totals["final_total"]
 
         cost_breakdown = {
             "transport": round(transport_cost, 0),
@@ -606,9 +599,14 @@ class AIOrchestrator:
             "travel_spend": travel_spend,
             "guide_fee": guide_fee,
             "platform_fee": platform_fee,
-            "payable": round(fees["payable"], 0),
+            "payable": round(guide_fee + platform_fee, 0),
+            "base_plan_cost": base_plan_cost,
+            "final_total": total,
             "total": total,
             "budget": budget,
+            "budget_min": lo,
+            "budget_max": hi,
+            "within_budget": total <= hi,
             "party_type": party,
             "headcount": pax,
             "days": days,
