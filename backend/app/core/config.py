@@ -20,6 +20,12 @@ class Settings(BaseModel):
     # Authorized Access Entry Codes
     MANAGER_ELEVATION_SECRET: str = os.getenv("MANAGER_ELEVATION_SECRET", "SIH-MANAGER")
     ADMIN_ELEVATION_SECRET: str = os.getenv("ADMIN_ELEVATION_SECRET", "SIH-ADMIN")
+
+    # CORS allow-list (comma-separated). Defaults to local dev origins.
+    CORS_ALLOW_ORIGINS: str = os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,https://travion18.netlify.app",
+    )
     
     # External APIs
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")

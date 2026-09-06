@@ -10,37 +10,51 @@ from app.services.verified_data import VERIFIED_LOCATIONS
 from app.models.entities import Location, Identity, Guide, Manager, Admin, TripProfile, Itinerary
 from app.core.security import get_password_hash
 from sqlalchemy import text
+from sqlalchemy import inspect
 
-# Create tables
+# Create tables (additive: never drops or alters existing production data)
 Base.metadata.create_all(bind=engine)
 
 
-def _ensure_sqlite_columns():
-    """Lightweight additive migrations for existing SQLite databases."""
-    if not settings.DATABASE_URL.startswith("sqlite"):
-        return
+# Production guardrail: warn loudly if critical secrets are still running on
+# their development fallbacks. Values are never printed — only the fact that
+# a default is in use.
+if not settings.DATABASE_URL.startswith("sqlite"):
+    if settings.SECRET_KEY == "travion-super-secret-production-jwt-key-2026":
+        print("[security] WARNING: JWT_SIGNING_SECRET is not set — using development fallback. Set it in the Render environment.")
+    if settings.RAZORPAY_KEY_SECRET == "travion_sec_verified_razorpay":
+        print("[security] WARNING: RAZORPAY_KEY_SECRET is not set — payments will run in simulated mode.")
+
+
+def _ensure_runtime_columns():
+    """Additive, dialect-agnostic schema migration for SQLite and PostgreSQL.
+
+    Column existence is checked via SQLAlchemy's inspector (works on both
+    dialects, unlike PRAGMA which is SQLite-only), then columns are added with
+    plain ALTER TABLE. Existing rows and data are never dropped or recreated —
+    safe to run on every deploy/startup.
+    """
+    _wanted = {
+        "itineraries": {"cost_breakdown": "JSON"},
+        "users": {"phone": "VARCHAR(50)"},
+        "locations": {"place_id": "VARCHAR(255)"},
+        "chat_messages": {"lat": "FLOAT", "lng": "FLOAT"},
+    }
     try:
-        with engine.connect() as conn:
-            cols = {row[1] for row in conn.execute(text("PRAGMA table_info(itineraries)")).fetchall()}
-            if "cost_breakdown" not in cols:
-                conn.execute(text("ALTER TABLE itineraries ADD COLUMN cost_breakdown JSON"))
-            ucols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
-            if "phone" not in ucols:
-                conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(50)"))
-            lcols = {row[1] for row in conn.execute(text("PRAGMA table_info(locations)")).fetchall()}
-            if "place_id" not in lcols:
-                conn.execute(text("ALTER TABLE locations ADD COLUMN place_id VARCHAR(255)"))
-            ccols = {row[1] for row in conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()}
-            if "lat" not in ccols:
-                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN lat FLOAT"))
-            if "lng" not in ccols:
-                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN lng FLOAT"))
-            conn.commit()
+        inspector = inspect(engine)
+        with engine.begin() as conn:
+            for table, columns in _wanted.items():
+                if not inspector.has_table(table):
+                    continue  # create_all creates it with the full schema
+                existing = {c["name"] for c in inspector.get_columns(table)}
+                for col, col_type in columns.items():
+                    if col not in existing:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
     except Exception as exc:  # pragma: no cover
         print(f"[migration] column ensure skipped: {exc}")
 
 
-_ensure_sqlite_columns()
+_ensure_runtime_columns()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -50,9 +64,23 @@ app = FastAPI(
 )
 
 # CORS configuration
+# Explicit allow-list, never a bare "*" with credentials (browsers reject that
+# combination and it defeats CSRF protection). Local dev ports plus any
+# configured deployed origins.
+_configured_origins = [
+    o.strip()
+    for o in settings.CORS_ALLOW_ORIGINS.split(",")
+    if o.strip()
+] if settings.CORS_ALLOW_ORIGINS else []
+_cors_origins = _configured_origins or [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "https://travion18.netlify.app",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,6 +152,28 @@ def startup_seeding():
             )
             db.add(guide)
             db.commit()
+
+        def _seed_staff(email: str, password: str, role: str, name: str):
+            existing = db.query(Identity).filter(Identity.email == email).first()
+            if existing:
+                return
+            ident = Identity(
+                email=email,
+                hashed_password=get_password_hash(password),
+                role=role
+            )
+            db.add(ident)
+            db.flush()
+            if role == "MANAGER":
+                db.add(Manager(identity_id=ident.id, name=name))
+            elif role == "ADMIN":
+                db.add(Admin(identity_id=ident.id, name=name))
+            db.commit()
+
+        # Seed documented Manager / Admin demo credentials so the login flow
+        # works exactly as documented in the README (elevation also works).
+        _seed_staff("manager@travion.in", "managerpassword", "MANAGER", "Operations Manager")
+        _seed_staff("admin@travion.in", "adminpassword", "ADMIN", "Platform Administrator")
 
         def _strip_stars(obj):
             if isinstance(obj, dict):
@@ -198,7 +248,9 @@ async def websocket_chat_endpoint(websocket: WebSocket, trip_id: str):
         ws_manager.disconnect(trip_id, websocket)
 
 @app.get("/")
+@app.get("/health")
 def health_check():
+    """Lightweight liveness probe — no DB, AI, or network calls."""
     return {
         "platform": settings.PROJECT_NAME,
         "status": "operational",

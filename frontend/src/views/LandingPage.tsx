@@ -9,7 +9,7 @@ import {
   Wallet, X
 } from 'lucide-react';
 import { LocationItem } from '../types';
-import { api, authStorage } from '../services/api';
+import { api, authStorage, resolveApiBaseUrl } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
 
 interface LandingPageProps {
@@ -165,7 +165,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       const body = isLoginMode
         ? { email, password }
         : { email, password, role: authRole, first_name: firstName, last_name: lastName };
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8002/api/v1'}${endpoint}`, {
+      const res = await fetch(`${resolveApiBaseUrl()}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -189,7 +189,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     setElevateError(null);
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8002/api/v1'}/auth/elevate`, {
+      const res = await fetch(`${resolveApiBaseUrl()}/auth/elevate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: elevateEmail, password: elevatePassword, access_code: accessCode })

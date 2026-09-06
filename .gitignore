@@ -15,3 +15,6 @@ __pycache__/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Netlify CLI local state
+.netlify/

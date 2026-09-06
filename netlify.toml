@@ -7,6 +7,27 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# ─── Production API connectivity (two supported paths) ───────────────────
+#
+# PREFERRED — direct to Render:
+#   In the Netlify UI (Site configuration → Environment variables) set:
+#     VITE_API_BASE_URL = https://<your-render-service>.onrender.com/api/v1
+#   The Vite build embeds it at build time, so trigger a redeploy after
+#   adding/changing it. The backend's CORS allow-list already includes
+#   https://travion18.netlify.app.
+#
+# FALLBACK — same-origin proxy (used when VITE_API_BASE_URL is not set):
+#   The production bundle then calls /api/v1/* relative to its own origin and
+#   Netlify proxies those requests server-side to Render below.
+#   NOTE: netlify.toml redirect targets cannot reference environment variables,
+#   so the Render URL must be written here literally. Update the service name
+#   if yours differs from "travion-api".
+[[redirects]]
+  from = "/api/v1/*"
+  to = "https://travion-api.onrender.com/:splat"
+  status = 200
+  force = true
+
 # Single-page app: every client route is served by index.html.
 [[redirects]]
   from = "/*"

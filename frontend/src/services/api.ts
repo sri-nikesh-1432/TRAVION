@@ -4,7 +4,11 @@ import {
   UserProfile, GuideProfile
 } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? 'http://localhost:8002/api/v1' : '/api/v1');
+
+export const resolveApiBaseUrl = () => API_BASE_URL;
 
 // ── Auth session persistence (Remember Me aware) ────────────────────────
 // "Remember me" checked  -> localStorage (survives browser restart)
@@ -58,6 +62,22 @@ export class ApiError extends Error {
   }
 }
 
+// Network-level failures (backend asleep on Render's free tier, DNS, CORS
+// blocks, offline device) never produce an HTTP response — fetch rejects with
+// a raw TypeError. Translate that into a calm, actionable user message.
+const NETWORK_ERROR_MESSAGE =
+  'Cannot reach the Travion service right now. If it has been idle, it may be waking up — please wait a few seconds and try again.';
+
+function toUserFriendlyError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err;
+  if (err instanceof TypeError) {
+    // fetch() network rejection: "Failed to fetch", "NetworkError when attempting to fetch resource", etc.
+    return new ApiError(NETWORK_ERROR_MESSAGE);
+  }
+  if (err instanceof Error && err.message) return new ApiError(err.message);
+  return new ApiError('Something went wrong. Please try again.');
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = authStorage.load().token;
   const headers: Record<string, string> = {
@@ -69,10 +89,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    throw toUserFriendlyError(err);
+  }
 
   if (!response.ok) {
     let errorData: any;
@@ -92,7 +117,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    throw new ApiError(NETWORK_ERROR_MESSAGE);
+  }
 }
 
 export const api = {
