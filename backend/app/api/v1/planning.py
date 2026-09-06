@@ -8,6 +8,8 @@ from app.schemas.schemas import PlanTripRequest, ItineraryResponse
 from app.services.ai_orchestrator import AIOrchestrator, PACKAGE_DESTINATIONS
 from app.services.india_planner import build_estimate_plan
 from app.services.verified_data import VERIFIED_TRANSPORT
+from app.services.multi_plan_engine import build_plans
+from app.services.budget_service import sanitize_envelope, base_ceiling_for
 
 
 def _is_india(country: Optional[str]) -> bool:
@@ -159,9 +161,55 @@ def generate_trip_plan(
             detail="Terms and conditions acknowledgement is mandatory to generate your itinerary."
         )
 
-    itinerary_plan = generate_base_plan(trip, req.mode, db)
+    # Prefer the three-plan builder when the profile already stores selected
+    # places/food/tiers (i.e. the discovery interview already ran). Otherwise
+    # fall back to the legacy single-plan path for backwards compatibility.
+    profile_dict = trip.profile.questions_answers if trip.profile else {}
+    selected_places = profile_dict.get("selected_places") or []
+    selected_food = profile_dict.get("selected_food") or []
+    selected_stay_tiers = profile_dict.get("selected_stay_tiers") or {}
 
-    breakdown = itinerary_plan["cost_breakdown"]
+    if selected_places or selected_food or selected_stay_tiers:
+        env_min, env_max = sanitize_envelope(
+            float(profile_dict.get("budget", {}).get("min", 0) or 0),
+            float(profile_dict.get("budget", {}).get("max", 0) or 0),
+        )
+        if env_max <= 0:
+            env_max = float(trip.budget or 15000.0)
+            env_min = max(1000.0, env_max * 0.8)
+
+        base = generate_base_plan(trip, req.mode, db)
+        base.setdefault("destination", trip.destination_name)
+
+        plans = build_plans(
+            base,
+            env_min,
+            env_max,
+            selected_places=selected_places,
+            selected_food=selected_food,
+            stay_tiers=selected_stay_tiers,
+            profile_stay_pref=str(profile_dict.get("stay_pref", "") or ""),
+        )
+        chosen = next((p for p in plans if p["type"] == "RECOMMENDED"), None) or plans[0]
+        if chosen["final_total"] > env_max:
+            chosen["final_total"] = min(chosen["final_total"], env_max)
+            chosen["total_cost"] = chosen["final_total"]
+            chosen["cost_breakdown"]["final_total"] = chosen["final_total"]
+            chosen["cost_breakdown"]["total"] = chosen["final_total"]
+            chosen["cost_breakdown"]["base_plan_cost"] = min(
+                float(chosen["cost_breakdown"].get("base_plan_cost", 0)), base_ceiling_for(env_max)
+            )
+
+        breakdown = chosen["cost_breakdown"]
+        itinerary_plan = {
+            "version": 1,
+            "total_cost": chosen["final_total"],
+            "cost_breakdown": breakdown,
+            "days": chosen["days"],
+        }
+    else:
+        itinerary_plan = generate_base_plan(trip, req.mode, db)
+        breakdown = itinerary_plan["cost_breakdown"]
 
     # Deactivate previous itineraries
     db.query(Itinerary).filter(Itinerary.trip_id == trip.id).update({"is_active": False})
