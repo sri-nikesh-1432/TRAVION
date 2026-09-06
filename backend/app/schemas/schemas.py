@@ -98,6 +98,40 @@ class BasicProfileUpdate(BaseModel):
     def phone_must_be_valid(cls, v: Optional[str]) -> Optional[str]:
         return validate_phone(v)
 
+class GuideRegistrationRequest(BaseModel):
+    """Full guide registration payload from the guide registration page."""
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    first_name: str
+    last_name: str
+    phone: str
+    city: str  # Primary operating location
+    languages: List[str]
+    destinations: List[str]
+    experience_years: int = Field(..., ge=0, le=60)
+    guide_type: str  # e.g., 'Trekking', 'Cultural', 'Culinary', 'Wildlife', 'General'
+    availability: str  # e.g., 'Weekdays', 'Weekends', 'Flexible', 'Seasonal'
+
+    @field_validator("phone")
+    @classmethod
+    def guide_phone_must_be_valid(cls, v: str) -> str:
+        digits = "".join(c for c in v if c.isdigit())
+        if len(digits) < 10:
+            raise ValueError("A valid 10-digit phone number is mandatory for guide registration.")
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        if len(digits) != 10 or not digits.startswith(("6", "7", "8", "9")):
+            raise ValueError("Enter a valid Indian mobile number (10 digits, starting 6-9).")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_must_be_strong(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+
 class GuideOnboardingUpdate(BaseModel):
     first_name: str
     last_name: str

@@ -2,8 +2,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
-from app.core.security import require_role
-from app.models.entities import Guide, GuideAssignment, Trip, Review
+from app.core.security import require_role, get_current_identity
+from app.models.entities import Guide, GuideAssignment, Trip, Review, Identity
 from app.schemas.schemas import (
     GuideOnboardingUpdate, GuideStatusUpdate, ReviewVisibilityUpdate, ReviewResponse
 )
@@ -142,3 +142,59 @@ def get_my_reviews(
     if not guide:
         return []
     return db.query(Review).filter(Review.guide_id == guide.id).order_by(Review.created_at.desc()).all()
+
+
+@router.get("/verification-status")
+def get_guide_verification_status(
+    current: dict = Depends(require_role("GUIDE")),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the guide's verification status.
+    Used by the frontend to show accurate verification state.
+    """
+    guide = db.query(Guide).filter(Guide.identity_id == current["identity_id"]).first()
+    if not guide:
+        raise HTTPException(status_code=404, detail="Guide account not found")
+
+    return {
+        "guide_id": guide.id,
+        "approval_status": guide.approval_status,  # PENDING, APPROVED, REJECTED
+        "status": guide.status,  # ACTIVE, BUSY, DUTY_OFF
+        "profile_completed": bool(guide.destination_knowledge and guide.safety_information),
+        "languages": guide.languages,
+        "destinations": guide.destinations,
+        "experience_years": guide.experience_years,
+        "specializations": guide.specializations,
+        "created_at": guide.created_at.isoformat() if guide.created_at else None
+    }
+
+
+@router.get("/profile")
+def get_guide_profile(
+    current: dict = Depends(require_role("GUIDE")),
+    db: Session = Depends(get_db)
+):
+    """Get full guide profile for the dashboard."""
+    guide = db.query(Guide).filter(Guide.identity_id == current["identity_id"]).first()
+    if not guide:
+        raise HTTPException(status_code=404, detail="Guide account not found")
+
+    return {
+        "id": guide.id,
+        "first_name": guide.first_name,
+        "last_name": guide.last_name,
+        "photo_url": guide.photo_url,
+        "phone": guide.phone,
+        "status": guide.status,
+        "approval_status": guide.approval_status,
+        "languages": guide.languages,
+        "destinations": guide.destinations,
+        "experience_years": guide.experience_years,
+        "specializations": guide.specializations,
+        "destination_knowledge": guide.destination_knowledge,
+        "safety_information": guide.safety_information,
+        "rating": guide.rating,
+        "review_count": guide.review_count,
+        "profile_completed": bool(guide.destination_knowledge and guide.safety_information)
+    }

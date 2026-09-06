@@ -227,6 +227,38 @@ export const api = {
   submitGuideOnboarding: (data: Partial<GuideProfile>) =>
     request<{ message: string; guide_id: string }>('/guides/onboarding', { method: 'POST', body: JSON.stringify(data) }),
 
+  getGuideVerificationStatus: () =>
+    request<{
+      guide_id: string;
+      approval_status: string;
+      status: string;
+      profile_completed: boolean;
+      languages: string[];
+      destinations: string[];
+      experience_years: number;
+      specializations: string[];
+      created_at: string | null;
+    }>('/guides/verification-status'),
+
+  getGuideProfile: () =>
+    request<{
+      id: string;
+      first_name: string;
+      last_name: string;
+      phone: string;
+      status: string;
+      approval_status: string;
+      languages: string[];
+      destinations: string[];
+      experience_years: number;
+      specializations: string[];
+      destination_knowledge: string;
+      safety_information: string;
+      rating: number;
+      review_count: number;
+      profile_completed: boolean;
+    }>('/guides/profile'),
+
   updateGuideStatus: (status: 'ACTIVE' | 'BUSY' | 'DUTY_OFF') =>
     request<{ message: string; status: string }>('/guides/status', { method: 'PATCH', body: JSON.stringify({ status }) }),
 

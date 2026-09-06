@@ -76,6 +76,69 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         is_profile_complete=False
     )
 
+
+@router.post("/guide/register", response_model=TokenResponse)
+def register_guide(req: GuideRegistrationRequest, db: Session = Depends(get_db)):
+    """
+    Dedicated guide registration endpoint.
+    Creates a GUIDE identity with PENDING verification status.
+    The guide must be approved by a Manager/Admin before they can operate.
+    """
+    # Enforce unique email
+    existing = db.query(Identity).filter(Identity.email == req.email.lower()).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This email is already registered as a {existing.role}."
+        )
+
+    # Create identity with GUIDE role
+    hashed_pwd = get_password_hash(req.password)
+    identity = Identity(
+        email=req.email.lower(),
+        hashed_password=hashed_pwd,
+        role="GUIDE"
+    )
+    db.add(identity)
+    db.flush()
+
+    # Create guide profile with verification pending
+    guide = Guide(
+        identity_id=identity.id,
+        first_name=req.first_name,
+        last_name=req.last_name,
+        phone=req.phone,
+        approval_status="PENDING",
+        status="DUTY_OFF",
+        languages=req.languages,
+        destinations=req.destinations,
+        experience_years=req.experience_years,
+        specializations=[req.guide_type],
+        # Profile is incomplete until onboarding details submitted
+        destination_knowledge=None,
+        safety_information=None
+    )
+    db.add(guide)
+    db.flush()
+    guide_id = guide.id
+
+    db.commit()
+
+    token = create_access_token({
+        "sub": identity.email,
+        "role": "GUIDE",
+        "identity_id": identity.id
+    })
+
+    return TokenResponse(
+        access_token=token,
+        role="GUIDE",
+        email=identity.email,
+        identity_id=identity.id,
+        guide_id=guide_id,
+        is_profile_complete=False
+    )
+
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     identity = db.query(Identity).filter(Identity.email == req.email.lower()).first()

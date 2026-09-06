@@ -4,12 +4,18 @@ import { authStorage } from './services/api';
 import { LandingPage } from './views/LandingPage';
 import { UserDomain } from './views/UserDomain';
 import { GuideDomain } from './views/GuideDomain';
+import { GuideVerification } from './views/GuideVerification';
+import { GuideRegistration } from './views/GuideRegistration';
+import { GuideSignIn } from './views/GuideSignIn';
 import { ManagerDomain } from './views/ManagerDomain';
 import { AdminDomain } from './views/AdminDomain';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isSandboxDemo, setIsSandboxDemo] = useState(false);
+  const [guideView, setGuideView] = useState<'verification' | 'dashboard' | 'register' | 'signin' | 'update_profile' | null>(null);
+  const [showGuideRegister, setShowGuideRegister] = useState(false);
+  const [showGuideSignIn, setShowGuideSignIn] = useState(false);
 
   useEffect(() => {
     const stored = authStorage.load();
@@ -27,6 +33,10 @@ export const App: React.FC = () => {
         identity_id: identityId,
         is_profile_complete: true
       });
+      // If it's a guide, check verification status
+      if (role === 'GUIDE') {
+        // Will be handled in render - show verification first
+      }
     }
   }, []);
 
@@ -35,12 +45,39 @@ export const App: React.FC = () => {
   const handleLoginSuccess = (newSession: AuthSession) => {
     setSession(newSession);
     setIsSandboxDemo(false);
+    // If it's a guide, show verification page
+    if (newSession.role === 'GUIDE') {
+      setGuideView('verification');
+    }
   };
 
   const handleLogout = () => {
     authStorage.clear();
     setSession(null);
     setIsSandboxDemo(false);
+    setGuideView(null);
+  };
+
+  const handleGuideRegistrationComplete = (newSession: AuthSession) => {
+    setSession(newSession);
+    setIsSandboxDemo(false);
+    setGuideView('verification');
+    setShowGuideRegister(false);
+  };
+
+  const handleGuideSignInComplete = (newSession: AuthSession) => {
+    setSession(newSession);
+    setIsSandboxDemo(false);
+    setGuideView('verification');
+    setShowGuideSignIn(false);
+  };
+
+  const handleGuideVerificationApproved = () => {
+    setGuideView('dashboard');
+  };
+
+  const handleGuideVerificationRejected = () => {
+    setGuideView('update_profile');
   };
 
   const handleLaunchSandboxDemo = () => {
@@ -61,11 +98,51 @@ export const App: React.FC = () => {
       <LandingPage
         onLoginSuccess={handleLoginSuccess}
         onExploreDemo={handleLaunchSandboxDemo}
+        onOpenGuideRegistration={() => setShowGuideRegister(true)}
+        onOpenGuideSignIn={() => setShowGuideSignIn(true)}
       />
     );
   }
 
-  // 2. Role-Based Navigation Routing
+  // 2. Guide-specific standalone views (register/signin without session)
+  if (showGuideRegister || showGuideSignIn) {
+    return (
+      <div className="min-h-screen bg-white">
+        {showGuideRegister ? (
+          <GuideRegistration
+            onRegisterSuccess={handleGuideRegistrationComplete}
+            onSwitchToSignIn={() => { setShowGuideRegister(false); setShowGuideSignIn(true); }}
+          />
+        ) : (
+          <GuideSignIn
+            onSignInSuccess={handleGuideSignInComplete}
+            onSwitchToRegistration={() => { setShowGuideSignIn(false); setShowGuideRegister(true); }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // 3. If guide is logged in, check verification status
+  if (session.role === 'GUIDE') {
+    if (guideView === 'verification' || guideView === 'update_profile') {
+      return (
+        <GuideVerification
+          onDashboardAccess={() => setGuideView('dashboard')}
+          onResubmitProfile={() => setGuideView('update_profile')}
+        />
+      );
+    }
+    // After verification approved, show guide dashboard
+    return (
+      <GuideDomain
+        session={session}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 4. Role-Based Navigation Routing for other roles
   switch (session.role) {
     case 'USER':
       return (
@@ -73,14 +150,6 @@ export const App: React.FC = () => {
           session={session}
           onLogout={handleLogout}
           isSandboxDemo={isSandboxDemo}
-        />
-      );
-
-    case 'GUIDE':
-      return (
-        <GuideDomain
-          session={session}
-          onLogout={handleLogout}
         />
       );
 
@@ -105,6 +174,8 @@ export const App: React.FC = () => {
         <LandingPage
           onLoginSuccess={handleLoginSuccess}
           onExploreDemo={handleLaunchSandboxDemo}
+          onOpenGuideRegistration={() => setShowGuideRegister(true)}
+          onOpenGuideSignIn={() => setShowGuideSignIn(true)}
         />
       );
   }

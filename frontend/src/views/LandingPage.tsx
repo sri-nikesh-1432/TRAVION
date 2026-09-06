@@ -15,6 +15,8 @@ import { TripSearchBar } from '../components/search-bar/TripSearchBar';
 interface LandingPageProps {
   onLoginSuccess: (session: any) => void;
   onExploreDemo: () => void;
+  onOpenGuideRegistration: () => void;
+  onOpenGuideSignIn: () => void;
 }
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -57,7 +59,7 @@ const HERO_IMAGE =
    Landing page
 ───────────────────────────────────────────────────────────── */
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExploreDemo }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExploreDemo, onOpenGuideRegistration, onOpenGuideSignIn }) => {
   const reduceMotion = useReducedMotion();
 
   /* Auth modal state */
@@ -81,6 +83,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     setAuthRole(role);
     setAuthError(null);
     setShowAuthModal(true);
+  };
+
+  const openGuideRegistration = () => {
+    setShowAuthModal(false);
+    // Navigate to guide registration via parent component
+    // This will be handled by modifying the parent App component
   };
 
   /* Strong-password helpers */
@@ -332,6 +340,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 Sign In
               </button>
               <button
+                onClick={() => onOpenGuideRegistration()}
+                className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
+                  scrolled ? 'text-slate-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
+                }`}
+              >
+                Guide Registration
+              </button>
+              <button
                 onClick={() => openAuth(false)}
                 className="hidden sm:inline-flex items-center gap-1.5 px-4.5 h-10 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[13px] font-bold shadow-soft transition-all hover:-translate-y-px"
               >
@@ -382,8 +398,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                     Sign In
                   </button>
                   <button
+                    onClick={() => { setMobileOpen(false); onOpenGuideRegistration(); }}
+                    className="h-11 rounded-xl border border-travion-300 text-travion-700 font-bold text-sm hover:bg-travion-50"
+                  >
+                    Guide Registration
+                  </button>
+                  <button
                     onClick={() => { setMobileOpen(false); openAuth(false); }}
-                    className="h-11 rounded-xl bg-travion-600 text-white font-bold text-sm"
+                    className="h-11 rounded-xl bg-travion-600 text-white font-bold text-sm col-span-2"
                   >
                     Plan My Trip
                   </button>
@@ -909,6 +931,52 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               </div>
             </div>
           </Reveal>
+        </div>
+      </section>
+
+      {/* ══════════════════ GUIDE CTA ══════════════════ */}
+      <section id="guides" className="py-24 md:py-32 bg-slate-950 text-white">
+        <div className="max-w-4xl mx-auto px-5 md:px-8 text-center">
+          <Reveal>
+            <Eyebrow light>For Local Guides</Eyebrow>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              Know Your Destination Better?
+            </h2>
+            <p className="mt-4 text-xl text-white/80 font-medium max-w-2xl mx-auto">
+              Become a TRAVION Guide and help travellers discover the places, food, culture and
+experiences you know best.
+            </p>
+          </Reveal>
+
+          <Reveal delay={0.2} className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={() => onOpenGuideRegistration()}
+              className="group inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
+            >
+              Become a Guide
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+            <button
+              onClick={() => onOpenGuideSignIn()}
+              className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl border border-white/20 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
+            >
+              Guide Sign In
+            </button>
+          </Reveal>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1, delay: 0.5 }}
+            className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[12px] font-semibold text-white/50"
+          >
+            {['Verified local guides', 'Fair trip assignments', 'Secure payments', 'Professional support'].map((t) => (
+              <span key={t} className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-travion-400" />
+                {t}
+              </span>
+            ))}
+          </motion.div>
         </div>
       </section>
 
