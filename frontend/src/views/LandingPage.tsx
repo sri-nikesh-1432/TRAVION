@@ -21,6 +21,16 @@ interface LandingPageProps {
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+/* ─── Destinations for discovery section ─── */
+const FEATURED_DESTINATIONS = [
+  { name: 'Munnar', state: 'Kerala', description: 'Lush tea plantations, cool mountain air, and winding roads through the Western Ghats.', hero_image: 'https://images.unsplash.com/photo-1592322585812-2afed89e2a59?auto=format&fit=crop&w=800&q=80' },
+  { name: 'Goa', state: 'Goa', description: 'Golden beaches, Portuguese heritage, vibrant food scene, and unforgettable sunsets.', hero_image: 'https://images.unsplash.com/photo-1583422409516-2895a77efded?auto=format&fit=crop&w=800&q=80' },
+  { name: 'Rajasthan', state: 'Rajasthan', description: 'Royal palaces, desert adventures, vibrant markets, and centuries of living history.', hero_image: 'https://images.unsplash.com/photo-1470601500940-4a638a1cfea3?auto=format&fit=crop&w=800&q=80' },
+  { name: 'Varanasi', state: 'Uttar Pradesh', description: 'Ancient ghats, spiritual energy, morning boat rides on the Ganges, and timeless rituals.', hero_image: 'https://images.unsplash.com/photo-1622474752919-7ebe9227b78c?auto=format&fit=crop&w=800&q=80' },
+  { name: 'Andaman Islands', state: 'Andaman & Nicobar', description: 'Crystal-clear waters, pristine beaches, coral reefs, and unforgettable underwater experiences.', hero_image: 'https://images.unsplash.com/photo-1573843981267-be1999ff37cd?auto=format&fit=crop&w=800&q=80' },
+  { name: 'Hampi', state: 'Karnataka', description: 'Stunning boulder landscapes, ancient Vijayanagara ruins, and a surreal otherworldly terrain.', hero_image: 'https://images.unsplash.com/photo-1473494808687-61e41250e296?auto=format&fit=crop&w=800&q=80' }
+];
+
 /* ─────────────────────────────────────────────────────────────
    Shared primitives
 ───────────────────────────────────────────────────────────── */
@@ -342,12 +352,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 Sign In
               </button>
               <button
-                onClick={() => onOpenGuideRegistration()}
+                onClick={() => openGuideRegistration()}
                 className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
                   scrolled ? 'text-slate-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
                 }`}
               >
-                Guide Registration
+                Become a Guide
               </button>
               <button
                 onClick={() => openAuth(false)}
@@ -400,10 +410,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                     Sign In
                   </button>
                   <button
-                    onClick={() => { setMobileOpen(false); onOpenGuideRegistration(); }}
+                    onClick={() => { setMobileOpen(false); openGuideRegistration(); }}
                     className="h-11 rounded-xl border border-travion-300 text-travion-700 font-bold text-sm hover:bg-travion-50"
                   >
-                    Guide Registration
+                    Become a Guide
                   </button>
                   <button
                     onClick={() => { setMobileOpen(false); openAuth(false); }}
@@ -446,9 +456,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               transition={{ duration: 1, delay: 0.4, ease: EASE }}
               className="mt-5 text-white text-[clamp(2.6rem,6.2vw,4.9rem)] font-extrabold leading-[1.02] tracking-[-0.03em]"
             >
-              Make unfamiliar India
+              Plan your trip.
               <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white">feel familiar.</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white">Your way.</span>
             </motion.h1>
 
             <motion.p
@@ -457,8 +467,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               transition={{ duration: 0.9, delay: 0.6, ease: EASE }}
               className="mt-6 max-w-xl text-white/75 text-base md:text-lg leading-relaxed font-medium"
             >
-              From planning your journey to finding your way, understanding local transport,
-              discovering hidden places and adapting when plans change — Travion stays with you.
+              Tell Travion where you want to go and how you like to travel. We'll build a
+              personalized itinerary around your choices — restaurants, stays, places to explore,
+              and a verified guide if you want one.
             </motion.p>
 
             <motion.div
@@ -744,6 +755,42 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 </div>
               </div>
             </Reveal>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ WHAT TRAVION CAN DO ══════════════════ */}
+      <section id="features" className="py-24 md:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <div className="flex justify-center"><Eyebrow>What Travion can do</Eyebrow></div>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              More than an itinerary generator.
+            </h2>
+            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
+              From AI-powered planning to verified human guides — Travion orchestrates your entire journey.
+            </p>
+          </Reveal>
+
+          <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              { icon: <BrainCircuit className="w-6 h-6" />, title: 'AI Trip Planning', text: 'Travion understands your preferences and builds a personalized journey — not a generic template. Every answer you give becomes a real constraint.' },
+              { icon: <Utensils className="w-6 h-6" />, title: 'Smart Food Discovery', text: 'Choose restaurants that fit your preferences, budget, and cuisine interests. Your selections are distributed across your trip days intelligently.' },
+              { icon: <BedDouble className="w-6 h-6" />, title: 'Stay Selection', text: 'Choose accommodation that matches your budget. Your selected stay remains constant throughout the trip — no random rotating.' },
+              { icon: <Landmark className="w-6 h-6" />, title: 'Real Attractions', text: 'Discover verified tourist places and attractions near your destination. Select the ones you want, and Travion optimizes the route around them.' },
+              { icon: <Route className="w-6 h-6" />, title: 'Smart Itineraries', text: 'Travion organizes your selected places, food, and activities day by day — grouping nearby locations and respecting opening hours.' },
+              { icon: <Users className="w-6 h-6" />, title: 'Verified Guide Connection', text: 'Get connected with a verified local guide when you want human support. Guides are onboarded, assessed, and manager-approved before they operate.' }
+            ].map((item, i) => (
+              <Reveal key={item.title} delay={Math.min(i * 0.06, 0.3)}>
+                <div className="group h-full rounded-2xl border border-slate-200 bg-slate-50/50 p-6 hover:bg-white hover:border-travion-200 hover:shadow-soft transition-all duration-300">
+                  <span className="w-12 h-12 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft group-hover:bg-travion-700 transition-colors duration-300">
+                    {item.icon}
+                  </span>
+                  <h3 className="mt-4 text-[15px] font-extrabold text-slate-900">{item.title}</h3>
+                  <p className="mt-1.5 text-[12.5px] font-medium text-slate-500 leading-relaxed">{item.text}</p>
+                </div>
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
@@ -1344,6 +1391,74 @@ experiences you know best.
               </div>
             </Reveal>
           </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ PREFERENCE-FIRST PLANNING ══════════════════ */}
+      <section id="preferences" className="py-24 md:py-32 bg-slate-50/90">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <div className="flex justify-center"><Eyebrow>Preference-first planning</Eyebrow></div>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              You choose what matters.
+            </h2>
+            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
+              Travion plans around your actual choices — not a generic template.
+            </p>
+          </Reveal>
+
+          <div className="mt-14 relative">
+            <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gradient-to-b from-travion-200 via-slate-200 to-slate-100" />
+            {[
+              { t: 'Your destination', d: 'Where you want to go — real hubs with verified routes and stays.' },
+              { t: 'Your preferences', d: 'Budget, pace, stay style, food rules, transport and adventure level.' },
+              { t: 'Real places', d: 'Verified restaurants, hotels and attractions near your destination.' },
+              { t: 'Your selections', d: 'Choose the restaurants, stay and places you actually want to experience.' },
+              { t: 'AI optimization', d: 'Travion builds a day-wise journey around your picks — grouped by location, open hours, budget, and trip flow.' },
+              { t: 'Your trip', d: 'A plan that feels like yours — because you picked the pieces.' }
+            ].map((step, i) => (
+              <Reveal key={i} delay={i * 0.04}>
+                <div className="relative flex gap-6 pb-10 last:pb-0">
+                  <div className="relative z-10 w-14 h-14 shrink-0 rounded-2xl bg-white border border-slate-200 shadow-soft flex items-center justify-center">
+                    <span className="text-[11px] font-black text-travion-600 tracking-wide">{String(i + 1).padStart(2, '0')}</span>
+                  </div>
+                  <div className="pt-1.5">
+                    <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">{step.t}</h3>
+                    <p className="mt-1.5 text-[13.5px] font-medium text-slate-500 leading-relaxed max-w-md">{step.d}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          {/* Visual flow example */}
+          <Reveal delay={0.15}>
+            <div className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-soft">
+              <h3 className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400 mb-6">Example: a 3-day trip where you chose the pieces</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                {[
+                  { day: 'Day 1', items: ['📍 Explore: Place A', '🍽 Lunch: Restaurant A', '🌆 Evening: Nearby activity', '🏨 Stay: Hotel A'] },
+                  { day: 'Day 2', items: ['📍 Explore: Place C', '📍 Morning: Nearby attraction', '🍽 Lunch: Restaurant B', '🌆 Evening: Experience'] },
+                  { day: 'Day 3', items: ['📍 Explore: Place D', '🍽 Lunch: Restaurant C', '🌆 Evening: Free exploration', '🏨 Stay: Hotel A'] }
+                ].map((day) => (
+                  <div key={day.day} className="rounded-xl border border-slate-100 bg-slate-50 p-5">
+                    <p className="text-sm font-extrabold text-slate-900 mb-3">{day.day}</p>
+                    <ul className="space-y-2">
+                      {day.items.map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[13px] font-medium text-slate-700">
+                          <span className="text-travion-500">{item.split(':')[0]}</span>
+                          <span className="text-slate-500">: {item.split(':').slice(1).join(':')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-center text-xs font-medium text-slate-400">
+                Hotel A stays constant. Restaurants A, B, C are distributed across days. Places are grouped geographically. This is the experience Travion builds around your selections.
+              </p>
+            </div>
+          </Reveal>
         </div>
       </section>
 

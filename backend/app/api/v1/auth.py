@@ -7,7 +7,7 @@ from app.core.security import (
 )
 from app.core.config import settings
 from app.models.entities import Identity, User, Guide, Manager, Admin, AuditLog
-from app.schemas.schemas import SignupRequest, LoginRequest, TokenResponse, ElevateRequest
+from app.schemas.schemas import SignupRequest, LoginRequest, TokenResponse, ElevateRequest, GuideRegistrationRequest
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
