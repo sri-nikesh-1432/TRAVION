@@ -25,7 +25,8 @@ def test_signup_and_email_uniqueness():
         "password": "Password123!",
         "role": "USER",
         "first_name": "Kavya",
-        "last_name": "Rao"
+        "last_name": "Rao",
+        "phone": "+919876543210"
     })
     assert res.status_code == 200
     data = res.json()
@@ -38,7 +39,8 @@ def test_signup_and_email_uniqueness():
         "password": "Password123!",
         "role": "GUIDE",
         "first_name": "Kavya",
-        "last_name": "Rao"
+        "last_name": "Rao",
+        "phone": "+919876543210"
     })
     assert res_dup.status_code == 400
     assert "already registered" in res_dup.json()["detail"].lower()
@@ -63,14 +65,15 @@ def test_manager_elevation_flow():
     assert res_success.json()["role"] == "MANAGER"
 
 def test_trip_search_validation_rules():
-    # Login as user
+    # Login as user (account creation requires a valid Indian phone)
     email = f"val_user_{datetime.now().timestamp()}@test.com"
     client.post("/api/v1/auth/signup", json={
         "email": email,
         "password": "Password123!",
         "role": "USER",
         "first_name": "Rohan",
-        "last_name": "Verma"
+        "last_name": "Verma",
+        "phone": "+919876543210"
     })
     login_res = client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
     token = login_res.json()["access_token"]
@@ -126,14 +129,15 @@ def test_trip_search_validation_rules():
     assert trip_data["destination_name"] == "Ooty"
 
 def test_full_user_trip_flow():
-    # User signup
+    # User signup (phone is mandatory, validated server-side)
     user_email = f"flow_user_{datetime.now().timestamp()}@test.com"
     signup_res = client.post("/api/v1/auth/signup", json={
         "email": user_email,
         "password": "Password123!",
         "role": "USER",
         "first_name": "Ananya",
-        "last_name": "Sharma"
+        "last_name": "Sharma",
+        "phone": "+919876543210"
     })
     token = signup_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -246,7 +250,8 @@ def test_full_user_trip_flow():
     assert "Offline mode verified" in pkg["offline_notice"]
 
 def test_planned_trip_first_step_is_departure_from_source():
-    """The first step of any planned trip must be the departure from the source.
+    """
+    The first step of any planned trip must be the departure from the source.
 
     Regression: day stops were sorted lexicographically on the 12-hour label
     ("02:00 PM" < "08:00 AM", "06:00 PM" < "06:30 AM"), which scrambled the
@@ -279,7 +284,6 @@ def test_planned_trip_first_step_is_departure_from_source():
     assert first["category"] == "transport"
     assert "departure from hyderabad" in first["title"].lower()
 
-
 def test_admin_dual_revenue():
     # Elevate to Admin
     adm_email = f"admin_{datetime.now().timestamp()}@travion.in"
@@ -290,6 +294,48 @@ def test_admin_dual_revenue():
     })
     token = res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
+
+    # Seed a paid trip + payment + split so the admin revenue numbers diverge.
+    user_email = f"revseed_{datetime.now().timestamp()}@test.com"
+    s = client.post("/api/v1/auth/signup", json={
+        "email": user_email,
+        "password": "Password123!",
+        "role": "USER",
+        "first_name": "Rev",
+        "last_name": "Seed",
+        "phone": "+919876543210"
+    })
+    user_tok = s.json()["access_token"]
+    uheaders = {"Authorization": f"Bearer {user_tok}"}
+
+    locs = client.get("/api/v1/locations/all", headers=uheaders).json()
+    src = next(l for l in locs if l["name"] == "Bangalore")
+    dst = next(l for l in locs if l["name"] == "Ooty")
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=uheaders, json={
+        "source_location_id": src["id"],
+        "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=10)).isoformat(),
+        "end_datetime": (now + timedelta(days=13)).isoformat(),
+    }).json()
+    client.post(f"/api/v1/trips/{trip['id']}/discovery/next", headers=uheaders, json={
+        "answers_so_far": {
+            "budget": "₹15,000 - ₹25,000",
+            "party": "Solo",
+            "experience": ["Nature"],
+            "restrictions": ["Vegetarian"],
+        }
+    })
+    plan = client.post(f"/api/v1/trips/{trip['id']}/plan", headers=uheaders, json={
+        "mode": "ADVENTUROUS_MODE",
+        "consent_acknowledged": True,
+    }).json()
+    checkout = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=uheaders, json={}).json()
+    client.post("/api/v1/payments/webhook", json={
+        "razorpay_order_id": checkout["order_id"],
+        "razorpay_payment_id": "pay_revseed",
+        "razorpay_signature": "sim_sig_verified_123",
+    })
 
     rev_res = client.get("/api/v1/admin/revenue", headers=headers)
     assert rev_res.status_code == 200
