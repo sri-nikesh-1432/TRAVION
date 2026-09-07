@@ -57,6 +57,63 @@ def _ensure_runtime_columns():
 
 _ensure_runtime_columns()
 
+
+def _collapse_identity_email_duplicates():
+    """One account per email REQUIREMENT: whenever the app layer was not
+    normalizing emails, the same address could exist twice differing only in
+    case. Collapse those duplicates (keep the earliest identity) so the unique
+    index below can be enforced for real. Idempotent + conservative: wrapped
+    so a legacy oddity never blocks startup."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        from app.models.entities import User, Guide
+        rows = db.query(
+            Identity.email, func.count(Identity.id)
+        ).group_by(Identity.email).having(func.count(Identity.id) > 1).all()
+        for dup_email, _cnt in rows:
+            identities = (
+                db.query(Identity)
+                .filter(Identity.email == dup_email)
+                .order_by(Identity.id)
+                .all()
+            )
+            keeper, dupes = identities[0], identities[1:]
+            for d in dupes:
+                for model in (User, Guide, Manager, Admin):
+                    db.query(model).filter(model.identity_id == d.id).delete()
+                db.delete(d)
+            db.commit()
+    except Exception as exc:  # pragma: no cover
+        db.rollback()
+        print(f"[migration] identity de-dupe skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _ensure_identity_email_unique():
+    """Enforce uniqueness of email at the DATABASE level, case-insensitively.
+
+    SQLite lacks partial/case-insensitive column constraints, so a functional
+    unique index on lower(email) is the SQL-standard way — works on SQLite and
+    PostgreSQL alike. Additive and idempotent (IF NOT EXISTS); runs on every
+    deploy without touching existing data.
+    """
+    _collapse_identity_email_duplicates()
+    try:
+        dialect = engine.dialect.name
+        if dialect == "postgresql":
+            ddl = "CREATE UNIQUE INDEX IF NOT EXISTS ix_identities_email_norm ON identities (LOWER(email))"
+        else:
+            ddl = "CREATE UNIQUE INDEX IF NOT EXISTS ix_identities_email_norm ON identities (lower(email))"
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+    except Exception as exc:  # pragma: no cover
+        print(f"[migration] identity unique index skipped: {exc}")
+
+
+_ensure_identity_email_unique()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",

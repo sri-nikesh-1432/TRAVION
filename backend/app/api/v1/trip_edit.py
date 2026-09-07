@@ -380,7 +380,7 @@ def destination_catalog(
     if not discovery.get("total_places"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="We're unable to verify enough places for this destination right now. Please try another destination.",
+            detail="We couldn't verify any real places for this destination right now. Please try another destination.",
         )
 
     env = _budget_envelope(profile, trip.budget)
@@ -407,6 +407,9 @@ def destination_catalog(
     activities = discovery.get("activities") or []
 
     def _attr(a: Dict[str, Any]) -> Dict[str, Any]:
+        _inside = a.get("inside_destination")
+        if _inside is None:
+            _inside = bool(a.get("placement") == "inside") if a.get("placement") else not a.get("distance_km")
         return {
             "id": a.get("id") or a.get("place_id"),
             "name": a.get("name", ""),
@@ -417,7 +420,7 @@ def destination_catalog(
             "latitude": a.get("latitude"),
             "longitude": a.get("longitude"),
             "placement": a.get("placement") or ("inside" if not a.get("distance_km") else "nearby"),
-            "inside_destination": bool(a.get("placement") == "inside") if a.get("placement") else not a.get("distance_km"),
+            "inside_destination": bool(_inside),
             "rating": a.get("rating"),
             "review_count": a.get("review_count"),
             "opening_hours": a.get("opening_hours"),
@@ -430,6 +433,9 @@ def destination_catalog(
         }
 
     def _stay(s: Dict[str, Any]) -> Dict[str, Any]:
+        _inside = s.get("inside_destination")
+        if _inside is None:
+            _inside = bool(s.get("placement") == "inside") if s.get("placement") else not s.get("distance_km")
         return {
             "id": s.get("id") or s.get("place_id"),
             "name": s.get("name", ""),
@@ -442,7 +448,7 @@ def destination_catalog(
             "longitude": s.get("longitude"),
             "distance_km": s.get("distance_km"),
             "placement": s.get("placement") or ("inside" if not s.get("distance_km") else "nearby"),
-            "inside_destination": bool(s.get("placement") == "inside") if s.get("placement") else not s.get("distance_km"),
+            "inside_destination": bool(_inside),
             "budget_category": _budget_category(s.get("price_per_night"), profile),
             "source": s.get("source", "verified_api"),
             "verified": s.get("verified", True),
@@ -450,6 +456,9 @@ def destination_catalog(
         }
 
     def _food(f: Dict[str, Any]) -> Dict[str, Any]:
+        _inside = f.get("inside_destination")
+        if _inside is None:
+            _inside = bool(f.get("placement") == "inside") if f.get("placement") else not f.get("distance_km")
         return {
             "id": f.get("id") or f.get("place_id"),
             "name": f.get("name", ""),
@@ -462,7 +471,7 @@ def destination_catalog(
             "longitude": f.get("longitude"),
             "distance_km": f.get("distance_km"),
             "placement": f.get("placement") or ("inside" if not f.get("distance_km") else "nearby"),
-            "inside_destination": bool(f.get("placement") == "inside") if f.get("placement") else not f.get("distance_km"),
+            "inside_destination": bool(_inside),
             "price_level": _food_price_level(f.get("avg_cost_for_two")),
             "budget_class": _food_budget_class(f.get("avg_cost_for_two"), env["max"]),
             "source": f.get("source", "verified_api"),
@@ -497,6 +506,7 @@ def destination_catalog(
             "message": constraints["tier_summary"],
         },
         "core_radius_km": discovery.get("core_radius_km"),
+        "destination_radius_km": discovery.get("destination_radius_km"),
         "counts": {"attractions": len(attractions), "stays": len(stays_serialized), "food": len(foods_serialized), "activities": len(activities)},
         "must_visit": [_attr(a) for a in attractions],
         "stays": stays_serialized,

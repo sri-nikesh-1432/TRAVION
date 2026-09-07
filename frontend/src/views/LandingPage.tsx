@@ -186,9 +186,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     setIsSubmitting(true);
     try {
       const endpoint = isLoginMode ? '/auth/login' : '/auth/signup';
+      const normalizedEmail = email.trim().toLowerCase();
       const body = isLoginMode
-        ? { email, password }
-        : { email, password, role: authRole, first_name: firstName, last_name: lastName, phone: phoneDigits };
+        ? { email: normalizedEmail, password }
+        : { email: normalizedEmail, password, role: authRole, first_name: firstName, last_name: lastName, phone: phoneDigits };
       const res = await fetch(`${resolveApiBaseUrl()}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

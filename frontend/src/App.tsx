@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession } from './types';
-import { authStorage } from './services/api';
+import { api, authStorage } from './services/api';
 import { LandingPage } from './views/LandingPage';
 import { UserDomain } from './views/UserDomain';
 import { GuideDomain } from './views/GuideDomain';
@@ -25,6 +25,10 @@ export const App: React.FC = () => {
     const identityId = stored.identityId || 'id-default';
 
     if (token && role) {
+      // Session persistence across refresh: restore optimistically, then
+      // VALIDATE the token against the backend (/auth/me). An expired or
+      // forged token must never grant access — the identity + role always
+      // come back from the server, not from localStorage.
       setSession({
         access_token: token,
         token_type: 'bearer',
@@ -33,10 +37,25 @@ export const App: React.FC = () => {
         identity_id: identityId,
         is_profile_complete: true
       });
-      // If it's a guide, check verification status
-      if (role === 'GUIDE') {
-        // Will be handled in render - show verification first
-      }
+      api.getMe()
+        .then((me) => {
+          setSession((prev) =>
+            prev && prev.access_token === token && prev.access_token !== 'sandbox-preview-token'
+              ? {
+                  ...prev,
+                  role: (me.role as AuthSession['role']) || prev.role,
+                  email: me.email || prev.email,
+                  identity_id: me.identity_id || prev.identity_id
+                }
+              : prev
+          );
+        })
+        .catch(() => {
+          // Invalid / expired token (or the account no longer exists): drop it.
+          authStorage.clear();
+          setSession(null);
+          setGuideView(null);
+        });
     }
   }, []);
 

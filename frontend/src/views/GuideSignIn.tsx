@@ -41,7 +41,7 @@ export const GuideSignIn: React.FC<GuideSignInProps> = ({ onSignInSuccess, onSwi
       const res = await fetch(`${resolveApiBaseUrl()}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase(), password })
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password })
       });
 
       if (!res.ok) {

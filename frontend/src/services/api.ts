@@ -138,7 +138,7 @@ export const api = {
     request<AuthSession>('/auth/elevate', { method: 'POST', body: JSON.stringify(data) }),
 
   getMe: () =>
-    request<{ email: string; role: string; user?: UserProfile; guide?: GuideProfile }>('/auth/me'),
+    request<{ email: string; role: string; identity_id?: string | null; user?: UserProfile; guide?: GuideProfile }>('/auth/me'),
 
   // Locations
   getLocations: () =>

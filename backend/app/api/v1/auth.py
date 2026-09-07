@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import (
     verify_password, get_password_hash, create_access_token,
-    get_current_identity
+    get_current_identity, normalize_email
 )
 from app.core.config import settings
 from app.models.entities import Identity, User, Guide, Manager, Admin, AuditLog
@@ -13,8 +13,9 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/signup", response_model=TokenResponse)
 def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    email = normalize_email(req.email)
     # Enforce unique email across all roles at database & API layer
-    existing = db.query(Identity).filter(Identity.email == req.email.lower()).first()
+    existing = db.query(Identity).filter(Identity.email == email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -24,7 +25,7 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
     # Create identity
     hashed_pwd = get_password_hash(req.password)
     identity = Identity(
-        email=req.email.lower(),
+        email=email,
         hashed_password=hashed_pwd,
         role=req.role
     )
@@ -85,7 +86,8 @@ def register_guide(req: GuideRegistrationRequest, db: Session = Depends(get_db))
     The guide must be approved by a Manager/Admin before they can operate.
     """
     # Enforce unique email
-    existing = db.query(Identity).filter(Identity.email == req.email.lower()).first()
+    email = normalize_email(req.email)
+    existing = db.query(Identity).filter(Identity.email == email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -95,7 +97,7 @@ def register_guide(req: GuideRegistrationRequest, db: Session = Depends(get_db))
     # Create identity with GUIDE role
     hashed_pwd = get_password_hash(req.password)
     identity = Identity(
-        email=req.email.lower(),
+        email=email,
         hashed_password=hashed_pwd,
         role="GUIDE"
     )
@@ -141,11 +143,19 @@ def register_guide(req: GuideRegistrationRequest, db: Session = Depends(get_db))
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    identity = db.query(Identity).filter(Identity.email == req.email.lower()).first()
-    if not identity or not verify_password(req.password, identity.hashed_password):
+    # Login NEVER creates an account — it can only authenticate an existing one.
+    # Email is normalized so ` TEST@Example.COM ` and test@example.com are ONE identity.
+    email = normalize_email(req.email)
+    identity = db.query(Identity).filter(Identity.email == email).first()
+    if not identity:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="No account exists with this email. Please register first."
+        )
+    if not verify_password(req.password, identity.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password."
         )
 
     user_id = identity.user.id if identity.user else None
@@ -200,7 +210,8 @@ def elevate_access(req: ElevateRequest, db: Session = Depends(get_db)):
         )
 
     # Check if identity exists or pre-provision
-    identity = db.query(Identity).filter(Identity.email == req.email.lower()).first()
+    email = normalize_email(req.email)
+    identity = db.query(Identity).filter(Identity.email == email).first()
     if identity:
         if not verify_password(req.password, identity.hashed_password):
             raise HTTPException(
@@ -211,7 +222,7 @@ def elevate_access(req: ElevateRequest, db: Session = Depends(get_db)):
     else:
         # Pre-provision manager or admin account
         identity = Identity(
-            email=req.email.lower(),
+            email=email,
             hashed_password=get_password_hash(req.password),
             role=target_role
         )

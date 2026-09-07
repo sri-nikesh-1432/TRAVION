@@ -140,7 +140,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.toLowerCase(),
+          email: email.trim().toLowerCase(),
           password,
           first_name: fullName.split(' ')[0],
           last_name: fullName.split(' ').slice(1).join(' '),

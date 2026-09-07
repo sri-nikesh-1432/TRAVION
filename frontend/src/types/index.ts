@@ -201,6 +201,7 @@ export interface CatalogPlace {
   address?: string | null;
   distance_km?: number | null;
   placement?: 'inside' | 'nearby' | 'outside' | string;
+  inside_destination?: boolean;
   opening_hours?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -219,6 +220,7 @@ export interface CatalogStay {
   name: string;
   tier: string;
   placement?: 'inside' | 'nearby' | 'outside' | string;
+  inside_destination?: boolean;
   price_per_night?: number | null;
   rating?: number | null;
   amenities: string[];
@@ -252,6 +254,7 @@ export interface CatalogFood {
   address?: string | null;
   distance_km?: number | null;
   placement?: 'inside' | 'nearby' | 'outside' | string;
+  inside_destination?: boolean;
   latitude?: number | null;
   longitude?: number | null;
   price_level?: string | null;
@@ -303,6 +306,7 @@ export interface DestinationCatalog {
   destination: string;
   destination_latitude?: number | null;
   destination_longitude?: number | null;
+  destination_radius_km?: number | null;
   verified_only: boolean;
   discovery_source?: string | null;
   budget_band?: string | null;

@@ -10,6 +10,14 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 
+def normalize_email(email) -> str:
+    """Canonical form for every email stored AND looked up.
+
+    trim + lowercase in one place so signup, login, guide registration,
+    elevation and all uniqueness checks agree on exactly one identity per email.
+    """
+    return (email or "").strip().lower()
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 

@@ -1,7 +1,26 @@
-"""Destination place discovery — REAL PLACES ONLY.
+"""Destination place discovery — REAL PLACES ONLY, DESTINATION-WIDE.
 
-Pipeline: destination resolution -> real place search -> validation ->
-dedup -> categorization -> ranking -> discovery payload.
+Pipeline: destination resolution -> real place search across the destination ->
+validation -> category filtering -> dedup -> ranking -> discovery payload.
+
+WHAT "the destination" means
+---------------------------
+The user asks "what famous places can I visit in Hyderabad?" — NOT "what exists
+within 2 km of the city centre?". Discovery therefore searches the WHOLE
+destination area as a real geographic region:
+
+  1. the destination is resolved to a real place (anchor) AND, when reachable,
+     geocoded to its geographic bounding box (Nominatim; keyless, cached);
+  2. live providers (Google Places Text Search / OpenStreetMap Overpass) search
+     that destination area — Google via a `locationRestriction` rectangle or
+     destination-radius circle, Overpass via an area bounding box;
+  3. results are filtered to the destination footprint (bounding box, or the
+     destination's own kind-based radius as a documented fallback), category-
+     filtered to real tourist categories, deduplicated and ranked by
+     famousness (rating, review volume, relevance) — NOT by nearness to the
+     centre;
+  4. the 2 km rule applies ONLY to "nearby" mode (places near a specific
+     selected spot); it is NEVER applied to destination-wide discovery.
 
 Sources, in priority order:
   1. Google Places API (New) — used ONLY when GOOGLE_PLACES_API_KEY is set in
@@ -11,16 +30,14 @@ Sources, in priority order:
      community mapped them. Nothing is inferred beyond what OSM contains.
   3. Travion verified catalog (curated, real stays/food/attractions).
   4. India place index generated from GeoNames (real gazetteer entries with
-     real coordinates, 248 tourist places nationwide).
+     real coordinates, 248 tourist places nationwide) — used to fill genuine
+     last-mile gaps inside the destination footprint.
 
 The LLM is NEVER a source of place existence. If a source has no data for a
 category, that category is empty or omitted — never filled with inventions.
 Unknown fields are None; the UI must show "Not available" for those.
-
-HARD CONSTRAINT: The destination's own footprint comes FIRST; fallback
-expansion NEVER goes beyond 2 KM from the destination anchor. The backend
-enforces this with a hard Haversine cap; the frontend must never display
-out-of-range results.
+Ratings, addresses, hotel star tiers and prices are surfaced ONLY when the
+source provides them — never guessed.
 """
 
 import math
@@ -30,12 +47,27 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-# Hard maximum search radius in km — enforced server-side. Never exceeded.
+from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
+from app.services.india_places_index import INDIA_PLACES
+
+# Hard maximum radius for "nearby" mode (places near a specific spot) — the
+# ONLY mode restricted to a small radius. Destination-wide discovery below does
+# NOT use this cap.
 MAX_DISTANCE_KM = 2.0
 
+# The destination's own footprint, derived from the real gazetteer entry's
+# `kind`. Used as a DOCUMENTED FALLBACK when a geocoded bounding box is not
+# reachable; exact geography (bounding box) takes priority when available.
+DESTINATION_RADIUS_KM: Dict[str, float] = {
+    "city": 25.0,
+    "district": 20.0,
+    "town": 12.0,
+    "place": 5.0,
+}
+
 # Target pool sizes per discovery section (we return UP TO these counts of real
-# places; if fewer real places exist inside the cap, we honestly return fewer —
-# we never fabricate to hit a number).
+# places; if fewer real places exist inside the destination, we honestly return
+# fewer — we never fabricate to hit a number).
 TARGET_COUNTS: Dict[str, int] = {
     "must_visit": 10,
     "activities": 10,
@@ -43,12 +75,8 @@ TARGET_COUNTS: Dict[str, int] = {
     "stays": 7,
 }
 
-import requests
-
-from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
-from app.services.india_places_index import INDIA_PLACES
-
 GOOGLE_PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
+NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -318,10 +346,10 @@ def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
 
 
 def _filter_by_distance(items: List[Dict[str, Any]], origin: Tuple[float, float], max_km: float = MAX_DISTANCE_KM) -> List[Dict[str, Any]]:
-    """Hard filter: discard any place farther than max_km from origin.
-
-    Mutates items in place by setting/clamping distance_km and removing
-    out-of-range entries. NEVER returns places beyond MAX_DISTANCE_KM.
+    """NEARBY-mode hard filter: discard any place farther than max_km from a
+    REFERENCE POINT. Used ONLY for "places near this spot" (max 2 km). It is
+    NEVER used for destination-wide discovery. Mutates items by clamping
+    distance_km and dropping out-of-range entries.
     """
     out: List[Dict[str, Any]] = []
     for item in items:
@@ -336,10 +364,45 @@ def _filter_by_distance(items: List[Dict[str, Any]], origin: Tuple[float, float]
     return out
 
 
+def _filter_by_destination(
+    items: List[Dict[str, Any]],
+    origin: Optional[Tuple[float, float]],
+    dest_radius_km: float,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Destination-wide filter: keep real places INSIDE the destination.
+
+    When a geocoded bounding box is available it defines the destination's
+    actual geographic area (the whole point of destination-wide discovery).
+    Otherwise the destination's own kind-based radius is a documented fallback.
+    `distance_km` is kept as informational distance from the destination anchor
+    — it is NOT a hard boundary.
+    """
+    has_bounds = bool(bounds and bounds.get("north") is not None and bounds.get("south") is not None)
+    pad = 0.02
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        lat, lng = item.get("latitude"), item.get("longitude")
+        if lat is None or lng is None:
+            continue
+        if has_bounds:
+            if not (bounds["south"] - pad <= lat <= bounds["north"] + pad
+                    and bounds["west"] - pad <= lng <= bounds["east"] + pad):
+                continue
+        elif origin and _haversine_km(origin, (lat, lng)) > dest_radius_km:
+            continue
+        if origin:
+            item["distance_km"] = round(_haversine_km(origin, (lat, lng)), 1)
+        out.append(item)
+    return out
+
+
 # ── Inside-destination vs nearby classification ─────────────────────────────
 # The destination's own footprint varies — a city is far bigger than a beach or
-# a hill town. `kind` comes from the real gazetteer entry, so the "inside"
-# radius is derived from real geography, never guessed per-trip.
+# a hill town. `kind` comes from the real gazetteer entry, so the "inside-core"
+# radius is derived from real geography, never guessed per-trip. "inside" means
+# within the destination CORE; everything else in the destination is "nearby"
+# relative to the core — both are honest in-destination results.
 
 _CORE_RADIUS_KM = {
     "city": 2.0,
@@ -358,12 +421,9 @@ def _placement_for(
     origin: Optional[Tuple[float, float]],
     core_km: float,
 ) -> str:
-    """Classify a real place as INSIDE the destination or NEARBY (≤2 km).
-
-    Curated verified entries for the destination are inherently inside it.
-    Everything else is judged by its computed distance: inside when it falls
-    within the destination's own footprint, otherwise nearby (still hard-capped
-    at MAX_DISTANCE_KM by the caller).
+    """Classify a real place as INSIDE the destination core or NEARBY (still
+    inside the destination, beyond the core). Curated verified entries for the
+    destination are inherently inside it. Never invasive — purely a label.
     """
     if item.get("source") in ("verified_api", "guide_submitted") and not item.get("distance_km"):
         return "inside"
@@ -377,6 +437,58 @@ def _placement_for(
     return "inside" if float(km) <= core_km else "nearby"
 
 
+# ── Destination geography resolution (geocoding, keyless, cached) ───────────
+
+def _geocode_destination(
+    destination: str,
+    state: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Resolve the destination's real geographic area (bounding box) via
+    Nominatim. Optional: on any failure returns None and the kind-based
+    destination radius is used instead. Bounding box data is real geography —
+    never invented by the app."""
+    key = f"geocode::{_norm(destination)}::{_norm(state or '')}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    try:
+        params: Dict[str, Any] = {
+            "q": destination,
+            "format": "json",
+            "limit": 1,
+            "accept-language": "en",
+            "addressdetails": 0,
+        }
+        if state:
+            params["state"] = state
+        resp = requests.get(
+            NOMINATIM_ENDPOINT,
+            params=params,
+            headers={"User-Agent": "Travion/1.0 (travel planning; keyless OSM geocoding)"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            rows = resp.json() or []
+            if rows:
+                bb = rows[0].get("boundingbox")
+                if bb and len(bb) >= 4:
+                    out: Dict[str, Any] = {
+                        "south": float(bb[0]),
+                        "north": float(bb[1]),
+                        "west": float(bb[2]),
+                        "east": float(bb[3]),
+                        "latitude": float(rows[0].get("lat") or 0),
+                        "longitude": float(rows[0].get("lon") or 0),
+                        "display_name": rows[0].get("display_name"),
+                    }
+                    _cache_set(key, out)
+                    return out
+    except Exception:
+        pass
+    _cache_set(key, None)
+    return None
+
+
 # ── Google Places (New) Text Search — primary source when key configured ────
 
 _GOOGLE_FIELD_MASK = (
@@ -385,29 +497,69 @@ _GOOGLE_FIELD_MASK = (
     "places.currentOpeningHours"
 )
 
+# Destination-wide query templates. NEVER append "within 2 km" — these describe
+# the whole destination.
 _SEARCH_CATEGORIES: List[Tuple[str, List[str]]] = [
-    ("must_visit", ["tourist attractions in {d}", "landmarks in {d}", "beaches in {d}",
-                    "temples in {d}", "museums in {d}", "parks in {d}"]),
-    ("food", ["restaurants in {d}", "cafes in {d}", "street food in {d}"]),
-    ("activities", ["things to do in {d}", "adventure activities in {d}"]),
-    ("stays", ["hotels in {d}", "homestays in {d}"]),
+    ("must_visit", ["tourist attractions in {d}", "famous places to visit in {d}",
+                    "historical places in {d}", "heritage sites in {d}",
+                    "temples in {d}", "museums in {d}", "monuments in {d}",
+                    "beaches in {d}", "parks in {d}"]),
+    ("food", ["restaurants in {d}", "popular restaurants in {d}", "cafes in {d}",
+              "street food in {d}"]),
+    ("activities", ["things to do in {d}", "activities in {d}",
+                    "tourist experiences in {d}", "adventure activities in {d}"]),
+    ("stays", ["hotels in {d}", "2 star hotels in {d}", "3 star hotels in {d}",
+               "4 star hotels in {d}", "5 star hotels in {d}", "homestays in {d}"]),
 ]
 
+# Real Google Places place `types` that read as actual tourist attractions.
+# Used to keep hospitals/schools/banks/shops OUT of "Places to Visit".
+_GOOGLE_TOURIST_TYPES = {
+    "tourist_attraction", "museum", "art_gallery", "hindu_temple", "church",
+    "mosque", "synagogue", "gurdwara", "place_of_worship", "park", "zoo",
+    "amusement_park", "aquarium", "national_park", "beach", "natural_feature",
+    "botanical_garden", "performing_arts_theater", "concert_hall", "stadium",
+    "theme_park", "water_park", "casino", "art_studio", "historic_site",
+    "castle", "cemetery", "monument", "viewpoint", "library", "marina",
+}
 
-def _google_search(query: str, api_key: str, origin: Optional[Tuple[float, float]] = None) -> List[Dict[str, Any]]:
-    """Google Places (New) text search.
 
-    When destination coordinates are available a hard locationRestriction circle
-    (2 km) is attached so the provider itself never returns city-wide results —
-    "restaurants in Chennai" can never come back from Marina Beach. The backend
-    then still enforces the same 2 km cap independently.
-    """
+def _google_search(
+    query: str,
+    api_key: str,
+    center: Optional[Tuple[float, float]] = None,
+    radius_m: Optional[int] = None,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Google Places (New) text search scoped to a DESTINATION area.
+
+    Destination-wide discovery passes the destination's bounding box
+    (`locationRestriction` rectangle) or, failing a geocode, its kind-based
+    destination radius circle. "Nearby" mode passes a 2 km circle. Results are
+    still REAL regardless of the scoping."""
+    cache_key = None
+    if bounds and bounds.get("north") is not None:
+        cache_key = f"gp::{query}::{round(bounds['south'],2)},{round(bounds['west'],2)},{round(bounds['north'],2)},{round(bounds['east'],2)}"
+    elif center and radius_m:
+        cache_key = f"gp::{query}::{round(center[0],3)},{round(center[1],3)}::{radius_m}"
+    if cache_key:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+
     body: Dict[str, Any] = {"textQuery": query, "languageCode": "en", "regionCode": "IN"}
-    if origin and origin[0] and origin[1]:
+    if bounds and bounds.get("north") is not None:
+        body["locationRestriction"] = {
+            "rectangle": {
+                "low": {"latitude": bounds["south"], "longitude": bounds["west"]},
+                "high": {"latitude": bounds["north"], "longitude": bounds["east"]},
+            }
+        }
+    elif center and center[0] and center[1] and radius_m:
         body["locationRestriction"] = {
             "circle": {
-                "center": {"latitude": origin[0], "longitude": origin[1]},
-                "radius": int(MAX_DISTANCE_KM * 1000),
+                "center": {"latitude": center[0], "longitude": center[1]},
+                "radius": radius_m,
             }
         }
     try:
@@ -418,13 +570,21 @@ def _google_search(query: str, api_key: str, origin: Optional[Tuple[float, float
                 "X-Goog-FieldMask": _GOOGLE_FIELD_MASK,
             },
             json=body,
-            timeout=10,
+            timeout=12,
         )
         if resp.status_code != 200:
             return []
-        return (resp.json() or {}).get("places") or []
+        places = (resp.json() or {}).get("places") or []
+        if cache_key:
+            _cache_set(cache_key, places)
+        return places
     except Exception:
         return []
+
+
+def _google_is_tourist(place: Dict[str, Any]) -> bool:
+    types = set(place.get("types") or [])
+    return bool(types & _GOOGLE_TOURIST_TYPES) or "tourist_attraction" in types
 
 
 def _google_item(place: Dict[str, Any], category: str) -> Optional[Dict[str, Any]]:
@@ -446,6 +606,7 @@ def _google_item(place: Dict[str, Any], category: str) -> Optional[Dict[str, Any
         "address": place.get("formattedAddress"),
         "rating": place.get("rating"),
         "review_count": place.get("userRatingCount"),
+        "types": place.get("types") or [],
         "opening_hours": (opening or {}).get("weekdayDescription") if opening else None,
         "website": place.get("websiteUri"),
         "photos": photos,
@@ -458,18 +619,37 @@ def _google_item(place: Dict[str, Any], category: str) -> Optional[Dict[str, Any
     }
 
 
-def _discover_google(destination: str, resolved: Dict[str, Any], api_key: str) -> Dict[str, List[Dict[str, Any]]]:
+def _discover_google(
+    destination: str,
+    resolved: Dict[str, Any],
+    api_key: str,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
     d = destination if resolved and _norm(resolved["name"]) == _norm(destination) else (
         f"{destination} {resolved['state']}" if resolved else destination
     )
     origin = (resolved["lat"], resolved["lng"]) if resolved and resolved.get("lat") and resolved.get("lng") else None
+    kind = str(resolved.get("kind") or "").lower()
+    radius_m = int(DESTINATION_RADIUS_KM.get(kind, 12.0) * 1000) if origin else None
     buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
     for category, queries in _SEARCH_CATEGORIES:
+        cap = TARGET_COUNTS.get(category, 10) * 2  # collect a generous real pool, dedup later
         for template in queries:
-            for place in _google_search(template.format(d=d), api_key, origin=origin):
+            if len(buckets[category]) >= cap:
+                break
+            for place in _google_search(template.format(d=d), api_key, center=origin, radius_m=radius_m, bounds=bounds):
                 item = _google_item(place, category)
                 if item:
                     buckets[category].append(item)
+    # Tourist-type filter for "Places to Visit": keep only real tourist
+    # categories. If filtering would leave the section nearly empty we keep the
+    # raw results (they came from real tourist-flavoured queries) rather than
+    # show nothing — we never invent, we just avoid over-silencing.
+    mv = buckets["must_visit"]
+    if mv:
+        tourist = [i for i in mv if _google_is_tourist(i)]
+        if len(tourist) >= 3:
+            buckets["must_visit"] = tourist
     return buckets
 
 
@@ -528,9 +708,15 @@ def _osm_item(el: Dict[str, Any], category: str, origin: Optional[Tuple[float, f
     }
 
 
-def _overpass_query(filters: List[str], lat: float, lng: float, radius_m: int) -> str:
-    body = "\n".join(f"  {f}(around:{radius_m},{lat},{lng});" for f in filters)
-    return f"[out:json][timeout:20];(\n{body}\n);out center tags 400;"
+def _overpass_query_at(loc: str) -> str:
+    """Overpass query scoped to a `loc` sentence (bounding box or around) across
+    node+way+relation so real attractions mapped as areas are included."""
+    lines: List[str] = []
+    for _, flt in _OSM_FILTERS:
+        lines.append(f"  node{flt}{loc};")
+        lines.append(f"  way{flt}{loc};")
+        lines.append(f"  relation{flt}{loc};")
+    return f"[out:json][timeout:25];(\n{chr(10).join(lines)}\n);out center tags 500;"
 
 
 def _classify_osm(tags: Dict[str, str]) -> Optional[str]:
@@ -556,17 +742,25 @@ def _classify_osm(tags: Dict[str, str]) -> Optional[str]:
     return None
 
 
-def _discover_osm(destination: str, resolved: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
-    """Live OpenStreetMap POI search around the resolved destination — ONE
+def _discover_osm(
+    destination: str,
+    resolved: Dict[str, Any],
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Live OpenStreetMap POI search across the DESTINATION AREA — a bounding
+    box when geocoded, otherwise the destination's kind-based radius. ONE
     combined Overpass request (free API is rate-limited, so per-destination
     batching keeps us well within limits). Returns only real mapped features;
     on network failure returns empty buckets so lower tiers take over."""
     buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
     lat, lng = resolved["lat"], resolved["lng"]
     origin = (lat, lng)
-    # Search radius mirrors the hard 2 km product rule — Overpass never scans
-    # the whole city, so results can never leak beyond the boundary either.
-    q = _overpass_query([flt for _, flt in _OSM_FILTERS], lat, lng, int(MAX_DISTANCE_KM * 1000))
+    if bounds and bounds.get("north") is not None:
+        loc = f"({bounds['south']},{bounds['west']},{bounds['north']},{bounds['east']})"
+    else:
+        radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
+        loc = f"(around:{radius_m},{lat},{lng})"
+    q = _overpass_query_at(loc)
     data: Optional[Dict[str, Any]] = None
     for attempt in range(2):  # free API rate-limits bursts; one retry round
         for endpoint in OVERPASS_ENDPOINTS:
@@ -712,14 +906,16 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
 
 def _index_items(destination: str, resolved: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Nearby REAL places from the GeoNames-derived index, around the resolved
-    destination. Distance-based relevance; no invented fields."""
+    destination. Distance-based relevance; no invented fields. Entries are later
+    filtered to the destination footprint (bounding box / destination radius)
+    exactly like every other real source."""
     if not resolved:
         return []
     origin = (resolved["lat"], resolved["lng"])
     nearby: List[Dict[str, Any]] = []
     for p in INDIA_PLACES:
         km = _haversine_km(origin, (p["lat"], p["lng"]))
-        if 0 < km <= 120:  # day-trip radius around the destination
+        if 0 < km <= 120:  # realistic journey radius around the destination
             # Administrative districts/cities around the destination (e.g.
             # "Central Delhi") are not tourist places — prefer real POIs.
             if p.get("kind") in ("district", "city"):
@@ -727,7 +923,11 @@ def _index_items(destination: str, resolved: Dict[str, Any]) -> List[Dict[str, A
             nearby.append((km, p))
     nearby.sort(key=lambda t: t[0])
     items: List[Dict[str, Any]] = []
-    for km, p in nearby[:12]:
+    count = 0
+    for km, p in nearby:
+        if count >= 12:
+            break
+        count += 1
         items.append({
             "id": p["id"],
             "place_id": p["id"],
@@ -754,7 +954,9 @@ def _index_items(destination: str, resolved: Dict[str, Any]) -> List[Dict[str, A
 # ── Dedup + ranking ──────────────────────────────────────────────────────────
 
 def _dedup(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Deduplicate by provider place_id, then by name + proximity (<250 m)."""
+    """Deduplicate by provider place_id, then by normalized name + proximity
+    (<250 m) — "Charminar", "Charminar, Hyderabad" and "Charminar Monument"
+    collapse to one record."""
     seen_ids: set = set()
     seen_coords: List[Tuple[str, float, float]] = []
     out: List[Dict[str, Any]] = []
@@ -797,30 +999,33 @@ def _rank(
     veg_only: bool,
     inside_first: bool = True,
 ) -> List[Dict[str, Any]]:
-    """Rank real places: same-rank by score, but places INSIDE the destination
-    always outrank nearby ones (destination-first contract), then distance and
-    rating refine the pool."""
+    """Rank real places by FAMOUSNESS + relevance (rating, review volume,
+    source confidence, interest/keyword match, tourist category) — NOT by
+    distance to the centre. Places INSIDE the destination core still outrank
+    the wider destination, each group keeping score order."""
     def score(item: Dict[str, Any]) -> float:
         s = 0.0
         rating = item.get("rating")
         if rating is not None:
             s += float(rating) * 2
-            s += min(float(item.get("review_count") or 0), 500) / 100.0
+            s += min(float(item.get("review_count") or 0), 2000) / 50.0  # review volume up to +40
         if item.get("source") == "google_places":
             s += 1.0
+        if item.get("source") in ("verified_api", "guide_submitted"):
+            s += 0.5
+        if item.get("category") == "activities":
+            s += 0.5
         haystack = _norm(f"{item.get('name', '')} {item.get('category', '')} {item.get('address', '')}")
         for interest in interests:
             for kw in _INTEREST_KEYWORDS.get(str(interest).strip().lower(), ()):
                 if kw in haystack:
                     s += 2.0
-        if item.get("distance_km") is not None:
-            s -= min(float(item["distance_km"]), 50) / 10.0
         return s
 
     items = sorted(items, key=score, reverse=True)
     if inside_first:
-        # Destination-first contract: inside-core real places always outrank
-        # the ≤2 km fallback expansion, each group keeping score order.
+        # Destination-core places always outrank the wider destination, each
+        # group keeping score order.
         inside = [i for i in items if i.get("placement") == "inside"]
         nearby = [i for i in items if i.get("placement") != "inside"]
         items = inside + nearby
@@ -831,14 +1036,21 @@ def _rank(
     return items
 
 
+# ── Public entry points ─────────────────────────────────────────────────────
+
 def discover_destination(
     destination: str,
     preferences: Optional[Dict[str, Any]] = None,
     coords: Optional[Tuple[float, float]] = None,
     state: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Full discovery pipeline. Never returns invented places; categories may
-    legitimately be empty when no source can verify them.
+    """DESTINATION-WIDE discovery pipeline. Searches the destination as a whole
+    geographic area (geocoded bounding box, else the destination's kind radius)
+    and returns real tourist places, activities, restaurants and stays — up to
+    the TARGET_COUNTS. NEVER restricted to a 2 km circle; the 2 km rule belongs
+    to the separate "nearby" mode (see discover_nearby). Never returns invented
+    places; categories may legitimately be fewer than the target when no source
+    can verify more, and empty when the destination has no verifiable results.
 
     ``coords`` and ``state`` are the traveller's REGISTERED destination
     coordinates/state (from the real location picker). They are used to (a)
@@ -868,7 +1080,7 @@ def discover_destination(
         api_key = None
 
     # Registered coordinates are ground truth: search around them even when the
-    # name isn't in the gazetteer (e.g. "Cochin", "Dharamshala 2 km from centre").
+    # name isn't in the gazetteer (e.g. "Cochin", "Dharamshala").
     anchor = resolved
     synthetic_anchor = None
     if anchor is None and coords and len(coords) == 2 and coords[0] and coords[1]:
@@ -882,12 +1094,8 @@ def discover_destination(
         }
         anchor = synthetic_anchor
 
-    if api_key and anchor:
-        buckets = _discover_google(destination, anchor, api_key)
-        source = "google_places"
-    else:
-        buckets = {"must_visit": [], "food": [], "activities": [], "stays": []}
-        source = None
+    dest_kind = str((anchor or {}).get("kind") or "town").lower()
+    dest_radius_km = DESTINATION_RADIUS_KM.get(dest_kind, 12.0)
 
     # The curated verified catalog is evaluated BEFORE deciding whether live
     # tiers are even needed: for a destination the catalog fully covers we skip
@@ -896,11 +1104,31 @@ def discover_destination(
     catalog = _catalog_items(destination)
     catalog_sufficient = len(catalog["must_visit"]) >= 4 and bool(catalog["stays"])
 
+    use_live = bool(api_key and anchor) or (
+        bool(anchor) and not catalog_sufficient and len(catalog["must_visit"]) < 4
+    )
+    # Destination geography: geocode ONLY when a live tier will actually run
+    # (geocoding is optional and network-based; deterministic offline).
+    bounds: Optional[Dict[str, Any]] = None
+    if use_live:
+        try:
+            bounds = _geocode_destination(destination, state=state) or None
+        except Exception:
+            bounds = None
+
+    buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
+    source: Optional[str] = None
+    if api_key and anchor:
+        google = _discover_google(destination, anchor, api_key, bounds=bounds)
+        for k, v in google.items():
+            buckets[k].extend(v)
+        source = "google_places"
+
     # Keyless live tier: run OpenStreetMap only when the curated catalog is
     # thin for must-visit (i.e. genuinely uncovered destinations).
     if anchor and not catalog_sufficient and len(buckets["must_visit"]) < 4:
         try:
-            osm = _discover_osm(destination, anchor)
+            osm = _discover_osm(destination, anchor, bounds=bounds)
         except Exception:
             osm = {"must_visit": [], "food": [], "activities": [], "stays": []}
         for k, v in osm.items():
@@ -913,12 +1141,13 @@ def discover_destination(
     for k, v in catalog.items():
         buckets[k].extend(v)
 
-    # Last resort: real gazetteer entries around the destination — fills the
-    # must-visit bucket so the section is never silently empty for a real
-    # location. Run BEFORE the hard 2km boundary + ranking below so these real
-    # entries are filtered, classified and ranked with everything else.
-    if anchor and not buckets["must_visit"]:
-        buckets["must_visit"].extend(_index_items(destination, anchor))
+    # Last-gap fill from the real GeoNames index, INSIDE the destination only:
+    # contributes real gazetteer entries when the must-visit pool is under
+    # target. Filtered/ranked with everything else, so famous attractions stay
+    # on top.
+    if anchor and len(buckets["must_visit"]) < TARGET_COUNTS["must_visit"]:
+        slack = TARGET_COUNTS["must_visit"] - len(buckets["must_visit"])
+        buckets["must_visit"].extend(_index_items(destination, anchor)[:slack])
     if synthetic_anchor and anchor is not None and source is None:
         source = "registered_local_index"
     if any(buckets.values()) and not source:
@@ -928,21 +1157,25 @@ def discover_destination(
     if anchor and anchor.get("lat") is not None and anchor.get("lng") is not None:
         result["destination_latitude"] = anchor["lat"]
         result["destination_longitude"] = anchor["lng"]
-    total = 0
-    # Hard 2km boundary: discard any place farther than MAX_DISTANCE_KM from the
-    # destination anchor (Haversine). This is enforced server-side so the
-    # frontend never sees out-of-range results (4 km, 5 km, 10 km, etc.).
     origin = (anchor["lat"], anchor["lng"]) if anchor and anchor.get("lat") and anchor.get("lng") else None
-    core_km = _core_radius_kms((anchor or {}).get("kind"))
+    core_km = _core_radius_kms(dest_kind)
     result["core_radius_km"] = core_km
+    result["destination_radius_km"] = dest_radius_km
+    if bounds:
+        result["destination_bounds"] = {k: bounds[k] for k in ("south", "west", "north", "east")}
+
+    total = 0
+    # Destination-wide boundary: keep real places INSIDE the destination
+    # (bounding box, else the destination's own kind radius). There is NO 2 km
+    # cap here — that cap belongs to "nearby" mode only.
     for category in ("must_visit", "food", "activities", "stays"):
         items = _dedup(buckets.get(category) or [])
-        if origin:
-            items = _filter_by_distance(items, origin, MAX_DISTANCE_KM)
+        items = _filter_by_destination(items, origin, dest_radius_km, bounds=bounds)
         for item in items:
             item["placement"] = _placement_for(item, origin, core_km)
-            item["inside_destination"] = bool(item["placement"] == "inside")
-        # Destination-first ranking, then truncate to the target pool size.
+            item["inside_destination"] = True
+        # Famousness ranking (rating/reviews/relevance — not distance), then
+        # truncate to the target pool size.
         items = _rank(items, interests, veg_only, inside_first=True)
         items = items[: TARGET_COUNTS.get(category, 10)]
         result[category] = items
@@ -964,7 +1197,56 @@ def discover_destination(
     result["note"] = (
         "All places come from verified real-world data sources."
         if total else
-        "We're unable to verify enough places for this destination right now."
+        "We're unable to verify any real places for this destination right now."
     )
     _cache_set(cache_key, result)
     return result
+
+
+def discover_nearby(destination: str, name: str, coords: Tuple[float, float]) -> Dict[str, Any]:
+    """NEARBY mode — the ONLY 2 km-scoped search. Used when the user explicitly
+    wants places near a specific selected spot ("places near Charminar"). The
+    hard 2 km cap is enforced at both the provider layer (2 km circle) and the
+    backend (`_filter_by_distance`). This mode is intentionally SEPARATE from
+    destination-wide discovery so the two are never mixed."""
+    if not coords or len(coords) != 2:
+        return {"reference": name, "radius_km": MAX_DISTANCE_KM,
+                "attractions": [], "food": [], "stays": [], "activities": []}
+    origin = (float(coords[0]), float(coords[1]))
+    radius_m = int(MAX_DISTANCE_KM * 1000)
+    api_key: Optional[str] = None
+    try:
+        from app.core.config import settings
+        api_key = (getattr(settings, "GOOGLE_PLACES_API_KEY", "") or "").strip() or None
+    except Exception:
+        api_key = None
+
+    buckets: Dict[str, List[Dict[str, Any]]] = {"attractions": [], "food": [], "stays": [], "activities": []}
+    cat_for_query = [
+        ("attractions", f"attractions near {name}"),
+        ("food", f"restaurants near {name}"),
+        ("activities", f"things to do near {name}"),
+        ("stays", f"hotels near {name}"),
+    ]
+    if api_key:
+        for cat, query in cat_for_query:
+            for place in _google_search(query, api_key, center=origin, radius_m=radius_m):
+                item = _google_item(place, cat)
+                if item:
+                    buckets[cat].append(item)
+
+    try:
+        osm = _discover_osm(destination, {
+            "id": "nearby_anchor", "name": name, "state": "", "lat": origin[0],
+            "lng": origin[1], "kind": "place",
+        }, bounds=None)
+        for k, v in osm.items():
+            buckets[k].extend(v)
+    except Exception:
+        pass
+
+    for cat in buckets:
+        items = _filter_by_distance(buckets[cat], origin, MAX_DISTANCE_KM)
+        buckets[cat] = _dedup(items)[:5]
+
+    return {"reference": name, "radius_km": MAX_DISTANCE_KM, **buckets}

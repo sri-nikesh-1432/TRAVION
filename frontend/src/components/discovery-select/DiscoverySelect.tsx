@@ -200,15 +200,20 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 Source: {catalog.discovery_source.replace(/_/g, ' ')}
               </span>
             )}
-            {catalog.core_radius_km != null && (
+            {catalog.destination_radius_km != null ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
                 <Landmark className="w-3.5 h-3.5 text-travion-600" />
-                Search radius: {catalog.core_radius_km} km
+                Whole {catalog.destination} area ({catalog.destination_radius_km} km map)
               </span>
-            )}
+            ) : catalog.core_radius_km != null ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
+                <Landmark className="w-3.5 h-3.5 text-travion-600" />
+                Destination-wide: {catalog.destination}
+              </span>
+            ) : null}
           </div>
 
-          {/* Must visit — honest empty state when the 2 km core has no verified place */}
+          {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
           <div className="mb-8">
             <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
               <Mountain className="w-4 h-4 text-travion-600" /> Must visit
@@ -218,7 +223,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             {places.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center">
                 <p className="text-[13px] font-bold text-slate-600">
-                  No verified places found within {catalog.core_radius_km ?? 3} km of {catalog.destination} right now.
+                  No verified places found for {catalog.destination} right now.
                 </p>
                 <p className="mt-1 text-[12px] font-medium text-slate-400">
                   We only show real, verified places — we never invent attractions. Check back later or try a nearby destination.
