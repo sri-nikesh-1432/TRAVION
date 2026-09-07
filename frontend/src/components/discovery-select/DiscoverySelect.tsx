@@ -104,6 +104,13 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const budgetTier = catalog?.budget?.tier;
   const budgetPanel = catalog?.budget;
 
+  const selectedEntryFees = useMemo(() => {
+    const all = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
+    return Array.from(selected)
+      .map((name) => all.find((p) => p.name === name))
+      .reduce((sum, p) => sum + (p ? (p.entry_fee ?? 0) : 0), 0);
+  }, [catalog, selected]);
+
   const handleConfirm = () => {
     const allItems = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
     const itemBySelection = (name: string) => {
@@ -439,6 +446,16 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           </div>
           )}
 
+          {/* Over-budget warning — selected entry fees exceed what the budget can hold */}
+          {!budgetTier?.impossible && budgetPanel?.maximum_allowed_spend != null && selectedEntryFees > budgetPanel.maximum_allowed_spend && (
+            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-[12px] font-bold text-amber-700">
+                Selected entry fees add up to ₹{selectedEntryFees.toLocaleString('en-IN')}, more than your budget of ₹{Math.round(budgetPanel.maximum_allowed_spend).toLocaleString('en-IN')}. Drop a few paid places or the plan can't stay within budget.
+              </p>
+            </div>
+          )}
+
           {/* Sticky action bar */}
           <div className="sticky bottom-4 z-10">
             <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-slate-200 shadow-floating px-5 py-4">
@@ -448,16 +465,17 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               {!hasNothing && (
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !!budgetTier?.impossible}
                   onClick={handleConfirm}
                   className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
                 >
-                  {busy ? 'Generating your plans…' : totalSelected > 0
-                    ? `Generate 3 plans with ${totalSelected} ${totalSelected === 1 ? 'pick' : 'picks'}${selectedStay ? ' & stay' : ''}`
-                    : selectedStay
-                      ? 'Generate 3 plans with stay'
-                      : 'Generate 3 plans'}
-                  {!busy && <ArrowRight className="w-4 h-4" />}
+                  {budgetTier?.impossible ? 'Budget too low for plans'
+                    : busy ? 'Generating your plans…' : totalSelected > 0
+                      ? `Generate 3 plans with ${totalSelected} ${totalSelected === 1 ? 'pick' : 'picks'}${selectedStay ? ' & stay' : ''}`
+                      : selectedStay
+                        ? 'Generate 3 plans with stay'
+                        : 'Generate 3 plans'}
+                  {!busy && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
                 </button>
               )}
               {hasNothing && (
