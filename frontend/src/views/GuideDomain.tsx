@@ -447,6 +447,11 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
                     <div className="text-[11px] text-slate-400 mt-0.5">
                       Departure: {new Date(assignment.trip.start_datetime).toLocaleDateString()}
                     </div>
+                    {assignment.trip.pricing && (
+                      <div className="mt-1.5 text-[11px] font-bold text-slate-500">
+                        Guide fee: ₹{Math.round(assignment.trip.pricing.guide_fee || 0).toLocaleString('en-IN')} · Platform fee: ₹{Math.round(assignment.trip.pricing.platform_fee || 0).toLocaleString('en-IN')}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">

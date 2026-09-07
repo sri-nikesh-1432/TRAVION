@@ -33,6 +33,8 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
 
   // Dedicated pages
   const [guides, setGuides] = useState<any[]>([]);
+  const [rateDrafts, setRateDrafts] = useState<Record<string, number>>({});
+  const [rateBusy, setRateBusy] = useState<Record<string, boolean>>({});
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [revenue, setRevenue] = useState<any>(null);
@@ -155,6 +157,20 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
       try { setGuides(await api.getManagerGuides()); } catch { }
     } catch (err) {
       console.error('Guide decision failed:', err);
+    }
+  };
+
+  const saveGuideRate = async (guideId: string) => {
+    const rate = Math.max(0, Math.min(30000, Number(rateDrafts[guideId] ?? 0)));
+    setRateBusy((b) => ({ ...b, [guideId]: true }));
+    try {
+      await api.setGuideRate(guideId, rate);
+      setNotice(`Daily guide rate set to ₹${rate.toLocaleString('en-IN')}${rate === 0 ? ' (platform rule-based fee)' : ''}.`);
+      setGuides((gs) => gs.map((g) => (g.id === guideId ? { ...g, rate_per_day: rate } : g)));
+    } catch (err) {
+      console.error('Set guide rate failed:', err);
+    } finally {
+      setRateBusy((b) => ({ ...b, [guideId]: false }));
     }
   };
 
@@ -483,6 +499,22 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
             { key: 'languages', label: 'Languages', render: (r) => <span className="text-slate-500">{r.languages?.join(', ') || '—'}</span> },
             { key: 'experience_years', label: 'Exp', render: (r) => <span className="text-slate-600">{r.experience_years}y</span> },
             { key: 'rating', label: 'Rating', render: (r) => <span className="font-bold text-amber-600 inline-flex items-center gap-1"><Star className="w-3 h-3 fill-amber-400 text-amber-400" />{r.rating} ({r.review_count})</span> },
+            { key: 'rate', label: 'Daily rate (₹/day)', render: (r) => (
+              <span className="inline-flex items-center gap-1.5">
+                <input
+                  type="number" min={0} max={30000} step={100}
+                  value={rateDrafts[r.id] ?? r.rate_per_day ?? 0}
+                  onChange={(e) => setRateDrafts((d) => ({ ...d, [r.id]: Number(e.target.value) }))}
+                  className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold text-slate-800 focus:border-travion-400 focus:outline-none"
+                />
+                <button
+                  onClick={() => saveGuideRate(r.id)}
+                  disabled={rateBusy[r.id]}
+                  title="0 = use Travion rule-based fee"
+                  className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-700 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-wide"
+                >{rateBusy[r.id] ? '…' : 'Set'}</button>
+              </span>
+            ) },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'approval_status', label: 'Verification', render: (r) => <StatusPill status={r.approval_status} /> },
             { key: 'trip', label: 'Current trip', render: (r) => r.current_trip_id ? <span className="font-mono text-[10px] text-slate-400">{shortId(r.current_trip_id)}</span> : <span className="text-slate-300">—</span> },

@@ -316,6 +316,12 @@ export const api = {
   decideGuideApproval: (guideId: string, action: 'APPROVE' | 'REJECT') =>
     request<{ message: string; guide_id: string }>(`/manager/guides/${guideId}/approval?action=${action}`, { method: 'POST' }),
 
+  setGuideRate: (guideId: string, ratePerDay: number) =>
+    request<{ guide_id: string; rate_per_day: number }>(`/manager/guides/${guideId}/rate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ rate_per_day: ratePerDay }),
+    }),
+
   getTripRequests: () =>
     request<any[]>('/manager/trip-requests'),
 

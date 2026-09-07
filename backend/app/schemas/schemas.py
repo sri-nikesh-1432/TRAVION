@@ -263,6 +263,10 @@ class GuideCandidate(BaseModel):
 class AssignGuideRequest(BaseModel):
     guide_id: str
 
+class GuideRateUpdateRequest(BaseModel):
+    """Manager-configurable per-day guide rate. 0 = use platform rule-based fee."""
+    rate_per_day: float = Field(0, ge=0, le=30000)
+
 # --- Payment & Razorpay ---
 class CheckoutRequest(BaseModel):
     payment_method: Optional[str] = "razorpay"

@@ -261,3 +261,47 @@ def test_non_guide_mode_honestly_zero_fee():
     co = _checkout(trip_id, headers)
     assert co["breakdown"]["guide_fee"] == 0.0
     assert co["amount"] == co["breakdown"]["platform_fee"]
+
+
+def test_manager_rate_endpoint_drives_assigned_guide_fee():
+    # Manager token (valid access code from the auth flow)
+    mgr_email = f"pricing_mgr_{datetime.now().time().microsecond}@travion.in"
+    elev = client.post("/api/v1/auth/elevate", json={
+        "email": mgr_email, "password": "managersecret", "access_code": "SIH-MANAGER",
+    })
+    assert elev.status_code == 200, elev.text
+    mgr_headers = {"Authorization": f"Bearer {elev.json()['access_token']}"}
+
+    _, headers, trip_id = _build_trip("GUIDE_MODE")
+    _, _, gdata = _new_user("GUIDE")
+    guide_id = gdata["guide_id"]
+
+    # Manager configures the per-day rate via the dedicated endpoint
+    set_res = client.patch(f"/api/v1/manager/guides/{guide_id}/rate", headers=mgr_headers, json={"rate_per_day": 2500})
+    assert set_res.status_code == 200, set_res.text
+    assert set_res.json()["rate_per_day"] == 2500.0
+
+    # Link the guide as CONFIRMED on the trip (assignment is per-trip UNIQUE)
+    db = SessionLocal()
+    try:
+        assign = db.query(GuideAssignment).filter(GuideAssignment.trip_id == trip_id).first()
+        if not assign:
+            assign = GuideAssignment(trip_id=trip_id, status="CONFIRMED", match_score=97.0)
+            db.add(assign)
+        assign.guide_id = guide_id
+        assign.status = "CONFIRMED"
+        db.commit()
+    finally:
+        db.close()
+
+    pr = _pricing(trip_id, headers)
+    expected = max(GUIDE_MIN_FEE, min(2500.0 * pr["days"], GUIDE_MAX_FEE))
+    assert pr["guide_assigned"] is True
+    assert pr["guide_fee"] == expected
+    assert pr["amount_payable"] == pr["guide_fee"] + pr["platform_fee"]
+
+    # Manager roster exposes the saved rate (real record)
+    roster = client.get("/api/v1/manager/guides", headers=mgr_headers)
+    assert roster.status_code == 200
+    row = next((g for g in roster.json() if g["id"] == guide_id), None)
+    assert row is not None and row["rate_per_day"] == 2500.0

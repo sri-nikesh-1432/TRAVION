@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -9,8 +9,9 @@ from app.models.entities import (
     Guide, Trip, GuideAssignment, PaymentSplit, Payment, User, AuditLog,
     Itinerary, Review, ChatMessage,
 )
-from app.schemas.schemas import AssignGuideRequest
+from app.schemas.schemas import AssignGuideRequest, GuideRateUpdateRequest
 from app.services.matching_engine import GuideMatchingEngine
+from app.services.pricing_service import calculate_trip_pricing, GUIDE_MAX_FEE
 
 router = APIRouter(prefix="/manager", tags=["Manager"])
 
@@ -89,6 +90,39 @@ def approve_or_reject_guide(
 
     return {"message": f"Guide application {action.lower()}d successfully", "guide_id": guide.id}
 
+
+@router.patch("/guides/{guide_id}/rate")
+def set_guide_rate(
+    guide_id: str,
+    req: GuideRateUpdateRequest,
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Manager configures the guide's per-day rate. This is the lever the
+    authoritative `guide_fee_for` pricing uses once the guide is ASSIGNED +
+    CONFIRMED (rate × guided-days, clamped to Travion's published bounds).
+    A rate of 0 falls back to the platform's rule-based fee."""
+    guide = db.query(Guide).filter(Guide.id == guide_id).first()
+    if not guide:
+        raise HTTPException(status_code=404, detail="Guide not found")
+
+    rate = max(0.0, min(float(req.rate_per_day or 0), GUIDE_MAX_FEE))
+    guide.rate_per_day = rate
+    db.add(AuditLog(
+        action="GUIDE_RATE_SET",
+        actor_email=current["email"],
+        actor_role=current["role"],
+        target_id=guide.id,
+        details={"rate_per_day": rate}
+    ))
+    db.commit()
+    return {
+        "guide_id": guide.id,
+        "name": f"{guide.first_name} {guide.last_name}",
+        "rate_per_day": guide.rate_per_day,
+        "rules": {"guide_max_fee": GUIDE_MAX_FEE},
+    }
+
 @router.get("/trip-requests")
 def get_trip_requests(
     current: dict = Depends(require_role("MANAGER", "ADMIN")),
@@ -113,6 +147,7 @@ def get_trip_requests(
             "assigned_guide_id": a.guide_id,
             "assigned_guide_name": f"{a.guide.first_name} {a.guide.last_name}" if a.guide else None,
             "match_score": a.match_score,
+            "pricing": _trip_pricing_for(db, trip),
             "traveller": {
                 "name": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
                 "preferred_language": user.preferred_language if user else "English"
@@ -297,6 +332,28 @@ def settle_guide_payout(
 # Manager portal pages — every number below comes from real records.
 # ────────────────────────────────────────────────────────────────────────
 
+def _trip_pricing_for(db: Session, trip: Trip) -> Optional[Dict[str, Any]]:
+    """Authoritative pricing for the trip's active itinerary — the exact
+    numbers the traveller paid/due to pay (guide + platform fee, the only
+    thing Travion collects). Never independently recalculated."""
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    if not itin:
+        return None
+    profile = trip.profile.questions_answers if trip.profile else {}
+    guide = trip.guide_assignment.guide if (trip.guide_assignment and trip.guide_assignment.guide) else None
+    return calculate_trip_pricing(
+        mode=trip.mode or "ADVENTUROUS_MODE",
+        days=max(1, len(itin.days_data or [])),
+        destination=trip.destination_name or "",
+        party_type=profile.get("party") or (trip.profile.party_type if trip.profile else None),
+        budget=trip.budget or 0.0,
+        breakdown=itin.cost_breakdown,
+        guide=guide,
+    )
+
+
 def _trip_ledger_row(db: Session, trip: Trip) -> dict:
     user = trip.user
     guide = None
@@ -316,7 +373,9 @@ def _trip_ledger_row(db: Session, trip: Trip) -> dict:
         "total_cost": trip.total_cost,
         "status": trip.status,
         "guide_name": f"{guide.first_name} {guide.last_name}" if guide else None,
+        "guide_rate_per_day": guide.rate_per_day if guide else None,
         "payment_status": payment.status if payment else None,
+        "pricing": _trip_pricing_for(db, trip),
         "created_at": trip.created_at,
     }
 
@@ -334,6 +393,7 @@ def get_manager_guides(
             "name": f"{g.first_name} {g.last_name}",
             "status": g.status,
             "approval_status": g.approval_status,
+            "rate_per_day": g.rate_per_day,
             "languages": g.languages or [],
             "destinations": g.destinations or [],
             "experience_years": g.experience_years or 0,
