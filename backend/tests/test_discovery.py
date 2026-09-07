@@ -11,7 +11,7 @@ Covers:
     where it is enforced hard.
   * destination-first ranking: inside-core places always outrank broader
     destination places within every bucket.
-  * pool targets: up to 10 places / 10 activities / 7 restaurants / 7 stays.
+  * pool targets: up to 10 places / 10 activities / 10 restaurants / 10 stays.
   * nothing is ever invented: ratings, addresses, stars and prices come only
     from real sources.
 Network tiers (Google/Overpass/geocoding) are mocked out so the tests are
@@ -123,8 +123,8 @@ def test_discovery_exposes_destination_footprint():
 # ── pool targets ────────────────────────────────────────────────────────────
 
 def test_discovery_neither_overcap_targets_nor_invents():
-    """Pool targets: up to 10 places / 10 activities / up to 7 restaurants /
-    up to 7 stays. Fewer real results are fine; inventing more is not allowed."""
+    """Pool targets: up to 10 places / 10 activities / up to 10 restaurants /
+    up to 10 stays. Fewer real results are fine; inventing more is not allowed."""
     for name in ("Ooty", "Puducherry", "Mahabalipuram"):
         result = pd.discover_destination(name)
         assert result["total_places"] > 0, name
@@ -164,6 +164,46 @@ def test_discovery_never_invents():
         for item in result[bucket]:
             assert item["verified"] is True
             assert item["source"] not in {"ai", "llm", "invented", "estimated"}
+
+
+# ── Activities never duplicate Must-Visit (spec Part 2) ─────────────────────
+
+def test_unique_activities_rejects_must_visit_collisions():
+    """A candidate activity is rejected (next real candidate takes its slot)
+    when it is the same real place as a must-visit — by place id, by coordinates
+    within 350 m, or by a >=2-token name overlap. Distinct places survive."""
+    must_visit = [
+        {"name": "Golconda Fort", "place_id": "mv_1", "latitude": 17.3833, "longitude": 78.4011,
+         "description": "Historic hilltop fort with the evening light & sound show."},
+    ]
+    activities = [
+        # Same provider id → collision
+        {"name": "Golconda Fort", "place_id": "mv_1", "latitude": 17.3833, "longitude": 78.4011,
+         "description": "Fort"},
+        # Different id but essentially the same coords (~0.2 km) → collision
+        {"name": "Golconda Fort Light Show", "place_id": "act_x", "latitude": 17.3851, "longitude": 78.4003,
+         "description": "Evening light & sound show inside the fort."},
+        # Different place, far away, distinct name → must survive
+        {"name": "Chowmahalla Palace", "place_id": "act_y", "latitude": 17.3573, "longitude": 78.4713,
+         "description": "The royal palace of the Nizams."},
+    ]
+    kept = pd._unique_activities(activities, must_visit)
+    names = {i["name"] for i in kept}
+    assert "Golconda Fort" not in names, "identical place_id must be rejected"
+    assert "Golconda Fort Light Show" not in names, "co-located same-place activity must be rejected"
+    assert "Chowmahalla Palace" in names, "a distinct real activity must survive"
+    assert len(kept) == 1
+
+
+def test_thin_activity_pool_stays_honest_when_all_collide():
+    """Rejections are filled by the NEXT real candidate, never by an invention:
+    if every candidate collides, the activities bucket may legitimately shrink."""
+    must_visit = [{"name": "Ooty Botanical Gardens", "place_id": "m1",
+                   "latitude": 11.4136, "longitude": 76.6999, "description": "Gardens"}]
+    activities = [{"name": "Ooty Botanical Gardens", "place_id": "m1",
+                   "latitude": 11.4136, "longitude": 76.6999, "description": "Gardens"}]
+    kept = pd._unique_activities(activities, must_visit)
+    assert kept == []
 
 
 # ── NEARBY mode: the ONLY place the 2 km cap applies ────────────────────────

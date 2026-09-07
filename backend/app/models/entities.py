@@ -275,6 +275,27 @@ class OfflinePackage(Base):
     trip = relationship("Trip", back_populates="offline_package")
 
 
+class PlanChangeLog(Base):
+    """Immutable log of every final plan version change (Step 5 planner).
+
+    One row per persisted itinerary version — the human-readable summary
+    ("Added X · Removed Y · Moved Z to Day 2") is produced server-side by
+    diffing the previous vs the new days_data. Guides/managers read this to
+    stay in sync with the traveller's latest plan without re-diffing JSON.
+    """
+
+    __tablename__ = "plan_change_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    trip_id = Column(String(36), ForeignKey("trips.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)  # itinerary version this change produced
+    change_type = Column(String(32), nullable=False)  # plan_selected | edit | optimized_day | replan
+    summary = Column(Text, nullable=False)  # "Added Charminar · Removed Golconda Fort · …"
+    created_at = Column(DateTime, default=get_utc_now)
+
+    trip = relationship("Trip")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

@@ -343,7 +343,7 @@ export type ItineraryChange =
   | { kind: 'move_time'; stop_id: string; new_time: string }
   | { kind: 'move_day'; stop_id: string; new_day: number; new_index?: number }
   | { kind: 'reorder'; stop_id: string; new_day: number; new_index: number }
-  | { kind: 'add'; stop: ExplorePlace & { day?: number; time?: string } };
+  | { kind: 'add'; stop: ExplorePlace & { day?: number; time?: string; title?: string; estimated_cost?: number; location_name?: string }; new_day?: number; new_time?: string; new_index?: number };
 
 export interface ItineraryChangeResponse {
   itinerary: TripItinerary;
@@ -418,4 +418,47 @@ export interface ReplanningLogItem {
   old_version: number;
   new_version: number;
   created_at: string;
+}
+
+/* ── Step 5 Interactive Planner ── */
+export interface PlanChangeItem {
+  version: number;
+  change_type: string;
+  summary: string;
+  created_at: string;
+}
+
+export interface PlaceSearchItem {
+  id?: string | null;
+  name: string;
+  category: string;
+  description?: string | null;
+  address?: string | null;
+  lat: number;
+  lng: number;
+  entry_fee: number;
+  duration_minutes: number;
+  estimated_cost: number;
+  rating?: number | null;
+  source: string;
+}
+
+export interface OptimizeDayResponse {
+  day: number;
+  version?: number | null;
+  applied: boolean;
+  days: ItineraryDay[];
+  total_cost: number;
+  cost_breakdown: CostBreakdown;
+  warnings: string[];
+}
+
+export interface ConfirmPlanResponse {
+  valid: boolean;
+  message: string;
+  version: number;
+  total_cost: number;
+  budget_max?: number | null;
+  within_budget: boolean;
+  missing: string[];
 }

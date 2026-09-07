@@ -71,8 +71,8 @@ DESTINATION_RADIUS_KM: Dict[str, float] = {
 TARGET_COUNTS: Dict[str, int] = {
     "must_visit": 10,
     "activities": 10,
-    "food": 7,
-    "stays": 7,
+    "food": 10,
+    "stays": 10,
 }
 
 GOOGLE_PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
@@ -836,7 +836,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
     # must-visit entries so the Activities bucket is never empty for a real
     # destination (they are genuinely things a traveller does there).
     activity_pool = activity_like or list(attractions)
-    for a in activity_pool[: TARGET_COUNTS["activities"]]:
+    for a in activity_pool[: TARGET_COUNTS["activities"] * 2]:
         out["activities"].append({
             "id": f"cata_{_norm(a.get('name', ''))[:40]}",
             "place_id": None,
@@ -1036,6 +1036,71 @@ def _rank(
     return items
 
 
+def _significant_tokens(text: str) -> set:
+    """Meaningful name tokens (>=3 chars) — used to detect real duplicates
+    across different spellings/categories without false positives on short
+    common words like 'the', 'new', 'old'."""
+    return {tok for tok in _norm(text).split() if len(tok) >= 3}
+
+
+def _unique_activities(
+    activity_items: List[Dict[str, Any]],
+    must_visit_items: List[Dict[str, Any]],
+    proximity_km: float = 0.35,
+) -> List[Dict[str, Any]]:
+    """Single source of truth for the 'Activities never duplicate Must-Visit'
+    rule (spec: an activity cannot be the same place already shown as a
+    must-visit attraction).
+
+    A candidate activity is REJECTED (and the next real candidate takes its
+    slot) when it collides with any must-visit on:
+      1. provider place_id equality,
+      2. real-world coordinates within ``proximity_km`` (same physical place),
+      3. name overlap >= 2 significant tokens (e.g. 'Golconda Fort' vs
+         'Golconda Fort Experience'),
+      4. description overlap >= 2 significant tokens (same place, different
+         title), OR a must-visit name that is fully contained in the activity's
+         name/description and vice-versa.
+
+    Nothing is invented to fill a rejected slot — the remaining real candidates
+    simply move up in order."""
+    collisions: List[bool] = [False] * len(activity_items)
+    mv_norm = [_norm(item.get("name", "")) for item in must_visit_items]
+    mv_tokens = [_significant_tokens(item.get("name", "")) for item in must_visit_items]
+    mv_desc = [_significant_tokens(item.get("description", "")) for item in must_visit_items]
+
+    def _collides(a: Dict[str, Any]) -> bool:
+        pid = str(a.get("place_id") or "").strip()
+        if pid:
+            for m in must_visit_items:
+                if str(m.get("place_id") or "").strip() == pid:
+                    return True
+        a_lat, a_lng = a.get("latitude"), a.get("longitude")
+        if a_lat is not None and a_lng is not None:
+            for m in must_visit_items:
+                m_lat, m_lng = m.get("latitude"), m.get("longitude")
+                if m_lat is not None and m_lng is not None:
+                    if _haversine_km((float(a_lat), float(a_lng)), (float(m_lat), float(m_lng))) <= proximity_km:
+                        return True
+        a_tokens = _significant_tokens(a.get("name", ""))
+        a_body = _significant_tokens(f"{a.get('name', '')} {a.get('description', '')}")
+        for idx, m in enumerate(must_visit_items):
+            if len(a_tokens & mv_tokens[idx]) >= 2:
+                return True
+            m_norm = mv_norm[idx]
+            if m_norm and (m_norm in _norm(a.get("name", "")) or _norm(a.get("name", "")) in m_norm):
+                return True
+            if mv_desc[idx] and len(a_body & mv_desc[idx]) >= 2:
+                return True
+        return False
+
+    kept: List[Dict[str, Any]] = []
+    for item in activity_items:
+        if not _collides(item):
+            kept.append(item)
+    return kept
+
+
 # ── Public entry points ─────────────────────────────────────────────────────
 
 def discover_destination(
@@ -1177,6 +1242,11 @@ def discover_destination(
         # Famousness ranking (rating/reviews/relevance — not distance), then
         # truncate to the target pool size.
         items = _rank(items, interests, veg_only, inside_first=True)
+        if category == "activities":
+            # Spec: Activities must never duplicate a Must-Visit already shown.
+            # The dedup runs after ranking, so rejected candidates leave the
+            # NEXT best real activity to take the slot — nothing is invented.
+            items = _unique_activities(items, result.get("must_visit") or [])
         items = items[: TARGET_COUNTS.get(category, 10)]
         result[category] = items
         result.setdefault("counts", {})[category] = len(items)

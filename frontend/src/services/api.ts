@@ -3,7 +3,8 @@ import {
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
   UserProfile, GuideProfile, PlanOption, ItineraryChange,
   ItineraryChangeResponse, ExplorePlace, DestinationCatalog,
-  SelectedPlaceItem, SelectedFoodItem, SelectedStay
+  SelectedPlaceItem, SelectedFoodItem, SelectedStay,
+  PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
 } from '../types';
 
 const API_BASE_URL =
@@ -235,6 +236,19 @@ export const api = {
 
   getItinerary: (tripId: string) =>
     request<TripItinerary>(`/trips/${tripId}/itinerary`),
+
+  // Step 5 Interactive Planner
+  planChanges: (tripId: string) =>
+    request<PlanChangeItem[]>(`/trips/${tripId}/plan-changes`),
+
+  searchTripPlaces: (tripId: string, q: string) =>
+    request<PlaceSearchItem[]>(`/trips/${tripId}/places/search?q=${encodeURIComponent(q)}`),
+
+  optimizeDay: (tripId: string, day: number, apply: boolean) =>
+    request<OptimizeDayResponse>(`/trips/${tripId}/optimize-day`, { method: 'POST', body: JSON.stringify({ day, apply }) }),
+
+  confirmTrip: (tripId: string) =>
+    request<ConfirmPlanResponse>(`/trips/${tripId}/confirm`, { method: 'POST' }),
 
   // Guides
   submitGuideOnboarding: (data: Partial<GuideProfile>) =>

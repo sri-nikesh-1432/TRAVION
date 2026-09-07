@@ -21,13 +21,19 @@ from app.core.db import get_db
 from app.core.security import require_role
 from app.models.entities import (
     Trip, Itinerary, GuideAssignment, Location, Guide, User, ChatMessage,
+    PlanChangeLog,
 )
 from app.schemas.schemas import (
     PlanMultiRequest, ChoosePlanRequest, ItineraryChangeRequest,
     ItineraryChangeResponse, ExplorePlaceItem, ItineraryResponse,
+    PlaceSearchItem, PlanChangeResponse, OptimizeDayRequest,
+    OptimizeDayResponse, ConfirmPlanResponse,
 )
 from app.api.v1.planning import generate_base_plan, effective_breakdown
-from app.services.multi_plan_engine import build_plans, recalculate_change
+from app.services.multi_plan_engine import (
+    build_plans, recalculate_change, _resequence, _haversine_km, validate_days,
+    _norm,
+)
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
 from app.services.places_discovery import discover_destination
 from app.services.budget_service import (
@@ -153,6 +159,56 @@ def _persist_version(
     db.add(itin)
     trip.total_cost = total_cost
     return itin
+
+
+def _log_change(
+    db: Session, trip: Trip, version: int, change_type: str, summary: str
+) -> None:
+    """Append one immutable PlanChangeLog row for a persisted plan version."""
+    db.add(PlanChangeLog(
+        trip_id=trip.id,
+        version=version,
+        change_type=change_type,
+        summary=summary,
+    ))
+
+
+def _stop_title(days: List[Dict[str, Any]], stop_id: str) -> Optional[str]:
+    for d in days or []:
+        for s in (d.get("stops") or []):
+            if s.get("id") == stop_id:
+                return str(s.get("title") or s.get("name") or "item")
+    return None
+
+
+def _change_summary(
+    change: Dict[str, Any], old_days: List[Dict[str, Any]]
+) -> str:
+    """Human-readable, verifiable diff of a single user edit. Titles are the
+    real stop titles as persisted — never invented descriptions."""
+    kind = change.get("kind")
+    if kind == "add":
+        title = str((change.get("stop") or {}).get("title") or (change.get("stop") or {}).get("name") or "a place")
+        return f"Added “{title}” to Day {int(change.get('new_day') or (change.get('stop') or {}).get('day') or 1)}"
+    if kind == "remove":
+        title = _stop_title(old_days, str(change.get("stop_id", ""))) or "an item"
+        return f"Removed “{title}”"
+    if kind == "move_time":
+        title = _stop_title(old_days, str(change.get("stop_id", ""))) or "an item"
+        return f"Changed timing of “{title}” to {change.get('new_time')}"
+    if kind == "move_day":
+        title = _stop_title(old_days, str(change.get("stop_id", ""))) or "an item"
+        return f"Moved “{title}” to Day {int(change.get('new_day') or 1)}"
+    if kind == "reorder":
+        title = _stop_title(old_days, str(change.get("stop_id", ""))) or "an item"
+        return f"Resequenced “{title}” within Day {int(change.get('new_day') or 1)}"
+    return "Updated the itinerary"
+
+
+def _plan_version(db: Session, trip_id: str) -> Optional[PlanChangeLog]:
+    return db.query(PlanChangeLog).filter(PlanChangeLog.trip_id == trip_id).order_by(
+        PlanChangeLog.version.desc()
+    ).first()
 
 
 def _own_trip(trip_id: str, current: dict, db: Session) -> Trip:
@@ -769,6 +825,11 @@ def choose_plan(
     _normalize_plan_totals(chosen, env["max"])
 
     itin = _persist_version(db, trip, chosen["days"], chosen["total_cost"], chosen["cost_breakdown"])
+    trip.status = "PLANNED"
+    _log_change(
+        db, trip, itin.version, "plan_selected",
+        f"Selected the {req.plan_type.title()} plan",
+    )
     db.commit()
     db.refresh(itin)
     return _itinerary_response(itin)
@@ -805,12 +866,17 @@ def edit_itinerary(
     if not result["applied"]:
         raise HTTPException(status_code=400, detail="Change could not be applied (stop not found).")
 
+    summary = _change_summary(change.model_dump(exclude_none=True), itin.days_data or [])
     new_itin = _persist_version(db, trip, result["days"], result["total_cost"], result["cost_breakdown"])
 
-    # Guide synchronization — the assigned guide sees every traveller change.
+    # Plan versioning — every persisted edit is logged with its real summary.
+    _log_change(db, trip, new_itin.version, "edit", summary)
+
+    # Guide synchronization — the assigned guide sees every traveller change,
+    # including the human-readable change summary (no JSON diff needed).
     _notify_guide(
         db, trip,
-        f"Traveller updated the itinerary (v{new_itin.version}). "
+        f"Traveller updated the itinerary (v{new_itin.version}): {summary}. "
         f"New total ₹{round(new_itin.total_cost):,}. Please review the latest plan."
     )
 
@@ -885,3 +951,324 @@ def explore_more(
             source=a.get("source", "verified_api"),
         ))
     return items
+
+
+# ── 5. Step 5 planner: real-place search / optimize-a-day / plan versioning ──
+
+@router.get("/{trip_id}/plan-changes", response_model=List[PlanChangeResponse])
+def plan_changes(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Plan version history — every persisted planner version with its server-
+    generated summary. Guides & managers read this to stay in sync with the
+    traveller's latest plan without re-diffing itinerary JSON."""
+    trip = _own_trip(trip_id, current, db)
+    rows = db.query(PlanChangeLog).filter(PlanChangeLog.trip_id == trip.id).order_by(
+        PlanChangeLog.version.asc()
+    ).all()
+    return [
+        PlanChangeResponse(
+            version=r.version, change_type=r.change_type,
+            summary=r.summary, created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/{trip_id}/places/search", response_model=List[PlaceSearchItem])
+def places_search(
+    trip_id: str,
+    q: str = "",
+    current: dict = Depends(require_role("USER", "GUIDE")),
+    db: Session = Depends(get_db),
+):
+    """REAL-place search for the Step 5 planner. Queries the destination-wide
+    verified pool (curated catalog + live Google/OSM discovery) across
+    must-visit attractions, activities, restaurants and stays — plus any other
+    mapped category (shopping, healthcare, education, transport) that a real
+    source provides. Never invents a place: results come only from verified
+    providers, and anything already in the plan is excluded."""
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    dest = trip.destination_name
+
+    pool: List[Dict[str, Any]] = []
+    # --- Verified curated catalog (real stays/attractions/food) ---
+    for a in VERIFIED_ATTRACTIONS.get(dest) or []:
+        pool.append({
+            "id": f"cat_{_norm(a.get('name', ''))[:40]}",
+            "name": a.get("name", ""), "category": a.get("category", "attraction"),
+            "description": a.get("description"), "address": None,
+            "lat": a.get("lat") or 0, "lng": a.get("lng") or 0,
+            "entry_fee": a.get("entry_fee") or 0,
+            "duration_minutes": a.get("duration_minutes") or 90,
+            "estimated_cost": a.get("entry_fee") or 0,
+            "rating": a.get("rating"), "source": a.get("source", "verified_api"),
+        })
+    for f in VERIFIED_FOOD.get(dest) or []:
+        pool.append({
+            "id": f"catf_{_norm(f.get('name', ''))[:40]}",
+            "name": f.get("name", ""), "category": "food",
+            "description": f.get("description") or f.get("must_try"),
+            "address": None,
+            "lat": f.get("lat") or 0, "lng": f.get("lng") or 0,
+            "entry_fee": 0,
+            "duration_minutes": 75,
+            "estimated_cost": (f.get("avg_cost_for_two") or 0) / 2,
+            "rating": f.get("rating"), "source": f.get("source", "verified_api"),
+        })
+    for s in VERIFIED_STAYS.get(dest) or []:
+        pool.append({
+            "id": f"cats_{_norm(s.get('name', ''))[:40]}",
+            "name": s.get("name", ""), "category": "stay",
+            "description": str(s.get("tier") or "Verified stay"),
+            "address": None,
+            "lat": s.get("lat") or 0, "lng": s.get("lng") or 0,
+            "entry_fee": 0,
+            "duration_minutes": 1440,
+            "estimated_cost": (s.get("price_per_night") or 0),
+            "rating": s.get("rating"), "source": s.get("source", "verified_api"),
+        })
+
+    # --- Live destination-wide discovery buckets (real Google/OSM places) ---
+    profile = trip.profile.questions_answers if trip.profile else {}
+    discovery = discover_destination(
+        dest,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(_destination_anchor(trip, db)),
+    )
+    for bucket, cat in (
+        ("must_visit", "attraction"), ("activities", "activities"),
+        ("food", "food"), ("stays", "stay"),
+    ):
+        for item in discovery.get(bucket) or []:
+            d = item.get("description") or ""
+            pool.append({
+                "id": item.get("id"),
+                "name": item.get("name", ""),
+                "category": cat,
+                "description": d or None,
+                "address": item.get("address"),
+                "lat": item.get("latitude") or 0, "lng": item.get("longitude") or 0,
+                "entry_fee": item.get("entry_fee") or 0,
+                "duration_minutes": item.get("duration_minutes") or 90,
+                "estimated_cost": item.get("entry_fee") or 0,
+                "rating": item.get("rating"), "source": item.get("source", "verified_api"),
+            })
+
+    # Dedup the pool by name + proximity so the same real place never appears
+    # twice (catalog entry vs the same place re-discovered live).
+    seen_names: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for item in pool:
+        key = _norm(item.get("name", ""))
+        if not key or key in seen_names:
+            continue
+        dup_near = any(
+            _haversine_km((float(item["lat"]) if item.get("lat") else 0.0,
+                            float(item["lng"]) if item.get("lng") else 0.0),
+                           (float(o["lat"]) if o.get("lat") else 0.0,
+                            float(o["lng"]) if o.get("lng") else 0.0)) <= 0.25
+            for o in deduped
+        )
+        if dup_near:
+            continue
+        seen_names.add(key)
+        deduped.append(item)
+
+    # Human-labelled query filter (token matching on name + category + desc).
+    query = _norm(q or "")
+    if query:
+        tokens = {t for t in query.split() if len(t) >= 2}
+        deduped = [
+            it for it in deduped
+            if tokens and tokens & set(
+                _norm(f"{it.get('name', '')} {it.get('category', '')} {it.get('description') or ''}").split()
+            )
+        ]
+    # Never offer a place the traveller already added.
+    in_plan = {
+        str(s.get("title") or s.get("name", "")).lower().strip()
+        for d in (itin.days_data if itin else []) for s in (d.get("stops") or [])
+    }
+    deduped = [it for it in deduped if str(it.get("name", "")).lower().strip() not in in_plan]
+
+    return [
+        PlaceSearchItem(
+            id=it.get("id"),
+            name=it.get("name", ""),
+            category=it.get("category", "attraction"),
+            description=it.get("description"),
+            address=it.get("address"),
+            lat=float(it.get("lat", 0) or 0),
+            lng=float(it.get("lng", 0) or 0),
+            entry_fee=float(it.get("entry_fee", 0) or 0),
+            duration_minutes=int(it.get("duration_minutes", 90) or 90),
+            estimated_cost=float(it.get("estimated_cost", 0) or 0),
+            rating=it.get("rating"),
+            source=it.get("source", "verified_api"),
+        )
+        for it in deduped[:25]
+    ]
+
+
+@router.post("/{trip_id}/optimize-day", response_model=OptimizeDayResponse)
+def optimize_day(
+    trip_id: str,
+    req: OptimizeDayRequest,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    """'Optimize My Day': nearest-neighbour routing within one day so the stops
+    follow a real geographic line (less backtracking). `apply=false` returns the
+    PROPOSED ordering for the user to preview; `apply=true` persists it as a new
+    itinerary version (with guide sync + plan-change log)."""
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    if not itin:
+        raise HTTPException(status_code=404, detail="No active itinerary to optimize. Generate a plan first.")
+
+    days = [dict(d) for d in (itin.days_data or [])]
+    for d in days:
+        d["stops"] = list(d.get("stops") or [])
+    target = next((d for d in days if d.get("day") == req.day), None)
+    warnings: List[str] = []
+    if not target or len(target.get("stops") or []) < 2:
+        warnings.append(
+            f"Day {req.day} has fewer than two places — there's nothing to re-route."
+        )
+        return OptimizeDayResponse(
+            day=req.day, version=None, applied=False, days=[dict(d) for d in days],
+            total_cost=itin.total_cost or 0,
+            cost_breakdown=effective_breakdown(itin),
+            warnings=warnings,
+        )
+
+    stops = list(target["stops"])
+    anchor = stops[0]
+    remaining = stops[1:]
+    ordered = [anchor]
+    while remaining:
+        last = ordered[-1]
+        last_pt = ((float(last.get("lat") or 0)), (float(last.get("lng") or 0)))
+        best_idx, best_dist = 0, float("inf")
+        for i, cand in enumerate(remaining):
+            cand_pt = ((float(cand.get("lat") or 0)), (float(cand.get("lng") or 0)))
+            dist = _haversine_km(last_pt, cand_pt)
+            if dist < best_dist:
+                best_idx, best_dist = i, dist
+        ordered.append(remaining.pop(best_idx))
+    target["stops"] = ordered
+    _resequence(days)
+
+    if not req.apply:
+        return OptimizeDayResponse(
+            day=req.day, version=None, applied=False, days=[dict(d) for d in days],
+            total_cost=itin.total_cost or 0,
+            cost_breakdown=effective_breakdown(itin),
+            warnings=warnings,
+        )
+
+    new_itin = _persist_version(db, trip, days, itin.total_cost, itin.cost_breakdown or {})
+    _log_change(
+        db, trip, new_itin.version, "optimized_day",
+        f"Optimized Day {req.day} routing ({len(ordered)} places, nearest-neighbour order)",
+    )
+    _notify_guide(
+        db, trip,
+        f"Traveller optimized Day {req.day} routing (v{new_itin.version}). "
+        f"Please review the latest plan."
+    )
+    db.commit()
+    db.refresh(new_itin)
+    return OptimizeDayResponse(
+        day=req.day, version=new_itin.version, applied=True,
+        days=new_itin.days_data or [], total_cost=new_itin.total_cost or 0,
+        cost_breakdown=effective_breakdown(new_itin),
+        warnings=warnings,
+    )
+
+
+@router.post("/{trip_id}/confirm", response_model=ConfirmPlanResponse)
+def confirm_plan(
+    trip_id: str,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    """FINAL backend validation of the Step 5 plan before payment.
+
+    Every check is deterministic and real-data based:
+      1. A plan exists (an active itinerary was chosen + edited).
+      2. It is not empty and every stop has a title.
+      3. Every stop has real coordinates (nothing invented/zeroed).
+      4. Total cost (incl. 3% platform fee) is within the traveller's budget.
+      5. The schedule has no overlaps/tight conflicts (server validator).
+    `valid=false` returns the exact missing items so the planner UI can show
+    clear remedies; checkout is allowed only after a valid=TRUE confirm."""
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    if not itin:
+        return ConfirmPlanResponse(
+            valid=False, version=0, total_cost=0, budget_max=None,
+            within_budget=False,
+            message="No plan to confirm yet — choose a plan and edit it first.",
+            missing=["No active itinerary exists."],
+        )
+
+    profile = trip.profile.questions_answers if trip.profile else {}
+    env = _budget_envelope(profile, trip.budget)
+    bmax = env["max"]
+    days = itin.days_data or []
+    stops = [s for d in days for s in (d.get("stops") or [])]
+
+    missing: List[str] = []
+    if not stops:
+        missing.append("The itinerary is empty — add at least one activity or attraction.")
+    else:
+        for s in stops:
+            title = str(s.get("title") or s.get("name") or "").strip()
+            if not title:
+                missing.append("A stop is missing its name.")
+                break
+            lat, lng = s.get("lat"), s.get("lng")
+            if not lat or not lng:
+                missing.append(f"“{title}” has no real coordinates — remove or replace it.")
+                break
+
+    check = validate_itinerary(
+        itin.cost_breakdown or {},
+        budget_max=env["max"],
+        cost_breakdown=itin.cost_breakdown or {},
+        days=days,
+    )
+    within_budget = bool(check["valid"])
+    if not within_budget:
+        missing.insert(0, check["warnings"][0] if check["warnings"] else
+                       "Total cost exceeds the budget.")
+
+    valid = bool(not missing)
+    version = itin.version or 0
+    total_cost = float(itin.total_cost or 0)
+    if valid:
+        message = (
+            f"Your plan (v{version}) is validated and ready for payment at "
+            f"₹{round(total_cost):,} — within your ₹{round(bmax):,} budget."
+        )
+    else:
+        message = "Your plan still needs final edits before payment."
+    return ConfirmPlanResponse(
+        valid=valid, message=message, version=version,
+        total_cost=total_cost, budget_max=bmax, within_budget=within_budget,
+        missing=missing,
+    )

@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info } from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay } from '../../types';
 import { api } from '../../services/api';
 
@@ -26,6 +28,15 @@ const insideFirst = <T extends { placement?: string | null; distance_km?: number
     if (aIn !== bIn) return aIn - bIn;
     return (a.distance_km ?? 0) - (b.distance_km ?? 0);
   });
+
+const CATEGORY_COLORS: Record<string, string> = {
+  must_visit: '#10b981',
+  activities: '#0ea5e9',
+  food: '#f59e0b',
+  stays: '#8b5cf6',
+};
+
+const MAP_FILTERS = ['all', 'must_visit', 'activities', 'food', 'stays', 'shopping', 'healthcare', 'education', 'transport', 'other'];
 
 const placementLabel = (p?: string | null, dist?: number | null) =>
   p === 'inside' || dist == null || dist === 0 ? 'Inside destination' : 'Nearby';
@@ -76,6 +87,113 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set());
   const [selectedStay, setSelectedStay] = useState<SelectedStay | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [mapFilter, setMapFilter] = useState('all');
+
+  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
+    const next = new Set(set);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    setter(next);
+  };
+
+  // Step 3 interactive map (raw Leaflet — leaflet is the only map dependency).
+  const mapDiv = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const layerRef = useRef<L.LayerGroup | null>(null);
+  const hasFitRef = useRef(false);
+
+  useEffect(() => {
+    if (!mapDiv.current || mapRef.current) return;
+    const map = L.map(mapDiv.current, {
+      center: [20.5937, 78.9629],
+      zoom: 10,
+      scrollWheelZoom: false,
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+    mapRef.current = map;
+    layerRef.current = L.layerGroup().addTo(map);
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      layerRef.current = null;
+      hasFitRef.current = false;
+    };
+  }, []);
+
+  const mapFilterCount = useMemo(() => {
+    if (!catalog) return {};
+    return {
+      all: (catalog.must_visit?.length ?? 0) + (catalog.activities?.length ?? 0) + (catalog.food?.length ?? 0) + (catalog.stays?.length ?? 0),
+      must_visit: catalog.must_visit?.length ?? 0,
+      activities: catalog.activities?.length ?? 0,
+      food: catalog.food?.length ?? 0,
+      stays: catalog.stays?.length ?? 0,
+    };
+  }, [catalog]);
+
+  useEffect(() => {
+    if (!catalog || !mapRef.current || !layerRef.current) return;
+    const layer = layerRef.current;
+    layer.clearLayers();
+    const points: L.LatLng[] = [];
+    const sink = (kind: string) => (name: string) => {
+      if (kind === 'food') toggle(selectedFood, setSelectedFood, name);
+      else if (kind === 'stays') {
+        const stay = catalog.stays.find((s) => s.name === name);
+        if (stay) setSelectedStay({
+          id: stay.id ?? null, name: stay.name,
+          latitude: stay.latitude ?? null, longitude: stay.longitude ?? null,
+          distance_km: stay.distance_km ?? null, budget_category: stay.budget_category ?? null,
+          price_per_night: stay.price_per_night ?? null,
+        });
+      } else toggle(selected, setSelected, name);
+    };
+    const addMarkers = (items: Array<CatalogPlace | CatalogFood | CatalogStay>, kind: string) => {
+      if (mapFilter !== 'all' && mapFilter !== kind) return;
+      for (const item of items) {
+        const lat = Number((item as any).latitude ?? (item as any).lat);
+        const lng = Number((item as any).longitude ?? (item as any).lng);
+        if (!lat || !lng) continue;
+        points.push(L.latLng(lat, lng));
+        const name = (() => {
+          if (kind === 'stays') return (item as CatalogStay).name;
+          if (kind === 'food') return (item as CatalogFood).name;
+          return (item as CatalogPlace).name;
+        })();
+        const active = kind === 'food' || kind === 'stays'
+          ? (kind === 'stays' ? selectedStay?.name === name : selectedFood.has(name))
+          : selected.has(name);
+        const color = CATEGORY_COLORS[kind] || '#64748b';
+        const marker = L.circleMarker([lat, lng], {
+          radius: active ? 12 : 8,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: active ? color : `${color}cc`,
+          fillOpacity: active ? 1 : 0.75,
+        });
+        marker.bindTooltip(name);
+        marker.on('click', () => sink(kind)(name));
+        marker.addTo(layer);
+      }
+    };
+    addMarkers(catalog.must_visit || [], 'must_visit');
+    addMarkers(catalog.activities || [], 'activities');
+    addMarkers(catalog.food || [], 'food');
+    addMarkers(catalog.stays || [], 'stays');
+
+    if (points.length > 0) {
+      if (!hasFitRef.current) {
+        hasFitRef.current = true;
+        mapRef.current.fitBounds(L.latLngBounds(points).pad(0.18), { maxZoom: 13 });
+      }
+      if (mapFilter !== 'all') {
+        const filtered = points.length ? L.latLngBounds(points) : null;
+        if (filtered) mapRef.current.fitBounds(filtered.pad(0.25), { maxZoom: 15 });
+      }
+    }
+  }, [catalog, mapFilter, selected, selectedFood, selectedStay]);
 
   useEffect(() => {
     let alive = true;
@@ -84,12 +202,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       .catch(() => { if (alive) setLoadError('Could not load verified places for this destination.'); });
     return () => { alive = false; };
   }, [tripId]);
-
-  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
-    const next = new Set(set);
-    if (next.has(name)) next.delete(name); else next.add(name);
-    setter(next);
-  };
 
   const totalSelected = selected.size + selectedFood.size;
   const places = useMemo(() => insideFirst(catalog?.must_visit ?? []), [catalog]);
@@ -211,6 +323,46 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 Destination-wide: {catalog.destination}
               </span>
             ) : null}
+          </div>
+
+          {/* Step 3 interactive map — every verified place, click to select */}
+          <div className="mb-8">
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+              {MAP_FILTERS.map((f) => {
+                const count = (mapFilterCount as Record<string, number>)[f] ?? 0;
+                const zero = count === 0 && f !== 'all';
+                const label = f === 'all' ? 'All' : f.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+                const color = CATEGORY_COLORS[f];
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    disabled={zero}
+                    title={zero ? 'No verified places in this category yet.' : undefined}
+                    onClick={() => setMapFilter(f)}
+                    className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      mapFilter === f
+                        ? 'text-white border-transparent shadow-sm'
+                        : 'bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                    style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#0f172a' } : undefined}
+                  >
+                    {f === 'all' && <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
+                    {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-slate-400'}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
+              <div ref={mapDiv} className="h-[380px] w-full z-0 relative" />
+              <p className="flex flex-wrap items-center justify-center gap-4 px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] font-bold text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.must_visit }} /> Must Visit</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.activities }} /> Activities</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.food }} /> Food</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.stays }} /> Stays</span>
+                <span className="text-slate-400 font-medium">Tap a marker to add or remove it</span>
+              </p>
+            </div>
           </div>
 
           {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}

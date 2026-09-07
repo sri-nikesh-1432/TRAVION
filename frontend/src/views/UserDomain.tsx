@@ -27,6 +27,7 @@ import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
 import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
 import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
 import { DiscoverySelect } from '../components/discovery-select/DiscoverySelect';
+import { PlannerWorkspace } from '../components/planner/PlannerWorkspace';
 import { resolveBudgetMax } from '../utils/budget';
 
 declare global {
@@ -61,8 +62,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   onLogout,
   isSandboxDemo = false
 }) => {
-  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'workspace' | 'my_trips'
-  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'workspace' | 'my_trips'>('search');
+  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'planner' | 'workspace' | 'my_trips'
+  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'plan_choice' | 'planner' | 'workspace' | 'my_trips'>('search');
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -337,7 +338,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3b. User picked one of the three plans → activate it & open checkout
+  // 3b. User picked one of the three plans → activate it & open the Step 5 planner
   const handleChoosePlan = async (planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') => {
     if (!activeTrip) return;
     setIsChoosingPlan(true);
@@ -351,14 +352,24 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         status: prev.mode === 'GUIDE_MODE' ? 'REQUESTED' : 'PLANNED'
       } : null);
       setIsChoosingPlan(false);
-
-      // Auto open Checkout (same transparent flow as before)
-      const checkout = await api.checkoutTrip(activeTrip.id);
-      setCheckoutData(checkout);
-      setShowCheckoutModal(true);
+      // Step 5: edit & finalize the plan BEFORE any payment (server-gated).
+      setCurrentView('planner');
     } catch (err) {
       console.error("Choosing plan failed:", err);
       setIsChoosingPlan(false);
+      setPlanError(getPlanErrorMessage(err));
+    }
+  };
+
+  // Planner → payment: only reachable after the backend validates (confirm=valid).
+  const handlePlannerProceedToPayment = async () => {
+    if (!activeTrip) return;
+    try {
+      const checkout = await api.checkoutTrip(activeTrip.id);
+      setCheckoutData(checkout);
+      setShowCheckoutModal(true);
+      setCurrentView('planner');
+    } catch (err) {
       setPlanError(getPlanErrorMessage(err));
     }
   };
@@ -817,6 +828,22 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             onSelect={handleChoosePlan}
             onBack={() => { setPlanOptions([]); setCurrentView('discovery_select'); }}
             busy={isChoosingPlan}
+          />
+        )}
+
+        {/* VIEW 2c: Step 5 Interactive Trip Planner — finalize before payment */}
+        {currentView === 'planner' && itinerary && activeTrip && (
+          <PlannerWorkspace
+            tripId={activeTrip.id}
+            itinerary={itinerary}
+            budgetMax={resolveBudgetMax(
+              itinerary.cost_breakdown?.budget,
+              activeTrip.budget,
+              itinerary.total_cost,
+            )}
+            onItineraryChange={handleItineraryChange}
+            onBackToPlans={() => setCurrentView('plan_choice')}
+            onProceedToPayment={() => void handlePlannerProceedToPayment()}
           />
         )}
 

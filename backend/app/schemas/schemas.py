@@ -345,6 +345,51 @@ class ExplorePlaceItem(BaseModel):
     rating: Optional[float] = 4.6
     source: str = "verified_api"
 
+# --- Step 5 Interactive Planner: place search / plan versioning / validation --
+class PlaceSearchItem(BaseModel):
+    """A REAL place the traveller can add to the plan from the planner — search
+    results come only from verified sources, never invented."""
+    id: Optional[str] = None
+    name: str
+    category: str
+    description: Optional[str] = None
+    address: Optional[str] = None
+    lat: float
+    lng: float
+    entry_fee: float = 0.0
+    duration_minutes: int = 90
+    estimated_cost: float = 0.0
+    rating: Optional[float] = None
+    source: str = "verified_api"
+
+class PlanChangeResponse(BaseModel):
+    version: int
+    change_type: str
+    summary: str
+    created_at: datetime
+
+class OptimizeDayRequest(BaseModel):
+    day: int = Field(..., ge=0)
+    apply: bool = False  # False = preview (Proposed), True = persist the reorder
+
+class OptimizeDayResponse(BaseModel):
+    day: int
+    version: Optional[int] = None
+    applied: bool
+    days: List[Dict[str, Any]]
+    total_cost: float
+    cost_breakdown: Dict[str, Any]
+    warnings: List[str] = []
+
+class ConfirmPlanResponse(BaseModel):
+    valid: bool
+    message: str
+    version: int
+    total_cost: float
+    budget_max: Optional[float] = None
+    within_budget: bool
+    missing: List[str] = []
+
 # --- Replanning ---
 class ReplanTriggerRequest(BaseModel):
     trigger_type: str = Field(..., pattern="^(WEATHER|USER_PREFERENCE|BUDGET|TIREDNESS)$")
