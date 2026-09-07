@@ -2,13 +2,46 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import require_role
-from app.models.entities import Trip, Itinerary, Payment, PaymentSplit, OfflinePackage
-from app.schemas.schemas import CheckoutRequest, CheckoutResponse, PaymentWebhookRequest
+from app.models.entities import Trip, Itinerary, Payment, PaymentSplit, OfflinePackage, GuideAssignment
+from app.schemas.schemas import CheckoutRequest, CheckoutResponse, PaymentWebhookRequest, TripPricingResponse
 from app.services.payment_service import PaymentService
 from app.services.offline_service import OfflinePackageService
-from app.api.v1.planning import effective_breakdown
+from app.services.pricing_service import calculate_trip_pricing
 
 router = APIRouter(prefix="", tags=["Payments"])
+
+
+def _pricing_context(trip: Trip, itinerary: Itinerary, db: Session) -> dict:
+    """Build the authoritative pricing inputs from ONE place so checkout, the
+    pricing endpoint, the webhook and every dashboard show identical numbers."""
+    profile = trip.profile.questions_answers if trip.profile else {}
+    days = len(itinerary.days_data or []) if itinerary else 1
+    # GUIDE_*: only an accepted/confirmed real guide is load-bearing for the
+    # per-guide rate. REQUESTED is still "no guide decided yet" → rule-based fee.
+    guide = None
+    if trip.guide_assignment and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED"):
+        guide = trip.guide_assignment.guide or None
+    return {
+        "mode": trip.mode or "ADVENTUROUS_MODE",
+        "days": days,
+        "destination": trip.destination_name or "",
+        "party_type": profile.get("party") or (trip.profile.party_type if trip.profile else None),
+        "budget": trip.budget or 0.0,
+        "breakdown": itinerary.cost_breakdown if itinerary else None,
+        "guide": guide,
+    }
+
+
+def _guide_required(trip: Trip) -> bool:
+    return (trip.mode or "") == "GUIDE_MODE"
+
+
+def _guide_assigned(trip: Trip) -> bool:
+    return bool(
+        trip.guide_assignment
+        and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")
+        and trip.guide_assignment.guide_id
+    )
 
 
 @router.post("/trips/{trip_id}/checkout", response_model=CheckoutResponse)
@@ -29,11 +62,9 @@ def create_trip_checkout(
     if not itinerary:
         raise HTTPException(status_code=400, detail="Active itinerary required before checkout")
 
-    # Server-side truth: breakdown persisted at planning time.
-    breakdown = effective_breakdown(itinerary)
-    guide_fee = float(breakdown.get("guide_fee") or 0.0)
-    platform_fee = float(breakdown.get("platform_fee") or 0.0)
-    payable = round(guide_fee + platform_fee, 0)
+    # Server-side truth: THE authoritative backend pricing (never client input).
+    pricing = calculate_trip_pricing(**_pricing_context(trip, itinerary, db))
+    payable = float(pricing["amount_payable"])
     if payable <= 0:
         raise HTTPException(status_code=400, detail="No payable fees configured for this trip yet")
 
@@ -54,21 +85,33 @@ def create_trip_checkout(
             currency="INR"
         )
         db.add(payment)
+        db.flush()
     else:
         payment.razorpay_order_id = order_info["order_id"]
         payment.total_amount = payable
         payment.status = "PENDING"
 
+    # Persist the authoritative fee SNAPSHOT at order time (not only after
+    # success) so the transaction record always carries the exact
+    # travel-spend + guide/platform split that Razorpay was asked to collect.
+    split = db.query(PaymentSplit).filter(PaymentSplit.payment_id == payment.id).first()
+    if not split:
+        split = PaymentSplit(payment_id=payment.id, settlement_status="PENDING")
+        db.add(split)
+    split.transport_cost = round(float(pricing["transport_cost"]), 0)
+    split.stay_cost = round(float(pricing["stay_cost"]), 0)
+    split.food_cost = round(float(pricing["food_cost"]), 0)
+    split.activity_cost = round(float(pricing["activity_cost"]), 0)
+    split.guide_fee = round(float(pricing["guide_fee"]), 0)
+    split.platform_fee = round(float(pricing["platform_fee"]), 0)
+
     db.commit()
 
-    display_breakdown = dict(breakdown)
+    display_breakdown = dict(pricing["breakdown"])
     display_breakdown["payable"] = payable
-    display_breakdown["travel_spend"] = round(
-        float(display_breakdown.get("transport") or 0)
-        + float(display_breakdown.get("stay") or 0)
-        + float(display_breakdown.get("food") or 0)
-        + float(display_breakdown.get("activities") or 0), 0
-    )
+    display_breakdown["travel_spend"] = pricing["travel_spend"]
+    display_breakdown["guide_required"] = _guide_required(trip)
+    display_breakdown["guide_assigned"] = _guide_assigned(trip)
 
     return CheckoutResponse(
         order_id=order_info["order_id"],
@@ -77,6 +120,32 @@ def create_trip_checkout(
         key_id=order_info["key_id"],
         breakdown=display_breakdown,
         live_checkout=bool(order_info.get("live"))
+    )
+
+
+@router.get("/trips/{trip_id}/pricing", response_model=TripPricingResponse)
+def get_trip_pricing(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """THE authoritative pricing endpoint. Everyone (checkout UI, manager,
+    guide, admin, repricing) reads these same numbers — never independently
+    recalculated amounts."""
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    itinerary = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id,
+        Itinerary.is_active == True
+    ).first()
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="No active itinerary yet")
+    pricing = calculate_trip_pricing(**_pricing_context(trip, itinerary, db))
+    return TripPricingResponse(
+        **pricing,
+        guide_assigned=_guide_assigned(trip),
+        guide_required=_guide_required(trip),
     )
 
 
@@ -106,22 +175,32 @@ def process_payment_webhook(
     trip = payment.trip
     trip.status = "ACTIVE"
 
-    # Record the settlement split from server-side truth (guide fee vs platform fee).
+    # Verify from authoritative data (never trust the frontend): the collected
+    # order amount must equal the backend's current guide_fee + platform_fee.
     itinerary = db.query(Itinerary).filter(Itinerary.trip_id == trip.id, Itinerary.is_active == True).first()
-    breakdown = effective_breakdown(itinerary) if itinerary else {}
+    pricing = calculate_trip_pricing(**_pricing_context(trip, itinerary, db)) if itinerary else None
+    if pricing is not None and abs(
+        float(payment.total_amount or 0) - float(pricing["amount_payable"])
+    ) > 0.01:
+        # The planner/pricing changed between order creation and settlement.
+        # The binding charge is the razorpay order amount; record the CURRENT
+        # authoritative split plus an explicit note so revenue never drifts.
+        amount_note = round(float(payment.total_amount or 0) - float(pricing["amount_payable"]), 0)
+    else:
+        amount_note = 0.0
+
+    # Record the settlement split from server-side truth (guide fee vs platform fee).
     split = db.query(PaymentSplit).filter(PaymentSplit.payment_id == payment.id).first()
     if not split:
-        split = PaymentSplit(
-            payment_id=payment.id,
-            transport_cost=round(float(breakdown.get("transport") or 0), 0),
-            stay_cost=round(float(breakdown.get("stay") or 0), 0),
-            food_cost=round(float(breakdown.get("food") or 0), 0),
-            activity_cost=round(float(breakdown.get("activities") or 0), 0),
-            guide_fee=round(float(breakdown.get("guide_fee") or 0), 0),
-            platform_fee=round(float(breakdown.get("platform_fee") or 0), 0),
-            settlement_status="PENDING"
-        )
+        split = PaymentSplit(payment_id=payment.id, settlement_status="PENDING")
         db.add(split)
+    if pricing is not None:
+        split.transport_cost = round(float(pricing["transport_cost"]), 0)
+        split.stay_cost = round(float(pricing["stay_cost"]), 0)
+        split.food_cost = round(float(pricing["food_cost"]), 0)
+        split.activity_cost = round(float(pricing["activity_cost"]), 0)
+        split.guide_fee = round(float(pricing["guide_fee"]), 0)
+        split.platform_fee = round(float(pricing["platform_fee"]), 0)
 
     # Assemble offline package for the traveller.
     guide_info = None
@@ -154,7 +233,8 @@ def process_payment_webhook(
         "payment_status": "SUCCESS",
         "trip_status": trip.status,
         "amount_collected": payment.total_amount,
-        "guide_fee": round(float(breakdown.get("guide_fee") or 0), 0),
-        "platform_fee": round(float(breakdown.get("platform_fee") or 0), 0),
+        "guide_fee": round(float(split.guide_fee or 0), 0),
+        "platform_fee": round(float(split.platform_fee or 0), 0),
+        "amount_delta_vs_authoritative": float(amount_note),
         "offline_package_ready": True
     }

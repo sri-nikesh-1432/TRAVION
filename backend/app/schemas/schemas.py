@@ -275,6 +275,28 @@ class CheckoutResponse(BaseModel):
     breakdown: Dict[str, Any]
     live_checkout: bool = False  # True = real Razorpay test-mode order, False = simulated/local order
 
+class TripPricingResponse(BaseModel):
+    """THE authoritative backend-calculated Trip pricing. Every surface
+    (checkout, plan cards, guide/manager/admin dashboards, plan changes,
+    transactions) reads the SAME numbers from this single source of truth.
+    `amount_payable` (guide_fee + platform_fee) is the ONLY thing Travion
+    collects — the local travel spend is never part of the Razorpay order."""
+    transport_cost: float
+    stay_cost: float
+    food_cost: float
+    activity_cost: float
+    travel_spend: float
+    guide_fee: float
+    platform_fee: float
+    amount_payable: float
+    currency: str = "INR"
+    days: int
+    total_cost: float
+    guide_assigned: bool = False
+    guide_required: bool = False
+    breakdown: Dict[str, Any]
+    rules: Dict[str, Any]
+
 class PaymentWebhookRequest(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
@@ -389,6 +411,69 @@ class ConfirmPlanResponse(BaseModel):
     budget_max: Optional[float] = None
     within_budget: bool
     missing: List[str] = []
+
+# --- Trip place selections (server-side single source of truth) -------------
+class SelectionPayload(BaseModel):
+    """One REAL place the traveller chose (Step 3 map/cards, search, nearby,
+    or the Step 5 planner). `provider_place_id` is the provider's canonical id;
+    the row identity (trip + provider_place_id) is what makes re-add idempotent."""
+    provider_place_id: str
+    place_id: Optional[str] = None
+    name: str
+    category: str = "must_visit"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    distance_km: Optional[float] = None
+    rating: Optional[float] = None
+    price: Optional[float] = None
+    selection_source: str = "map"  # recommendation | map | search | nearby | step5
+    item_json: Optional[Dict[str, Any]] = None
+
+class SelectionSyncRequest(BaseModel):
+    items: List[SelectionPayload] = []
+    # True => the client's list is authoritative: any active selection whose
+    # provider_place_id is missing from `items` is soft-removed.
+    replace: bool = False
+
+class TripSelectionResponse(BaseModel):
+    provider_place_id: str
+    place_id: Optional[str] = None
+    name: str
+    category: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    distance_km: Optional[float] = None
+    rating: Optional[float] = None
+    price: Optional[float] = None
+    selection_source: str
+    status: str  # active | removed
+    selected_at: datetime
+    removed_at: Optional[datetime] = None
+    item_json: Optional[Dict[str, Any]] = None
+
+class SelectionsResponse(BaseModel):
+    destination: Optional[str] = None
+    selections: List[TripSelectionResponse]
+    counts: Dict[str, int]
+    total: int
+
+class PlaceDetailsResponse(BaseModel):
+    provider_place_id: Optional[str] = None
+    id: Optional[str] = None
+    name: str
+    category: str
+    description: Optional[str] = None
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    distance_km: Optional[float] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    source: str
+    verified: bool
+    inside_destination: bool = True
+    selection_status: str = "none"  # none | active | removed
+    extra: Optional[Dict[str, Any]] = None
 
 # --- Replanning ---
 class ReplanTriggerRequest(BaseModel):

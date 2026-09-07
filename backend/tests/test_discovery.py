@@ -30,6 +30,9 @@ def offline_no_network(monkeypatch):
     monkeypatch.setattr(pd, "_discover_osm", lambda dest, resolved, bounds=None: {
         "must_visit": [], "food": [], "activities": [], "stays": [],
     })
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda resolved, bounds=None: {
+        c: [] for c in pd.MAP_CATEGORIES
+    })
     monkeypatch.setattr(pd, "_geocode_destination", lambda dest, state=None: None)
 
 
@@ -243,3 +246,82 @@ def test_nearby_mode_hard_caps_at_2km(monkeypatch):
     assert far not in names, "a real place 4.5 km away must NEVER be a 'nearby' result"
     for item in res["attractions"]:
         assert float(item["distance_km"]) <= 2.0 + 1e-6
+
+
+# ── HONEST discovery contract: requested vs available, never fake counts ─────
+
+def test_catalog_meta_reports_honest_requested_vs_available():
+    """Every section reports `requested` (target), `available` (what actually
+    exists) and `status`. `available` must ALWAYS equal the actual list length —
+    the UI can't show '10' when only N real places exist."""
+    result = pd.discover_destination("Ooty")
+    meta = result["catalog_meta"]
+    for cat in ("must_visit", "activities", "food", "stays"):
+        row = meta[cat]
+        assert row["requested"] == pd.TARGET_COUNTS[cat]
+        assert row["available"] == len(result.get(cat) or [])
+        assert row["status"] in {"success", "unavailable"}
+        if row["available"]:
+            assert row["status"] == "success"
+        assert row["note"], "every category gets an honest note"
+
+
+def test_catalog_meta_never_claims_success_when_pool_shrunk():
+    """Activities that collide with must-visit are honestly dropped — `available`
+    reflects the REAL (possibly smaller) pool, never the requested target."""
+    result = pd.discover_destination("Mahabalipuram")
+    meta = result["catalog_meta"]
+    assert meta["activities"]["available"] == len(result.get("activities") or [])
+    assert meta["activities"]["available"] <= meta["activities"]["requested"]
+
+
+# ── Real MAP data: broader categories, provider-verified only ───────────────
+
+def test_discover_map_returns_real_verified_places_only(monkeypatch):
+    """The map's broader categories (shopping/healthcare/education/…) come only
+    from real providers; results are inside the destination and verified."""
+    fake = {
+        "shopping": [{
+            "id": "osm_map_1", "place_id": "osm_map_1", "name": "Real Market",
+            "category": "shopping", "latitude": 11.4100, "longitude": 76.6900,
+            "source": "openstreetmap", "verified": True,
+        }],
+        "healthcare": [{
+            "id": "osm_map_2", "place_id": "osm_map_2", "name": "General Hospital",
+            "category": "healthcare", "latitude": 11.4050, "longitude": 76.6950,
+            "source": "openstreetmap", "verified": True,
+        }],
+        "education": [], "transport": [], "other": [],
+    }
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda resolved, bounds=None: fake)
+    res = pd.discover_map(
+        "Ooty",
+        {"name": "Ooty", "lat": 11.4102, "lng": 76.6950, "kind": "city"},
+        origin=(11.4102, 76.6950), dest_radius_km=25.0, core_km=2.0,
+    )
+    assert res["shopping"], "real map data must be surfaced"
+    assert res["healthcare"]
+    for cat in pd.MAP_CATEGORIES:
+        for item in res[cat]:
+            assert item["verified"] is True
+            assert item["inside_destination"] is True
+            assert item["source"] not in {"ai", "llm", "invented", "estimated"}
+
+
+def test_discover_map_rejects_places_outside_destination(monkeypatch):
+    """A real but far-away place (e.g. 200 km off) must never appear on the
+    destination map."""
+    far_away = [{
+        "id": "osm_far", "place_id": "osm_far", "name": "Distant Mall",
+        "category": "shopping", "latitude": 13.0827, "longitude": 80.2707,  # Chennai-ish
+        "source": "openstreetmap", "verified": True,
+    }]
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda resolved, bounds=None: {
+        "shopping": far_away, "healthcare": [], "education": [], "transport": [], "other": [],
+    })
+    res = pd.discover_map(
+        "Ooty",
+        {"name": "Ooty", "lat": 11.4102, "lng": 76.6950, "kind": "city"},
+        origin=(11.4102, 76.6950), dest_radius_km=25.0, core_km=2.0,
+    )
+    assert res["shopping"] == [], "far-away real places are filtered out"; return

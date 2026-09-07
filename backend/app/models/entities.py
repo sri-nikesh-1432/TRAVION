@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON
+    Column, String, Integer, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.core.db import Base
@@ -73,6 +74,11 @@ class Guide(Base):
     safety_information = Column(Text, nullable=True)
     rating = Column(Float, default=5.0)
     review_count = Column(Integer, default=0)
+    # Manager-configurable per-day fee override (INR). When set, the trip's
+    # guide fee = rate_per_day × guided_days (clamped to Travion's guide fee
+    # bounds). When NULL, the platform's rule-based guide fee applies. NULL →
+    # the rule, never a per-guide fake default.
+    rate_per_day = Column(Float, nullable=True)
     current_trip_id = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
@@ -291,6 +297,49 @@ class PlanChangeLog(Base):
     version = Column(Integer, nullable=False)  # itinerary version this change produced
     change_type = Column(String(32), nullable=False)  # plan_selected | edit | optimized_day | replan
     summary = Column(Text, nullable=False)  # "Added Charminar · Removed Golconda Fort · …"
+    created_at = Column(DateTime, default=get_utc_now)
+
+    trip = relationship("Trip")
+
+
+class TripPlaceSelection(Base):
+    """Server-side record of a REAL place the traveller chose for this trip
+    (Step 3 map/cards, Step 4, Step 5). Row identity is `trip_id +
+    provider_place_id` (the provider's canonical id, e.g. Google `places.id`
+    or the OSM node id) — removing a place soft-deletes the row (`status =
+    removed`) so the SAME id can be re-added without duplicate rows, and
+    `provider_place_id` flows unchanged through recommendation → map → search →
+    plan → payment → guide/manager views.
+
+    Selections are single-source-of-truth rows the UI reads to render the
+    "selected for my trip" panel and the planner reads to reproduce plans after
+    a refresh — never invented, always the exact real place the user picked.
+    """
+
+    __tablename__ = "trip_place_selections"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "provider_place_id", name="uq_trip_place_selection"),
+    )
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    trip_id = Column(String(36), ForeignKey("trips.id"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    # Provider canonical id (Google Places `id`, OSM `osm_<type>_<id>`, or — for
+    # curated catalog entries with no external provider id — the catalog item id).
+    provider_place_id = Column(String(255), nullable=False)
+    place_id = Column(String(255), nullable=True)  # internal Travion id, when present
+    name = Column(String(255), nullable=False)
+    category = Column(String(50), nullable=False)  # must_visit | activities | food | stays | shopping | healthcare | education | transport | other
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    distance_km = Column(Float, nullable=True)
+    rating = Column(Float, nullable=True)
+    price = Column(Float, nullable=True)
+    item_json = Column(JSON, default=dict)  # snapshot of the real item (cuisine, tier, fees, …)
+    selection_source = Column(String(32), default="map")  # recommendation | map | search | nearby | step5
+    status = Column(String(20), default="active")  # active | removed
+    selected_at = Column(DateTime, default=get_utc_now)
+    removed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
     trip = relationship("Trip")

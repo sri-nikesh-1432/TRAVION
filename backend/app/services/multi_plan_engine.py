@@ -559,7 +559,7 @@ def build_plans(
                 f"PLAN A targets the low end of your ₹{round(budget_min):,}–₹{round(budget_max):,} budget range; "
                 f"PLAN C explores the top end. We never inflate prices to reach a number."
             )
-        if float(budget_min or 0) > 0 and final_total < float(budget_min):
+        if variant == "VALUE" and float(budget_min or 0) > 0 and final_total < float(budget_min):
             warnings.append(
                 f"The realistic cheapest version of this trip comes to ₹{round(final_total):,} — below your "
                 f"listed minimum of ₹{round(float(budget_min)):,}. That's fine: we don't pad costs to reach "

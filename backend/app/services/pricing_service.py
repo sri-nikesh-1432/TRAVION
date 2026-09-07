@@ -155,3 +155,121 @@ def compute_fees(
             "platform_rate": platform_rate_for_budget(budget),
         },
     }
+
+
+# ── SINGLE SOURCE OF TRUTH ───────────────────────────────────────────────────
+# Every surface (checkout, Razorpay order, plan cards, plan-change repricing,
+# guide/manager/admin dashboards, transactions) reads Trip pricing from these
+# functions. The formulas never live in React or in per-surface ad-hoc code.
+
+from app.services.budget_service import PLATFORM_FEE_RATE  # noqa: E402
+
+
+def guide_fee_for(
+    mode: str,
+    days: int,
+    destination: str,
+    party_type: Optional[str] = None,
+    guide: Any = None,
+) -> float:
+    """Authoritative guide fee.
+
+    1. If a real guide is ASSIGNED (accepted/confirmed) AND that guide has a
+       manager-configured `rate_per_day`, the fee is their rate × guided days
+       (clamped to Travion's published guide-fee bounds). This is the future
+       manager-configurable per-guide pricing path.
+    2. Otherwise the platform's rule-based fee applies (₹900/day × days ×
+       destination/party multipliers, min ₹1,500, max ₹30,000).
+    3. Never a hardcoded universal amount; never ₹0 for a trip where a guide
+       is actually required (GUIDE_MODE).
+    """
+    days = max(1, int(days))
+    if guide is not None and getattr(guide, "rate_per_day", None):
+        fee = float(guide.rate_per_day) * days
+        return round(max(GUIDE_MIN_FEE, min(fee, GUIDE_MAX_FEE)), 0)
+    return compute_guide_fee(mode, days, destination, party_type)
+
+
+def reprice_breakdown(
+    breakdown: Optional[Dict[str, Any]] = None,
+    *,
+    mode: str,
+    days: int,
+    destination: str,
+    party_type: Optional[str] = None,
+    guide: Any = None,
+) -> Dict[str, Any]:
+    """Recompute a cost breakdown with the CURRENT guide fee (e.g. after the
+    traveller removed/added a day or the itinerary was edited). Keeps the guide
+    fee consistent with the new guided-day count instead of freezing the old one.
+    Returns a full breakdown dict with authoritative payable/platform/travel."""
+    bd = dict(breakdown or {})
+    transport = float(bd.get("transport", 0) or 0)
+    stay = float(bd.get("stay", 0) or 0)
+    food = float(bd.get("food", 0) or 0)
+    activities = float(bd.get("activities", 0) or 0)
+    guide_fee = guide_fee_for(mode, days, destination, party_type, guide)
+    travel_spend = round(transport + stay + food + activities, 0)
+    base_cost = round(transport + stay + food + activities + guide_fee, 0)
+    platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
+    final_total = round(base_cost + platform_fee, 0)
+    bd.update({
+        "guide_fee": round(guide_fee, 0),
+        "platform_fee": platform_fee,
+        "payable": round(guide_fee + platform_fee, 0),
+        "travel_spend": travel_spend,
+        "base_plan_cost": base_cost,
+        "final_total": final_total,
+        "total": final_total,
+        "total_cost": final_total,
+        "days": max(1, int(days)),
+    })
+    return bd
+
+
+def calculate_trip_pricing(
+    *,
+    mode: str,
+    days: int,
+    destination: str,
+    breakdown: Optional[Dict[str, Any]] = None,
+    budget: float = 0.0,
+    party_type: Optional[str] = None,
+    guide: Any = None,
+) -> Dict[str, Any]:
+    """THE authoritative Trip pricing result.
+
+    Returns the exact numbers every surface must render/charge:
+      transport_cost, stay_cost, food_cost, activity_cost, travel_spend,
+      guide_fee, platform_fee, amount_payable, currency, total_cost plus the
+      breakdown + rules. `amount_payable` (the ONLY thing Razorpay charges) is
+      guide_fee + platform_fee — the local travel spend is never collected.
+    """
+    bd = reprice_breakdown(
+        breakdown, mode=mode, days=days,
+        destination=destination, party_type=party_type, guide=guide,
+    )
+    guide_fee = float(bd["guide_fee"])
+    platform_fee = float(bd["platform_fee"])
+    return {
+        "transport_cost": float(bd.get("transport", 0) or 0),
+        "stay_cost": float(bd.get("stay", 0) or 0),
+        "food_cost": float(bd.get("food", 0) or 0),
+        "activity_cost": float(bd.get("activities", 0) or 0),
+        "travel_spend": float(bd["travel_spend"]),
+        "guide_fee": guide_fee,
+        "platform_fee": platform_fee,
+        "amount_payable": round(guide_fee + platform_fee, 0),
+        "currency": "INR",
+        "days": max(1, int(days)),
+        "total_cost": float(bd["total_cost"]),
+        "breakdown": bd,
+        "rules": {
+            "mode": mode,
+            "days": max(1, int(days)),
+            "guide_base_per_day": GUIDE_BASE_PER_DAY,
+            "guide_min_fee": GUIDE_MIN_FEE,
+            "guide_max_fee": GUIDE_MAX_FEE,
+            "platform_fee_rate": PLATFORM_FEE_RATE,
+        },
+    }

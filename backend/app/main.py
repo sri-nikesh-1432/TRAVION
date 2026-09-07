@@ -40,6 +40,7 @@ def _ensure_runtime_columns():
         "locations": {"place_id": "VARCHAR(255)"},
         "chat_messages": {"lat": "FLOAT", "lng": "FLOAT"},
         "trip_profiles": {"selected_stay": "JSON"},
+        "guides": {"rate_per_day": "FLOAT"},
     }
     try:
         inspector = inspect(engine)

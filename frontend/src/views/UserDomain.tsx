@@ -1012,15 +1012,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <span className="text-[11px] font-black uppercase tracking-wider text-travion-700">Travion services — what you pay today</span>
                 </div>
                 <div className="space-y-2 text-xs font-medium">
-                  {Number(checkoutData.breakdown.guide_fee) > 0 && (
-                    <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
-                      <span className="font-semibold flex items-center gap-1.5">
-                        <Compass className="w-3.5 h-3.5" />
-                        <span>Verified local guide fee</span>
-                      </span>
-                      <span className="font-bold">₹{checkoutData.breakdown.guide_fee.toLocaleString()}</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5" />
+                      <span>Guide fee</span>
+                    </span>
+                    <span className="font-bold">₹{(Number(checkoutData.breakdown.guide_fee || 0)).toLocaleString()}</span>
+                  </div>
                   <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
                     <span className="font-semibold flex items-center gap-1.5">
                       <BadgeCheck className="w-3.5 h-3.5" />
@@ -1036,7 +1034,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               </div>
 
               <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-6 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-                Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects only the guide and platform fees shown above — never your full travel budget.
+                Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects {Number(checkoutData.breakdown.guide_fee || 0) > 0 ? 'only the guide and platform fees shown above' : 'only the platform fee shown above — on this trip no guide fee applies (no verified guide is assigned)'} — never your full travel budget.
               </p>
 
               <button

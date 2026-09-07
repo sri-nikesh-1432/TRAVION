@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import require_role, get_current_identity
-from app.models.entities import Guide, GuideAssignment, Trip, Review, Identity
+from app.models.entities import Guide, GuideAssignment, Trip, Review, Identity, Itinerary
 from app.schemas.schemas import (
     GuideOnboardingUpdate, GuideStatusUpdate, ReviewVisibilityUpdate, ReviewResponse
 )
+from app.services.pricing_service import calculate_trip_pricing
 
 router = APIRouter(prefix="/guides", tags=["Guides"])
 
@@ -88,6 +89,22 @@ def get_assigned_trips(
     for a in assignments:
         trip = a.trip
         user = trip.user
+        # Authoritative backend fee for this trip (same numbers as checkout/manager/admin).
+        itin = db.query(Itinerary).filter(
+            Itinerary.trip_id == trip.id, Itinerary.is_active == True
+        ).first()
+        pricing = None
+        if itin:
+            profile = trip.profile.questions_answers if trip.profile else {}
+            pricing = calculate_trip_pricing(
+                mode=trip.mode or "ADVENTUROUS_MODE",
+                days=max(1, len(itin.days_data or [])),
+                destination=trip.destination_name or "",
+                party_type=profile.get("party") or (trip.profile.party_type if trip.profile else None),
+                budget=trip.budget or 0.0,
+                breakdown=itin.cost_breakdown,
+                guide=(guide if a.status in ("ACCEPTED", "CONFIRMED") else None),
+            )
         res.append({
             "assignment_id": a.id,
             "status": a.status,
@@ -100,7 +117,9 @@ def get_assigned_trips(
                 "start_datetime": trip.start_datetime,
                 "end_datetime": trip.end_datetime,
                 "status": trip.status,
-                "total_cost": trip.total_cost,                "traveller": {
+                "total_cost": trip.total_cost,
+                "pricing": pricing,  # authoritative guide/platform/payable for THIS trip
+                "traveller": {
                     "name": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
                     "language": user.preferred_language if user else "English",
                     "phone": mask_phone(user.emergency_contact_phone) if user else None

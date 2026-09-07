@@ -788,6 +788,195 @@ def _discover_osm(
     return buckets
 
 
+# ── Real MAP data: broader categories the map may show (never fabricated) ────
+
+# The Step 3 map can plot MORE than the recommendation buckets. These broader
+# map categories come ONLY from real providers (OSM tags / Google types) — when
+# a provider has nothing, the map category is honestly empty.
+MAP_CATEGORIES: List[str] = ["shopping", "healthcare", "education", "transport", "other"]
+MAP_TARGET: int = 25  # cap per map category (broader than the recommended 10s, still real)
+
+_OSM_MAP_FILTERS: List[Tuple[str, str]] = [
+    ("shopping", 'node["shop"]'),
+    ("shopping", 'way["shop"]'),
+    ("healthcare", 'node["amenity"~"^(hospital|clinic|pharmacy)$"]'),
+    ("healthcare", 'way["amenity"~"^(hospital|clinic|pharmacy)$"]'),
+    ("education", 'node["amenity"~"^(school|university|college|kindergarten)$"]'),
+    ("education", 'way["amenity"~"^(school|university|college|kindergarten)$"]'),
+    ("transport", 'node["railway"="station"]'),
+    ("transport", 'node["aeroway"="terminal"]'),
+    ("transport", 'node["amenity"="bus_station"]'),
+    ("transport", 'way["amenity"="bus_station"]'),
+    ("other", 'node["leisure"~"^(cinema|golf_course|swimming_pool|bowling_alley|nightclub)$"]'),
+    ("other", 'node["amenity"~"^(bar|cafe|casino)$"]'),
+]
+
+
+def _map_overpass_query(loc: str) -> str:
+    lines: List[str] = []
+    for _, flt in _OSM_MAP_FILTERS:
+        lines.append(f"  node{flt}{loc};")
+        lines.append(f"  way{flt}{loc};")
+    return f"[out:json][timeout:30];(\n{chr(10).join(lines)}\n);out center tags 450;"
+
+
+def _map_classify(tags: Dict[str, str]) -> Optional[str]:
+    """Map REAL OSM tags to a broader map category (or None). Named features
+    only — the caller drops unnamed ones via `_osm_item`."""
+    if tags.get("shop"):
+        return "shopping"
+    amenity = tags.get("amenity", "")
+    if amenity in {"hospital", "clinic", "pharmacy"}:
+        return "healthcare"
+    if amenity in {"school", "university", "college", "kindergarten"}:
+        return "education"
+    if tags.get("railway") == "station" or tags.get("aeroway") == "terminal" or amenity == "bus_station":
+        return "transport"
+    if tags.get("leisure") in {"cinema", "golf_course", "swimming_pool", "bowling_alley", "nightclub"}:
+        return "other"
+    if amenity in {"bar", "cafe", "casino"}:
+        return "other"
+    return None
+
+
+def _discover_map_osm(
+    resolved: Dict[str, Any],
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """The map's OpenStreetMap tier: ONE combined Overpass query across the
+    destination area returning real mapped shopping/healthcare/education/
+    transport/other POIs. Returns empty buckets on any failure."""
+    buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
+    lat, lng = resolved.get("lat"), resolved.get("lng")
+    if lat is None or lng is None:
+        return buckets
+    origin = (float(lat), float(lng))
+    if bounds and bounds.get("north") is not None:
+        loc = f"({bounds['south']},{bounds['west']},{bounds['north']},{bounds['east']})"
+    else:
+        radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
+        loc = f"(around:{radius_m},{lat},{lng})"
+    q = _map_overpass_query(loc)
+    data: Optional[Dict[str, Any]] = None
+    for attempt in range(2):
+        for endpoint in OVERPASS_ENDPOINTS:
+            try:
+                resp = requests.post(endpoint, data={"data": q}, timeout=30,
+                                     headers={"User-Agent": "Travion/1.0 (travel planning)", "X-Travion-Tier": "map"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    break
+            except Exception:
+                continue
+        if data:
+            break
+        time.sleep(3)
+    if not data:
+        return buckets
+    for el in (data.get("elements") or []):
+        tags = el.get("tags") or {}
+        cat = _map_classify(tags)
+        if not cat:
+            continue
+        item = _osm_item(el, cat, origin=origin)
+        if item:
+            buckets[cat].append(item)
+    return buckets
+
+
+_GOOGLE_MAP_TYPES: Dict[str, set] = {
+    "shopping": {"shopping_mall", "department_store", "market", "store", "furniture_store"},
+    "healthcare": {"hospital", "pharmacy", "doctor", "dental_clinic"},
+    "education": {"university", "school", "college", "library"},
+    "transport": {"train_station", "airport", "transit_station", "bus_station", "subway_station"},
+    "other": {"movie_theater", "amusement_park", "bar", "casino", "night_club", "bowling_alley"},
+}
+
+_GOOGLE_MAP_QUERIES: Dict[str, List[str]] = {
+    "shopping": ["shopping malls in {d}", "markets in {d}", "department stores in {d}"],
+    "healthcare": ["hospitals in {d}", "clinics in {d}", "pharmacies in {d}"],
+    "education": ["universities in {d}", "schools in {d}", "colleges in {d}", "libraries in {d}"],
+    "transport": ["railway stations in {d}", "airports in {d}", "bus stands in {d}"],
+    "other": ["cinemas in {d}", "amusement parks in {d}", "bars in {d}"],
+}
+
+
+def _discover_google_map(
+    destination: str,
+    resolved: Dict[str, Any],
+    api_key: str,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    d = destination if resolved and _norm(resolved["name"]) == _norm(destination) else (
+        f"{destination} {resolved['state']}" if resolved else destination
+    )
+    origin = (resolved["lat"], resolved["lng"]) if resolved and resolved.get("lat") and resolved.get("lng") else None
+    radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000) if origin else None
+    buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
+    for cat, queries in _GOOGLE_MAP_QUERIES.items():
+        want_types = _GOOGLE_MAP_TYPES.get(cat, set())
+        for template in queries:
+            if len(buckets[cat]) >= MAP_TARGET:
+                break
+            for place in _google_search(template.format(d=d), api_key, center=origin, radius_m=radius_m, bounds=bounds):
+                item = _google_item(place, cat)
+                if not item:
+                    continue
+                types = set(item.get("types") or [])
+                if types & want_types:
+                    buckets[cat].append(item)
+                elif len(buckets[cat]) < MAP_TARGET:
+                    # the place came from a real category-flavoured query — keep
+                    # it rather than over-silence a genuine result.
+                    buckets[cat].append(item)
+    return buckets
+
+
+def discover_map(
+    destination: str,
+    resolved: Dict[str, Any],
+    origin: Optional[Tuple[float, float]] = None,
+    dest_radius_km: float = 12.0,
+    core_km: float = 1.0,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """The map's REAL broader dataset (shopping / healthcare / education /
+    transport / other) — destination-wide, provider-verified only. Never
+    fabricates a marker. When a live tier isn't reachable the category is
+    honestly empty and the map shows the recommendation data instead."""
+    if not resolved or resolved.get("lat") is None or resolved.get("lng") is None:
+        return {c: [] for c in MAP_CATEGORIES}
+    api_key: Optional[str] = None
+    try:
+        from app.core.config import settings
+        api_key = (getattr(settings, "GOOGLE_PLACES_API_KEY", "") or "").strip() or None
+    except Exception:
+        api_key = None
+    buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
+    if api_key:
+        try:
+            google = _discover_google_map(destination, resolved, api_key, bounds=bounds)
+            for k, v in google.items():
+                buckets[k].extend(v)
+        except Exception:
+            pass
+    try:
+        osm = _discover_map_osm(resolved, bounds=bounds)
+        for k, v in osm.items():
+            buckets[k].extend(v)
+    except Exception:
+        pass
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for cat in MAP_CATEGORIES:
+        items = _dedup(buckets.get(cat) or [])
+        items = _filter_by_destination(items, origin, dest_radius_km, bounds=bounds)
+        for it in items:
+            it["placement"] = _placement_for(it, origin, core_km)
+            it["inside_destination"] = True
+        out[cat] = items[:MAP_TARGET]
+    return out
+
+
 # ── Verified catalog + local index (fallback, always available) ─────────────
 
 # Real curated entries that read as experiences/activities (matched against the
@@ -1230,10 +1419,13 @@ def discover_destination(
         result["destination_bounds"] = {k: bounds[k] for k in ("south", "west", "north", "east")}
 
     total = 0
+    catalog_meta: Dict[str, Any] = {}
+    map_candidates: Dict[str, List[Dict[str, Any]]] = {}
     # Destination-wide boundary: keep real places INSIDE the destination
     # (bounding box, else the destination's own kind radius). There is NO 2 km
     # cap here — that cap belongs to "nearby" mode only.
     for category in ("must_visit", "food", "activities", "stays"):
+        requested = TARGET_COUNTS.get(category, 10)
         items = _dedup(buckets.get(category) or [])
         items = _filter_by_destination(items, origin, dest_radius_km, bounds=bounds)
         for item in items:
@@ -1247,10 +1439,51 @@ def discover_destination(
             # The dedup runs after ranking, so rejected candidates leave the
             # NEXT best real activity to take the slot — nothing is invented.
             items = _unique_activities(items, result.get("must_visit") or [])
-        items = items[: TARGET_COUNTS.get(category, 10)]
+        # The MAP dataset is BROADER than the cards: every real candidate beyond
+        # the top-ten is still a genuine verified place (deduped + geofiltered
+        # + ranked) — the map can plot up to 25 of them per category while the
+        # cards honestly show only the target count. Nothing beyond the real
+        # candidate pool is ever fabricated.
+        if len(items) > requested:
+            map_candidates[category] = items[: 25]
+        items = items[: requested]
         result[category] = items
         result.setdefault("counts", {})[category] = len(items)
         total += len(items)
+        # HONEST discovery contract: every section reports how many real places
+        # were requested vs actually available, so the UI can never show "10"
+        # when only 6 verified things exist.
+        catalog_meta[category] = {
+            "requested": requested,
+            "available": len(items),
+            "status": "success" if items else "unavailable",
+            "note": f"Found {len(items)} of {requested} requested real places." if items else (
+                "No verified real places available in this category for this destination."
+            ),
+        }
+    result["catalog_meta"] = catalog_meta
+    result["map_candidates"] = map_candidates
+
+    # Real MAP data: broader categories (shopping/healthcare/education/
+    # transport/other) via live providers only — the map is allowed to plot
+    # MORE than the recommendation buckets, but never a fabricated marker.
+    # Gated on a live tier being in play (provider key configured, or the
+    # curated catalog is thin) so rate-limited providers are only called when
+    # they actually add real value; otherwise the map honestly stays empty and
+    # recommends from the verified local data.
+    map_places: Dict[str, List[Dict[str, Any]]] = {}
+    map_counts: Dict[str, int] = {}
+    if anchor and use_live:
+        map_places = discover_map(
+            destination, anchor,
+            origin=origin, dest_radius_km=dest_radius_km,
+            core_km=core_km, bounds=bounds,
+        )
+        for _cat, _items in map_places.items():
+            map_counts[_cat] = len(_items)
+    result["map_places"] = map_places
+    result["map_counts"] = map_counts
+
     result["total_places"] = total
     # Report the provider that actually produced the visible places (honest UI
     # badge), keeping live providers preferred over local fallbacks.

@@ -27,7 +27,9 @@ from app.schemas.schemas import (
     PlanMultiRequest, ChoosePlanRequest, ItineraryChangeRequest,
     ItineraryChangeResponse, ExplorePlaceItem, ItineraryResponse,
     PlaceSearchItem, PlanChangeResponse, OptimizeDayRequest,
-    OptimizeDayResponse, ConfirmPlanResponse,
+    OptimizeDayResponse, ConfirmPlanResponse, SelectionPayload,
+    SelectionSyncRequest, TripSelectionResponse, SelectionsResponse,
+    PlaceDetailsResponse,
 )
 from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import (
@@ -35,11 +37,16 @@ from app.services.multi_plan_engine import (
     _norm,
 )
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
-from app.services.places_discovery import discover_destination
+from app.services.places_discovery import discover_destination, discover_nearby
+from app.services.place_selections import (
+    upsert_selection, remove_selection, active_selections, selections_payload,
+    sync_selections, selections_for_plan, selection_payload,
+)
 from app.services.budget_service import (
     parse_budget, base_ceiling_for, remaining_budget as budget_remaining,
     sanitize_envelope, compute_totals, fit_to_budget,
 )
+from app.services.pricing_service import reprice_breakdown
 from app.services.budget_engine import (
     tier_for, get_budget_constraints, display_band_for,
     check_budget_feasibility, validate_itinerary_budget,
@@ -563,12 +570,176 @@ def destination_catalog(
         },
         "core_radius_km": discovery.get("core_radius_km"),
         "destination_radius_km": discovery.get("destination_radius_km"),
+        "catalog_meta": discovery.get("catalog_meta"),
         "counts": {"attractions": len(attractions), "stays": len(stays_serialized), "food": len(foods_serialized), "activities": len(activities)},
+        # Server-side single source of truth: the selections the traveller made
+        # on earlier visits, so the UI can restore the "selected for my trip"
+        # panel exactly (no fake counts, no lost picks on refresh).
+        "selections": [
+            {
+                "provider_place_id": s["provider_place_id"],
+                "name": s["name"],
+                "category": s["category"],
+                "selection_source": s["selection_source"],
+            }
+            for s in (selections_payload(db, trip.id)["selections"])
+        ],
         "must_visit": [_attr(a) for a in attractions],
         "stays": stays_serialized,
         "food": foods_serialized,
         "activities": [_attr(a) for a in activities],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0b. Trip place selections — server-side single source of truth (Step 3/4/5)
+# Row identity is (trip_id, provider_place_id); add/remove is idempotent, so
+# map↔card↔planner selections survive a refresh and flow to guide/manager views.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _current_user(db: Session, current: dict) -> User:
+    user = db.query(User).filter(User.identity_id == current["identity_id"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.get("/{trip_id}/selections", response_model=SelectionsResponse)
+def get_trip_selections(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    data = selections_payload(db, trip.id)
+    return SelectionsResponse(
+        destination=trip.destination_name,
+        selections=data["selections"],
+        counts=data["counts"],
+        total=data["total"],
+    )
+
+
+@router.post("/{trip_id}/selections", response_model=TripSelectionResponse)
+def add_trip_selection(
+    trip_id: str,
+    req: SelectionPayload,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    user = _current_user(db, current)
+    row = upsert_selection(db, trip.id, user.id, req.model_dump(exclude_none=True))
+    db.commit()
+    return TripSelectionResponse(**selection_payload(row))
+
+
+@router.post("/{trip_id}/selections/sync", response_model=SelectionsResponse)
+def sync_trip_selections(
+    trip_id: str,
+    req: SelectionSyncRequest,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    user = _current_user(db, current)
+    sync_selections(
+        db, trip.id, user.id,
+        [p.model_dump(exclude_none=True) for p in req.items],
+        replace=req.replace,
+    )
+    db.commit()
+    data = selections_payload(db, trip.id)
+    return SelectionsResponse(
+        destination=trip.destination_name,
+        selections=data["selections"],
+        counts=data["counts"],
+        total=data["total"],
+    )
+
+
+@router.delete("/{trip_id}/selections/{provider_place_id}")
+def delete_trip_selection(
+    trip_id: str,
+    provider_place_id: str,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    row = remove_selection(db, trip.id, provider_place_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No active selection for that place.")
+    db.commit()
+    return {"removed": True, "provider_place_id": provider_place_id}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0c. Real map data — the map's real dataset (recommended + verified map tiers)
+# Places NEARBY and place DETAILS are defined after /places/search below so the
+# fixed path segments (search, nearby) win over the {provider_place_id} catch-all.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{trip_id}/map-places")
+def map_places_catalog(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """The map's REAL dataset: the destination-wide discovery buckets PLUS any
+    broader mapped categories (shopping/healthcare/education/transport/other)
+    that a live provider verified. Never includes fabricated markers."""
+    trip = _own_trip(trip_id, current, db)
+    profile = trip.profile.questions_answers if trip.profile else {}
+    discovery = discover_destination(
+        trip.destination_name,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(_destination_anchor(trip, db)),
+    )
+    recommended: Dict[str, List[Dict[str, Any]]] = {}
+    for _cat in ("must_visit", "activities", "food", "stays"):
+        recommended[_cat] = [
+            {"id": i.get("id") or i.get("place_id"), "provider_place_id": i.get("place_id"),
+             "name": i.get("name", ""), "category": _cat,
+             "description": i.get("description"), "address": i.get("address"),
+             "latitude": i.get("latitude"), "longitude": i.get("longitude"),
+             "distance_km": i.get("distance_km"), "rating": i.get("rating"),
+             "review_count": i.get("review_count"), "source": i.get("source", "verified_api"),
+             "verified": i.get("verified", True), "entry_fee": i.get("entry_fee"),
+             "price_per_night": i.get("price_per_night"),
+             "avg_cost_for_two": i.get("avg_cost_for_two"), "cuisine": i.get("cuisine"),
+             "tier": i.get("tier"), "placement": i.get("placement"),
+             "inside_destination": i.get("inside_destination", True)}
+            for i in (discovery.get(_cat) or [])
+        ]
+    return {
+        "destination": trip.destination_name,
+        "destination_latitude": discovery.get("destination_latitude"),
+        "destination_longitude": discovery.get("destination_longitude"),
+        "destination_bounds": discovery.get("destination_bounds"),
+        "destination_radius_km": discovery.get("destination_radius_km"),
+        "discovery_source": discovery.get("source"),
+        "map_places": {
+            **recommended,
+            # Broader real dataset: verified candidates beyond the ten cards +
+            # any live map tiers (shopping/healthcare/…) — never fabricated.
+            **{k: v for k, v in (discovery.get("map_candidates") or {}).items()},
+            **{k: v for k, v in (discovery.get("map_places") or {}).items()},
+        },
+        "map_counts": {k: len(v) for k, v in recommended.items()},
+        "map_counts_full": {
+            **{k: len(v) for k, v in recommended.items()},
+            **{k: len(v) for k, v in (discovery.get("map_candidates") or {}).items()},
+            **{k: len(v) for k, v in (discovery.get("map_places") or {}).items()},
+        },
+        "catalog_meta": discovery.get("catalog_meta"),
+    }
+
+
+
+
 
 
 # ── 1. Three in-budget plans ───────────────────────────────────────────────
@@ -615,6 +786,39 @@ def plan_multi(
         )
     constraints = verdict["constraints"]
 
+    # Selections are HARD PREFERENCES: persist them so /choose-plan and any
+    # regeneration reproduce the exact same three plans deterministically.
+    profile = dict(profile or {})
+    place_items = [dict(x) for x in (req.selected_place_items or [])]
+    food_items = [dict(x) for x in (req.selected_food_items or [])]
+
+    # ── SELECTION REPLAY (single source of truth) ────────────────────────────
+    # Every place the traveller picked on the discovery screen is persisted in
+    # trip_place_selections. When the planner is invoked WITHOUT explicit
+    # selections (refresh / regenerate / deep link), replay the persisted REAL
+    # picks so plans are deterministic and match what the user actually chose.
+    explicit = bool(
+        place_items or food_items or req.selected_places or req.selected_food
+        or (req.selected_stay and req.selected_stay.get("name"))
+        or req.stay_required is not None
+    )
+    if not explicit:
+        replay = selections_for_plan(db, trip.id)
+        if replay["places"] or replay["food"] or replay["stay"]:
+            place_items = replay["places"]
+            food_items = replay["food"]
+            if replay["stay"]:
+                s = replay["stay"]
+                req.selected_stay = {
+                    "id": s.get("id"), "name": s.get("name", ""),
+                    "latitude": s.get("latitude"), "longitude": s.get("longitude"),
+                    "distance_km": s.get("distance_km"),
+                    "price_per_night": s.get("price_per_night"),
+                    "rating": s.get("rating"),
+                    "budget_category": s.get("budget_category") or s.get("tier"),
+                }
+                req.stay_required = True
+
     # Stay contract: "Continue without a stay" (stay_required=False) is an
     # ABSOLUTE rule — accommodation costs ₹0 and no hotel is ever auto-added,
     # even when the budget could afford one.
@@ -622,12 +826,6 @@ def plan_multi(
     if req_stay_required is None and req.selected_stay:
         req_stay_required = True
     force_no_stay = req_stay_required is False
-
-    # Selections are HARD PREFERENCES: persist them so /choose-plan and any
-    # regeneration reproduce the exact same three plans deterministically.
-    profile = dict(profile or {})
-    place_items = [dict(x) for x in (req.selected_place_items or [])]
-    food_items = [dict(x) for x in (req.selected_food_items or [])]
 
     # Structured items are the source of truth; name lists stay in sync so
     # every consumer (choose-plan, chat, replanning) sees the same selections.
@@ -669,6 +867,44 @@ def plan_multi(
     profile["selected_stay_tiers"] = {k: v for k, v in (req.stay_tiers or {}).items() if v}
     if trip.profile:
         trip.profile.questions_answers = profile
+
+    # ── PERSIST selections to trip_place_selections (durable source of truth) ──
+    # Defensive: the discovery UI usually posts them already; this guarantees the
+    # table + the planner agree even when a caller lands here some other way.
+    # Existing rows keep their original provenance — "recommendation" is only ever
+    # the FALLBACK source for brand-new rows created right here.
+    if explicit:
+        user = _current_user(db, current)
+        for it in place_items:
+            upsert_selection(
+                db, trip.id, user.id,
+                {**it, "category": str(it.get("category") or "must_visit")},
+                default_source="recommendation",
+            )
+        for it in food_items:
+            upsert_selection(
+                db, trip.id, user.id,
+                {**it, "category": str(it.get("category") or "food")},
+                default_source="recommendation",
+            )
+        if req.selected_stay and not force_no_stay:
+            upsert_selection(
+                db, trip.id, user.id,
+                {
+                    "id": req.selected_stay.get("id") or req.selected_stay.get("provider_place_id")
+                          or req.selected_stay.get("name"),
+                    "name": req.selected_stay.get("name", ""),
+                    "category": "stays",
+                    "latitude": req.selected_stay.get("latitude"),
+                    "longitude": req.selected_stay.get("longitude"),
+                    "distance_km": req.selected_stay.get("distance_km"),
+                    "price_per_night": req.selected_stay.get("price_per_night"),
+                    "rating": req.selected_stay.get("rating"),
+                    "budget_category": req.selected_stay.get("budget_category"),
+                },
+                default_source="recommendation",
+            )
+        db.flush()
 
     base = generate_base_plan(trip, req.mode, db)
     base.setdefault("destination", trip.destination_name)
@@ -865,6 +1101,24 @@ def edit_itinerary(
     )
     if not result["applied"]:
         raise HTTPException(status_code=400, detail="Change could not be applied (stop not found).")
+
+    # GUIDE-FEE REPRICING (single source of truth): an edit that changed the
+    # guided-day count (add/remove day, move to a new day) changes what the
+    # guide is paid. Recompute the fee from the authoritative rule — never
+    # carry the old plan's frozen fee onto a new itinerary version.
+    _assigned_guide = (trip.guide_assignment.guide
+                       if trip.guide_assignment and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")
+                       else None)
+    _party = profile.get("party") or (trip.profile.party_type if trip.profile else None)
+    result["cost_breakdown"] = reprice_breakdown(
+        result["cost_breakdown"],
+        mode=trip.mode or "ADVENTUROUS_MODE",
+        days=max(1, len(result["days"])),
+        destination=trip.destination_name or "",
+        party_type=_party,
+        guide=_assigned_guide,
+    )
+    result["total_cost"] = float(result["cost_breakdown"]["final_total"])
 
     summary = _change_summary(change.model_dump(exclude_none=True), itin.days_data or [])
     new_itin = _persist_version(db, trip, result["days"], result["total_cost"], result["cost_breakdown"])
@@ -1117,6 +1371,90 @@ def places_search(
         )
         for it in deduped[:25]
     ]
+
+
+# ── 5b. Nearby places (the ONLY 2 km-scoped operation) + one-place details ──
+# Registered AFTER /places/search so the fixed path segments always win over
+# the {provider_place_id} catch-all below.
+
+@router.get("/{trip_id}/places/nearby")
+def places_nearby(
+    trip_id: str,
+    name: str,
+    lat: float,
+    lng: float,
+    current: dict = Depends(require_role("USER", "GUIDE")),
+    db: Session = Depends(get_db),
+):
+    """'Places near this spot' — the ONLY 2 km-scoped operation. The backend
+    enforces the hard 2 km cap at both the provider and the result layer, so a
+    real place outside the cap is never returned as 'nearby'."""
+    trip = _own_trip(trip_id, current, db)
+    return discover_nearby(trip.destination_name, name, (lat, lng))
+
+
+@router.get("/{trip_id}/places/{provider_place_id}", response_model=PlaceDetailsResponse)
+def place_details(
+    trip_id: str,
+    provider_place_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Details for ONE real place (marker click) — resolved from the verified
+    discovery+map pool by provider_place_id (or internal id). Also reports the
+    selection status so the UI can show Add/Remove correctly."""
+    trip = _own_trip(trip_id, current, db)
+    profile = trip.profile.questions_answers if trip.profile else {}
+    discovery = discover_destination(
+        trip.destination_name,
+        preferences={
+            "interests": (profile.get("experience") or []),
+            "restrictions": (profile.get("restrictions") or []),
+        },
+        **_discovery_kwargs(_destination_anchor(trip, db)),
+    )
+    pool: List[Dict[str, Any]] = []
+    for cat in ("must_visit", "activities", "food", "stays"):
+        for i in (discovery.get(cat) or []):
+            pool.append((cat, i))
+    for cat, items in (discovery.get("map_places") or {}).items():
+        for i in items:
+            pool.append((cat, i))
+    for cat, i in pool:
+        if str(i.get("place_id") or "") == provider_place_id or str(i.get("id") or "") == provider_place_id:
+            selection_status = "none"
+            key = str(i.get("place_id") or i.get("id") or "")
+            if key:
+                active = active_selections(db, trip.id)
+                row = next((r for r in active if r.provider_place_id == key), None)
+                selection_status = "active" if row else "none"
+            return PlaceDetailsResponse(
+                provider_place_id=str(i.get("place_id") or provider_place_id),
+                id=str(i.get("id") or ""),
+                name=str(i.get("name", "")),
+                category=cat,
+                description=i.get("description"),
+                address=i.get("address"),
+                latitude=i.get("latitude"),
+                longitude=i.get("longitude"),
+                distance_km=i.get("distance_km"),
+                rating=i.get("rating"),
+                review_count=i.get("review_count"),
+                source=str(i.get("source") or "verified_api"),
+                verified=bool(i.get("verified", True)),
+                inside_destination=bool(i.get("inside_destination", True)),
+                selection_status=selection_status,
+                extra={
+                    "entry_fee": i.get("entry_fee"),
+                    "duration_minutes": i.get("duration_minutes"),
+                    "cuisine": i.get("cuisine"),
+                    "price_per_night": i.get("price_per_night"),
+                    "tier": i.get("tier"),
+                    "opening_hours": i.get("opening_hours"),
+                    "website": i.get("website"),
+                },
+            )
+    raise HTTPException(status_code=404, detail="Place not found in the verified destination pool.")
 
 
 @router.post("/{trip_id}/optimize-day", response_model=OptimizeDayResponse)
