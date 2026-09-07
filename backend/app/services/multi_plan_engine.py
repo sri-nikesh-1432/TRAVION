@@ -24,6 +24,7 @@ recalculate_change() powers the live drag & drop editor: every user edit is
 re-validated (overlaps, tight transfers, budget) and re-costed immediately.
 """
 import math
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -63,6 +64,10 @@ def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
 
 
 # ── Verified real-place helpers ──────────────────────────────────────────────
+
+def _norm(name: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", str(name or "").lower()).strip()
+
 
 def _match_by_name(catalog: List[Dict[str, Any]], name: str) -> Optional[Dict[str, Any]]:
     target = str(name or "").strip().lower()
@@ -169,6 +174,29 @@ def _premium_extra_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[s
 
 # ── Selected-place injection (HARD preferences) ─────────────────────────────
 
+def _item_from_structured(item: Dict[str, Any], category: str, dest: str) -> Dict[str, Any]:
+    """Turn a structured discovery selection into a planner stop source-of-truth.
+
+    The coordinates/price/rating come from the REAL place the user picked in
+    Step 3 — never overwritten by a same-named guess.
+    """
+    return {
+        "name": str(item.get("name") or ""),
+        "category": category,
+        "description": item.get("description"),
+        "lat": float(item.get("lat") or item.get("latitude") or 0),
+        "lng": float(item.get("lng") or item.get("longitude") or 0),
+        "entry_fee": float(item.get("entry_fee") or 0),
+        "duration_minutes": int(item.get("duration_minutes") or 90),
+        "rating": float(item.get("rating") or 4.6),
+        "source": item.get("source") or "verified_api",
+        "avg_cost_for_two": item.get("avg_cost_for_two"),
+        "cuisine": item.get("cuisine") or "",
+        "must_try": item.get("must_try"),
+        "location_name": dest,
+    }
+
+
 def _inject_selected_places(
     days: List[Dict[str, Any]],
     dest: str,
@@ -177,12 +205,18 @@ def _inject_selected_places(
     warnings: List[str],
     resolved_attractions: Optional[List[Dict[str, Any]]] = None,
     resolved_food: Optional[List[Dict[str, Any]]] = None,
+    selected_place_items: Optional[List[Dict[str, Any]]] = None,
+    selected_food_items: Optional[List[Dict[str, Any]]] = None,
 ) -> float:
     """Insert the user's selected real places into the schedule.
 
     Returns the added entry-fee + meal cost so the fit step accounts for it.
     A place that cannot fit any day produces an explicit warning — user
     choices are never silently dropped.
+
+    Restaurants are DISTRIBUTED across the days (spec: never all on one day,
+    no needless repetition): each selected eatery gets a lunch or dinner slot on
+    a distinct day before any repeats are considered.
     """
     added_cost = 0.0
     if not days:
@@ -190,6 +224,9 @@ def _inject_selected_places(
 
     def _day_of(day_num: int) -> Optional[Dict[str, Any]]:
         return next((d for d in days if d.get("day") == day_num), None)
+
+    def _stable_id(prefix: str, name: str) -> str:
+        return f"{prefix}{abs(hash(name or '')) % 10**8}"
 
     # Curated catalog first; discovery-resolved real places (e.g. GeoNames
     # index entries for destinations outside the curated set) are also valid
@@ -203,8 +240,16 @@ def _inject_selected_places(
         if not _match_by_name(foods, rf.get("name", "")):
             foods.append(rf)
 
+    # Structured items (Step 3 picks with real coords/price) take priority over
+    # name-matching when both exist for the same place.
+    place_map = {_norm(struct.get("name", "")): struct for struct in (selected_place_items or []) if struct.get("name")}
+    food_map = {_norm(struct.get("name", "")): struct for struct in (selected_food_items or []) if struct.get("name")}
+
     for name in selected_places or []:
-        match = _match_by_name(attractions, name)
+        structured = place_map.get(_norm(name))
+        match = _item_from_structured(structured, "attraction", dest) if structured else None
+        if not match:
+            match = _match_by_name(attractions, name)
         if not match:
             warnings.append(f"'{name}' is not in the verified catalog for {dest}, so it was not auto-added.")
             continue
@@ -229,7 +274,7 @@ def _inject_selected_places(
             start = "09:30 AM"
         fee = float(match.get("entry_fee", 0) or 0)
         target.setdefault("stops", []).append({
-            "id": f"sel-{abs(hash(match.get('name'))) % 10**8}",
+            "id": _stable_id("sel-", match.get("name", str(name))),
             "day": target.get("day", 1),
             "time": start,
             "title": match.get("name", str(name)),
@@ -246,17 +291,33 @@ def _inject_selected_places(
         })
         added_cost += fee
 
+    # Restaurants: spread one eatery per day (lunch first, then dinner) before
+    # any restaurant appears a second time.
+    day_count = max(1, len(days))
+    food_index = 0
     for name in selected_food or []:
-        match = _match_by_name(foods, name)
+        structured = food_map.get(_norm(name))
+        match = _item_from_structured(structured, "food", dest) if structured else None
+        if not match:
+            match = _match_by_name(foods, name)
         if not match or _plan_contains(days, match.get("name", "")):
+            food_index += 1
             continue
-        meal_day = days[1] if len(days) > 1 else days[0]
+        day_idx = food_index % day_count
+        meal_round = food_index // day_count  # 0 → lunch, 1 → dinner
+        meal_day = days[day_idx]
+        meal_time = "12:30 PM" if meal_round == 0 else "07:30 PM"
+        meal_label = "Lunch" if meal_round == 0 else "Dinner"
+        cuisine = str(match.get("cuisine") or match.get("types") or "").strip()
+        desc = f"{meal_label} at {match.get('name', name)}"
+        if cuisine:
+            desc += f" · {cuisine}"
         meal_day.setdefault("stops", []).append({
-            "id": f"selfood-{abs(hash(match.get('name'))) % 10**8}",
+            "id": _stable_id("selfood-", match.get("name", name)),
             "day": meal_day.get("day", 1),
-            "time": "01:00 PM",
-            "title": f"Lunch at {match.get('name', name)}",
-            "description": f"{match.get('cuisine', '')} — must try: {match.get('must_try', 'local specials')}",
+            "time": meal_time,
+            "title": f"{meal_label} at {match.get('name', name)}",
+            "description": desc,
             "category": "food",
             "location_name": dest,
             "lat": float(match.get("lat", 0) or 0),
@@ -268,6 +329,7 @@ def _inject_selected_places(
             "verified": True,
         })
         added_cost += round(float(match.get("avg_cost_for_two", 600) or 600) / 2, 0)
+        food_index += 1
 
     return added_cost
 
@@ -285,19 +347,49 @@ def build_plans(
     budget_max: float,
     selected_places: Optional[List[str]] = None,
     selected_food: Optional[List[str]] = None,
+    selected_stay: Optional[Dict[str, Any]] = None,
     stay_tiers: Optional[Dict[str, str]] = None,
     profile_stay_pref: str = "",
     resolved_attractions: Optional[List[Dict[str, Any]]] = None,
     resolved_food: Optional[List[Dict[str, Any]]] = None,
+    selected_place_items: Optional[List[Dict[str, Any]]] = None,
+    selected_food_items: Optional[List[Dict[str, Any]]] = None,
+    constraints: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Create the three differentiated plans. See module docstring for rules."""
+    """Create the three differentiated plans. See module docstring for rules.
+
+    `constraints` (from the Budget Feasibility Engine) is a HARD envelope the
+    AI can never override: economy mode forces budget food/transport/activities
+    on every variant, stay_allowed=False drops accommodation entirely (day-trip
+    budget mode). User-selected stays always win — they are a direct pick.
+    """
     dest = str(base.get("destination") or "")
+    constraints = constraints or {}
+    economy = bool(constraints.get("economy"))
+    stay_allowed = bool(constraints.get("stay_allowed", True))
     plans: List[Dict[str, Any]] = []
     n_selected = len(selected_places or [])
+
+    budget_stay_tiers = ["Budget Guesthouse", "2 Star", "Homestay", "3 Star"]
 
     for variant in ("VALUE", "RECOMMENDED", "PREMIUM"):
         p = _variant_params(variant, profile_stay_pref)
         warnings: List[str] = []
+
+        # Budget Feasibility Engine controls: economy forces budget-class choices
+        # (public transport, local food, no premium extras) on EVERY plan.
+        if economy:
+            p = dict(p)
+            p["transport_scale"] = 0.85
+            p["transport_label"] = "Bus / shared transport"
+            p["food_scale"] = 0.8
+            p["food_label"] = "Local restaurants & street food"
+            p["extra_stop"] = False
+            p["stay_fallback_scale"] = 0.7
+            warnings.append(
+                "Budget mode: we prioritised budget food, public transport and free-or-low-cost attractions "
+                "to keep your trip financially honest."
+            )
 
         days = [
             {
@@ -313,6 +405,8 @@ def build_plans(
             days, dest, selected_places or [], selected_food or [], warnings,
             resolved_attractions=resolved_attractions,
             resolved_food=resolved_food,
+            selected_place_items=selected_place_items,
+            selected_food_items=selected_food_items,
         )
 
         bd0 = dict(base.get("cost_breakdown") or {})
@@ -325,17 +419,47 @@ def build_plans(
         pax = int(bd0.get("headcount") or 2)
         rooms = max(1, math.ceil(pax / 2))
 
-        # 2. REAL STAY TIER: re-pick a verified stay by this plan's tier.
-        override_tier = (stay_tiers or {}).get(variant)
-        tier_candidates = [override_tier] if override_tier else p["stay_tiers"]
-        stay_pick = _pick_stay(dest, tier_candidates)
-        if stay_pick:
-            tier_stay_cost = float(stay_pick.get("price_per_night", 0) or 0) * nights * rooms
-            stay = tier_stay_cost + selection_cost
-            stay_label = f"{_stay_tier_label(stay_pick, 'Stay')} — {stay_pick.get('name', '')}"
+        # 2. REAL STAY TIER: use user-selected stay if provided (single stay for entire trip).
+        # When the user explicitly selected a hotel in Step 3, that stay is used for
+        # EVERY night of the trip — never replaced by the planner.
+        no_stay_mode = not stay_allowed and not selected_stay
+        if selected_stay:
+            stay_pick = selected_stay
+            nightly = float(stay_pick.get("price_per_night", 0) or 0)
+            # If the selected stay has no price, fall back to a verified catalog match.
+            if nightly <= 0:
+                catalog_match = _match_by_name(list(VERIFIED_STAYS.get(dest) or []), stay_pick.get("name", ""))
+                if catalog_match:
+                    nightly = float(catalog_match.get("price_per_night", 0) or 0)
+            stayedge_cost = nightly * nights * rooms
+            stay = stayedge_cost + selection_cost
+            stay_label = f"{stay_pick.get('name', 'Selected stay')} — {stay_pick.get('budget_category', 'selected')}"
+            stay_tier_used = stay_pick.get("budget_category", "selected")
+        elif no_stay_mode:
+            # Budget too low for accommodation — day-trip style, never a made-up hotel.
+            stay = 0.0
+            stay_label = "No stay (day-trip budget mode)"
+            stay_tier_used = None
+            for d in days:
+                d["stops"] = [s for s in d.get("stops", []) if s.get("category") != "stay"]
+            warnings.append(
+                "Your budget doesn't support accommodation for this trip — we planned it as a day-trip "
+                "style itinerary with no stay. Raise the budget or continue as-is."
+            )
         else:
-            stay = round(stay * p["stay_fallback_scale"], 0)
-            stay_label = f"{profile_stay_pref or 'Comfort'} stay (estimated)"
+            candidates = budget_stay_tiers if economy else None
+            override_tier = (stay_tiers or {}).get(variant)
+            tier_candidates = [override_tier] if override_tier else (candidates or p["stay_tiers"])
+            stay_pick = _pick_stay(dest, tier_candidates)
+            if stay_pick:
+                tier_stay_cost = float(stay_pick.get("price_per_night", 0) or 0) * nights * rooms
+                stay = tier_stay_cost + selection_cost
+                stay_label = f"{_stay_tier_label(stay_pick, 'Stay')} — {stay_pick.get('name', '')}"
+                stay_tier_used = _stay_tier_label(stay_pick, 'Stay')
+            else:
+                stay = round(stay * p["stay_fallback_scale"], 0)
+                stay_label = f"{profile_stay_pref or 'Comfort'} stay (estimated)"
+                stay_tier_used = profile_stay_pref or 'Comfort'
 
         food = round(food * p["food_scale"], 0)
         transport = round(transport * p["transport_scale"], 0)
@@ -432,6 +556,9 @@ def build_plans(
             f"📍 {n_selected} selected place(s) included",
             p["badge"],
         ]
+        if selected_stay and variant != "RECOMMENDED":
+            # Confirm the user's chosen stay is used in every plan variant.
+            highlights.append(f"📌 Your selected stay: {selected_stay.get('name', 'Selected stay')}")
 
         plans.append({
             "type": variant,

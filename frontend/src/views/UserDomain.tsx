@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
-  ItineraryStop, UserProfile, PlanOption
+  ItineraryStop, UserProfile, PlanOption, BudgetRecovery,
+  SelectedPlaceItem, SelectedFoodItem, SelectedStay
 } from '../types';
 import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
@@ -101,7 +102,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [livePosition, setLivePosition] = useState<{ lat: number; lng: number } | null>(null);
 
   // Plan-stage UX state — prevents blank screens when a plan cannot be built yet
-  const [planError, setPlanError] = useState<{ message: string; available?: string[] } | null>(null);
+  const [planError, setPlanError] = useState<{ message: string; available?: string[]; budget?: BudgetRecovery } | null>(null);
   const [reroutingDest, setReroutingDest] = useState<string | null>(null);
   const [locationsCache, setLocationsCache] = useState<LocationItem[]>([]);
 
@@ -123,7 +124,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     return () => navigator.geolocation.clearWatch(watchId);
   }, [currentView, activeTrip?.id, activeTrip?.status]);
 
-  const getPlanErrorMessage = (err: any): { message: string; available?: string[] } => {
+  const getPlanErrorMessage = (err: any): { message: string; available?: string[]; budget?: BudgetRecovery } => {
     const fallback = 'Something went wrong while planning your trip. Please try again.';
     if (!err) return { message: fallback };
     const message = err?.message || fallback;
@@ -131,7 +132,20 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     const available = Array.isArray(rawAvailable) && rawAvailable.length > 0
       ? (rawAvailable as string[])
       : undefined;
-    return { message, available };
+    // Budget Feasibility Engine rejection (BUDGET_INSUFFICIENT) carries the
+    // honest numbers + the recovery paths — surface them, not a generic error.
+    let budget: BudgetRecovery | undefined;
+    if (err?.extra?.error_code === 'BUDGET_INSUFFICIENT' || err?.error_code === 'BUDGET_INSUFFICIENT') {
+      const x = err?.extra || err;
+      budget = {
+        minimum_required_budget: Number(x.minimum_required_budget) || 0,
+        max_affordable_days: Number(x.max_affordable_days) || 0,
+        requested_days: Number(x.requested_days) || 0,
+        budget_status: String(x.budget_status || 'restricted'),
+        alternatives: Array.isArray(x.alternatives) ? x.alternatives : [],
+      };
+    }
+    return { message, available, budget };
   };
 
   // Shared entry point for the adaptive interview (fresh trip, resume or re-route)
@@ -297,7 +311,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   };
 
   // 3a. Selections made → generate the THREE in-budget plans around them
-  const handleGeneratePlans = async (places: string[], foods: string[]) => {
+  const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null) => {
     if (!activeTrip) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
@@ -306,7 +320,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     try {
       const plans = await api.planMulti(activeTrip.id, activeTrip.mode || 'ADVENTUROUS_MODE', {
         selected_places: places,
-        selected_food: foods
+        selected_food: foods,
+        selected_place_items: placeItems,
+        selected_food_items: foodItems,
+        ...(stay ? { selected_stay: stay } : {}),
       });
       setPlanOptions(plans);
       setIsGeneratingPlan(false);
@@ -716,13 +733,79 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
         {/* VIEW 2a: Destination discovery — user selects REAL verified places */}
         {currentView === 'discovery_select' && activeTrip && (
-          <DiscoverySelect
-            tripId={activeTrip.id}
-            destinationName={activeTrip.destination_name}
-            onConfirm={handleGeneratePlans}
-            onBack={() => { setCurrentView('search'); }}
-            busy={isGeneratingPlan}
-          />
+          <div>
+            {planError && planError.budget && (
+              <div className="max-w-3xl mx-auto mb-6 rounded-3xl border border-red-200 bg-red-50 overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-red-100">
+                  <span className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-[15px] font-extrabold text-slate-900">This budget can't fund the trip yet</h3>
+                    <p className="text-[12px] font-semibold text-slate-500">Travion stays honest — it will never hand you a normal itinerary you can't afford.</p>
+                  </div>
+                </div>
+
+                <div className="px-6 py-5">
+                  <p className="text-[13px] font-medium text-slate-600 leading-relaxed">{planError.message}</p>
+
+                  <div className="mt-4 grid sm:grid-cols-3 gap-2.5">
+                    <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Realistic minimum</p>
+                      <p className="text-lg font-extrabold text-slate-900">₹{Number(planError.budget.minimum_required_budget || 0).toLocaleString('en-IN')}</p>
+                    </div>
+                    <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Budget supports</p>
+                      <p className="text-lg font-extrabold text-slate-900">{planError.budget.max_affordable_days || 0} day{planError.budget.max_affordable_days === 1 ? '' : 's'}</p>
+                    </div>
+                    <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Requested</p>
+                      <p className="text-lg font-extrabold text-slate-900">{planError.budget.requested_days || 0} day{planError.budget.requested_days === 1 ? '' : 's'}</p>
+                    </div>
+                  </div>
+
+                  {planError.budget.alternatives.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">Ways to make it work</p>
+                      <div className="space-y-1.5">
+                        {planError.budget.alternatives.map((alt, ai) => (
+                          <div key={ai} className="flex items-start gap-2 text-[12.5px] font-semibold text-slate-600">
+                            <span className="w-4 h-4 rounded-full bg-travion-100 text-travion-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                              {ai + 1}
+                            </span>
+                            <span>{alt.heading} — <span className="font-medium text-slate-500">{alt.text}</span></span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex flex-col sm:flex-row gap-2.5">
+                    <button
+                      onClick={() => { setPlanError(null); setCurrentView('search'); }}
+                      className="flex-1 h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:border-slate-300 transition-colors"
+                    >
+                      Back to search
+                    </button>
+                    <button
+                      onClick={() => setPlanError(null)}
+                      className="flex-1 h-11 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm transition-colors"
+                    >
+                      Adjust my choices above
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DiscoverySelect
+              tripId={activeTrip.id}
+              destinationName={activeTrip.destination_name}
+              onConfirm={handleGeneratePlans}
+              onBack={() => { setPlanError(null); setCurrentView('search'); }}
+              busy={isGeneratingPlan}
+            />
+          </div>
         )}
 
         {/* VIEW 2b: Three-plan choice (VALUE / RECOMMENDED / PREMIUM) */}

@@ -158,17 +158,49 @@ export interface PlanOption {
   highlights: string[];
   warnings: string[];
   recommended: boolean;
+  budget_status?: 'restricted' | 'affordable' | 'impossible' | null;
+  budget_mode?: boolean;
+  budget_mode_message?: string | null;
+  minimum_required_budget?: number;
+  max_affordable_days?: number | null;
+}
+
+/* ── Budget Feasibility Engine — Step 3 advisor strip ── */
+export interface BudgetTierInfo {
+  tier: 'extremely_low' | 'very_low' | 'low' | 'restricted' | 'normal';
+  label: string;
+  summary: string;
+  budget_status: 'restricted' | 'affordable';
+  economy: boolean;
+  impossible: boolean;
+}
+
+export interface BudgetAdvisor {
+  tier?: BudgetTierInfo;
+  budget_status?: 'restricted' | 'affordable';
+  maximum_allowed_spend?: number;
+  message?: string;
+}
+
+export interface BudgetRecovery {
+  minimum_required_budget: number;
+  max_affordable_days: number;
+  requested_days: number;
+  budget_status: string;
+  alternatives: { heading: string; text: string }[];
 }
 
 export interface CatalogPlace {
+  id?: string | null;
   name: string;
   category: string;
   description?: string | null;
   address?: string | null;
   distance_km?: number | null;
+  placement?: 'inside' | 'nearby' | 'outside' | string;
   opening_hours?: string | null;
-  lat?: number;
-  lng?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   entry_fee?: number;
   duration_minutes?: number;
   duration_is_estimate?: boolean;
@@ -180,34 +212,103 @@ export interface CatalogPlace {
 }
 
 export interface CatalogStay {
+  id?: string | null;
   name: string;
   tier: string;
-  price_per_night: number;
+  placement?: 'inside' | 'nearby' | 'outside' | string;
+  price_per_night?: number | null;
   rating?: number | null;
   amenities: string[];
   address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  budget_category?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
 }
 
+export interface SelectedStay {
+  id?: string | null;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  budget_category?: string | null;
+  price_per_night?: number | null;
+}
+
 export interface CatalogFood {
+  id?: string | null;
   name: string;
   cuisine: string;
   veg_type: string;
-  avg_cost_for_two: number;
+  avg_cost_for_two?: number | null;
   rating?: number | null;
   address?: string | null;
+  distance_km?: number | null;
+  placement?: 'inside' | 'nearby' | 'outside' | string;
+  latitude?: number | null;
+  longitude?: number | null;
+  price_level?: string | null;
+  budget_class?: string | null;
   must_try?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
 }
 
+/* Structured discovery selection (id + real coords + distance + price) — the
+   planner uses the EXACT place the user picked, never a same-named guess. */
+export interface SelectedPlaceItem {
+  id?: string | null;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  placement?: string;
+  entry_fee?: number | null;
+  duration_minutes?: number | null;
+  rating?: number | null;
+  source?: string;
+}
+
+export interface SelectedFoodItem {
+  id?: string | null;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  avg_cost_for_two?: number | null;
+  cuisine?: string | null;
+  must_try?: string | null;
+  rating?: number | null;
+  source?: string;
+}
+
+export interface BudgetTierPanel {
+  tier: string;
+  label: string;
+  summary: string;
+  budget_status: 'restricted' | 'affordable' | 'impossible';
+  economy: boolean;
+  impossible: boolean;
+}
+
 export interface DestinationCatalog {
   destination: string;
   verified_only: boolean;
   discovery_source?: string | null;
+  budget_band?: string | null;
+  core_radius_km?: number | null;
+  budget?: {
+    tier: BudgetTierPanel;
+    budget_status: string;
+    maximum_allowed_spend?: number;
+    constraints?: Record<string, any>;
+    message?: string;
+  } | null;
   counts: { attractions: number; stays: number; food: number; activities: number };
   must_visit: CatalogPlace[];
   stays: CatalogStay[];

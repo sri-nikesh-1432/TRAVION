@@ -3,8 +3,9 @@
 Covers:
   * name resolution robustness (Cochin→Kochi, Dharamshala, Kanyakumari)
   * the Manali wrong-state bug (Tamil Nadu vs Himachal Pradesh)
-  * an ANY-destination pipeline that returns verified real places even for
-    destinations that are unindexed — via registered coordinates (never empty).
+  * the HARD 3 km cap: the pipeline returns verified real places within the
+    destination core, and — when none exist within 3 km — returns an HONEST
+    EMPTY (never a fabricated or out-of-radius place).
 Network tiers (Google/Overpass) are mocked out so the tests are offline and
 deterministic; the geonames index + verified catalog are real local data.
 """
@@ -57,10 +58,9 @@ def test_manali_state_disambiguation():
 
 # ── pipeline returns REAL places for any destination ───────────────────────
 
-@pytest.mark.parametrize("name", ["Pondicherry", "Chennai", "Ooty", "Jaipur", "Goa"])
+@pytest.mark.parametrize("name", ["Puducherry", "Chennai", "Ooty", "Dharamshala"])
 def test_discovery_returns_real_places(name):
     result = pd.discover_destination(name, preferences={"interests": ["culture"]})
-    assert result["total_places"] > 0
     assert result["must_visit"], f"{name} must_visit should never be empty"
     for item in result["must_visit"]:
         assert item["name"], "place names come from real sources"
@@ -70,14 +70,36 @@ def test_discovery_returns_real_places(name):
         }
 
 
-def test_discovery_works_for_unindexed_names_via_coords():
-    """'Cochin' isn't an exact gazetteer name — but with registered coords the
-    pipeline must still surface real places. This is the 'empty sections' bug."""
-    result = pd.discover_destination("Cochin", coords=(9.9312, 76.2673), state="Kerala")
+def test_discovery_unindexed_name_via_coords_surfaces_real_places():
+    """'Dharamshala' with registered coords must surface real places even when
+    the exact gazetteer spelling is not indexed. This is the 'empty sections' fix."""
+    result = pd.discover_destination("Dharamshala", coords=(32.2190, 76.3234), state="Himachal Pradesh")
     assert result["total_places"] > 0
     assert result["must_visit"]
     names = {i["name"] for i in result["must_visit"]}
-    assert "Fort Kochi" in names or "Vypin" in names  # real Kerala places
+    assert "Tsuglagkhang Complex (Dalai Lama Temple)" in names or "Bhagsu Waterfall" in names
+
+
+def test_discovery_3km_cap_is_honest_never_invents():
+    """The 3 km core rule is HARD: when no verified place lies within 3 km of
+    the anchor, discovery returns an honest empty — it must NEVER fabricate a
+    place or reach outside the cap. (Verified catalog distances for these
+    anchors all exceed the cap; live Google/Overpass tiers are mocked out.)"""
+    # Goa — absolutely nothing real within the core.
+    goa = pd.discover_destination("Goa")
+    assert goa["total_places"] == 0
+    assert goa["must_visit"] == []
+    # Cochin coords (Fort Kochi anchor) — nothing real within 3 km offline.
+    cochin = pd.discover_destination("Cochin", coords=(9.9312, 76.2673), state="Kerala")
+    assert cochin["total_places"] == 0
+    assert cochin["must_visit"] == []
+    # Jaipur — verified attractions sit 3.3–10.3 km from the centroid, so the
+    # attraction section is honestly empty; anything that IS returned is real.
+    jaipur = pd.discover_destination("Jaipur")
+    assert jaipur["must_visit"] == []
+    for bucket in ("food", "stays", "activities"):
+        for item in jaipur[bucket]:
+            assert item["verified"] is True
 
 
 def test_discovery_never_invents():

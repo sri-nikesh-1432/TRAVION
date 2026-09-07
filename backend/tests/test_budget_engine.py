@@ -121,3 +121,110 @@ def test_heavy_base_plan_still_clamped():
     for p in plans:
         assert float(p["final_total"]) <= bmax
         assert p["within_budget"] is True
+
+
+# ── Budget Feasibility Engine gate — the strict-budget product guarantee ────
+# The core fix the product demanded: ₹100 / ₹500 / ₹1,000 must NEVER produce a
+# normal itinerary. Feasibility is decided by the ENGINE before the planner.
+
+from app.services.budget_engine import (
+    check_budget_feasibility,
+    get_budget_constraints,
+    calculate_max_affordable_days,
+    validate_itinerary_budget,
+    tier_for,
+)
+
+GEO = dict(
+    destination="Pondicherry",
+    mode="ADVENTUROUS_MODE",
+    profile={"party": "Solo"},
+    source_coords=(13.0827, 80.2707),
+    dest_coords=(11.93, 79.83),
+    source_state="Tamil Nadu",
+    destination_state="Puducherry",
+)
+
+
+@pytest.mark.parametrize("budget", [100, 250, 500, 700, 900])
+def test_tiny_budgets_are_impossible(budget):
+    """Sub-₹1,000 budgets are a hard rejection — never a normal itinerary."""
+    v = check_budget_feasibility(budget=budget, requested_days=3, **GEO)
+    assert v["feasible"] is False
+    assert v["status"] == "impossible"
+    assert v["budget_status"] == "restricted"
+    assert v["minimum_required_budget"] > budget
+    assert v["alternatives"]
+
+
+def test_1000_to_2000_is_day_trip_no_stay():
+    v = check_budget_feasibility(budget=1500, requested_days=3, **GEO)
+    assert v["feasible"] is True
+    assert v["status"] == "restricted"
+    assert v["constraints"]["stay_allowed"] is False
+    assert v["constraints"]["economy"] is True
+    assert v["recommended_days"] <= 3
+    assert v["recommended_days"] >= 1
+
+
+def test_low_budget_still_generates_budget_trip():
+    v = check_budget_feasibility(budget=3000, requested_days=3, **GEO)
+    assert v["feasible"] is True
+    assert v["constraints"]["economy"] is True
+    assert v["max_affordable_days"] >= 1
+
+
+def test_normal_budget_is_affordable_and_validated():
+    v = check_budget_feasibility(budget=18000, requested_days=3, **GEO)
+    assert v["feasible"] is True
+    assert v["status"] == "affordable"
+    assert v["constraints"]["economy"] is False
+    assert v["minimum_required_budget"] <= 18000
+    # An itinerary at minimum cost must be within budget per the validator.
+    ok = validate_itinerary_budget(v["minimum_required_budget"], 18000)
+    assert ok["valid"] is True
+
+
+def test_max_affordable_days_is_monotonic():
+    more = calculate_max_affordable_days(30000, "Pondicherry", "ADVENTUROUS_MODE", {"party": "Solo"},
+                                         True, source_coords=(13.0827, 80.2707), dest_coords=(11.93, 79.83))
+    less = calculate_max_affordable_days(6000, "Pondicherry", "ADVENTUROUS_MODE", {"party": "Solo"},
+                                         True, source_coords=(13.0827, 80.2707), dest_coords=(11.93, 79.83))
+    assert more >= less >= 0
+
+
+def test_validate_accepts_cost_breakdown_dict():
+    bd = {"final_total": 1400.0, "platform_fee": 41.0}
+    assert validate_itinerary_budget(bd, 1500)["valid"] is True
+    assert validate_itinerary_budget(bd, 1300)["valid"] is False
+
+
+def test_tier_thresholds_centralized():
+    assert tier_for(500) == "extremely_low"
+    assert tier_for(1500) == "very_low"
+    assert tier_for(3000) == "low"
+    assert tier_for(4500) == "restricted"
+    assert tier_for(6000) == "normal"
+
+
+def test_constraints_never_invent_prices():
+    c = get_budget_constraints(1500)
+    assert c["impossible"] is False
+    assert any(ref in c["tier_message"] for ref in ("day-trip", "no accommodation")) or c["tier_message"]
+
+
+def test_build_plans_honors_engine_constraints():
+    """Very-low budgets force economy + no-stay on EVERY variant — the planner
+    cannot override the engine."""
+    plans = build_plans(
+        _base_plan(), 1200, 1500,
+        selected_places=["Promenade Beach"],
+        selected_food=["Lunch"],
+        constraints={"economy": True, "stay_allowed": False},
+    )
+    for p in plans:
+        assert p["final_total"] <= 1500
+        assert p["cost_breakdown"].get("stay", 0) == 0
+        stay_cats = [s.get("category") for d in p["days"] for s in d.get("stops", []) if s.get("category") == "stay"]
+        assert not stay_cats
+        assert any("Budget mode" in w for w in p["warnings"])

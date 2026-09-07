@@ -161,6 +161,7 @@ class TripProfile(Base):
     language = Column(String(50), default="English")
     specific_places = Column(JSON, default=list)
     priority = Column(String(50), default="Balanced")
+    selected_stay = Column(JSON, default=None)  # {id, name, latitude, longitude, distance_km, budget_category}
     created_at = Column(DateTime, default=get_utc_now)
 
     trip = relationship("Trip", back_populates="profile")

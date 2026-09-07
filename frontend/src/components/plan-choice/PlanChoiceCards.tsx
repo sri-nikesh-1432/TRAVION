@@ -79,13 +79,23 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
 
               {/* Live budget bar */}
               <div className="mt-3">
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline justify-between gap-2">
                   <p className="text-2xl font-extrabold text-slate-900">{fmtBudget(plan.final_total)}</p>
-                  <p className={`text-[11px] font-bold ${budgetOk && (plan.remaining_budget ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {budgetOk ? `${inr(plan.remaining_budget)} remaining` : 'Budget unavailable'}
-                  </p>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wide ${
+                    plan.within_budget ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {plan.within_budget ? '✓ Within budget' : '⚠ Over budget'}
+                  </span>
                 </div>
-                <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="mt-1.5 flex items-center justify-between text-[10.5px] font-bold">
+                  <span className={`${budgetOk && (plan.remaining_budget ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {budgetOk ? `${inr(plan.remaining_budget)} remaining` : 'Budget unavailable'}
+                  </span>
+                  {plan.max_affordable_days ? (
+                    <span className="text-slate-400">fits {plan.max_affordable_days}d</span>
+                  ) : null}
+                </div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                   <div
                     className={`h-full rounded-full ${plan.final_total > plan.budget_max ? 'bg-red-500' : 'bg-travion-600'}`}
                     style={{ width: `${usedPct}%` }}
@@ -96,6 +106,14 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                   <span>{fmtBudget(plan.budget_max)}</span>
                 </div>
               </div>
+
+              {/* Budget-mode honesty notice (economy / restricted trips) */}
+              {plan.budget_mode && plan.budget_mode_message && (
+                <div className="mt-3 flex items-start gap-1.5 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-2.5 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  {plan.budget_mode_message}
+                </div>
+              )}
 
               {/* Transparent fee math */}
               <div className="mt-3.5 space-y-1.5 text-[12px] font-semibold text-slate-600">

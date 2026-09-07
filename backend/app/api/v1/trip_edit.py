@@ -13,7 +13,8 @@ so the user can always see what changed. In GUIDE_MODE the assigned guide is
 synchronized with a chat system message so the guide always sees the latest
 plan.
 """
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
@@ -33,6 +34,11 @@ from app.services.budget_service import (
     parse_budget, base_ceiling_for, remaining_budget as budget_remaining,
     sanitize_envelope, compute_totals, fit_to_budget,
 )
+from app.services.budget_engine import (
+    tier_for, get_budget_constraints, display_band_for,
+    check_budget_feasibility, validate_itinerary_budget,
+)
+from app.services.itinerary_validator import validate_itinerary, merge_warnings
 
 router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 
@@ -189,6 +195,158 @@ def _in_plan(days: List[Dict[str, Any]], name: str) -> bool:
     return False
 
 
+def _budget_category(price_per_night: Optional[float], profile: dict) -> str:
+    """Classify a stay's price into a budget category based on the trip profile."""
+    if price_per_night is None:
+        return "unknown"
+    bmax = float((profile or {}).get("budget", {}).get("max", 25000) or 25000)
+    nightly_ratio = price_per_night / max(bmax / 3, 1)  # compare to ~1/3 of total budget
+    if nightly_ratio < 0.05:
+        return "low"
+    if nightly_ratio < 0.15:
+        return "medium"
+    return "high"
+
+
+def _budget_band(bmax: Optional[float]) -> str:
+    """Coarse budget band used to PRIORITISE (never invent) options for the UI.
+    Thresholds are centralized in budget_engine.BUDGET_CONFIG."""
+    return display_band_for(float(bmax or 25000))
+
+
+# Preferred display order per band: budget-fit options first, then adjacent ones.
+_BAND_PREFERENCE = {
+    "low": ("low", "medium"),
+    "medium": ("medium", "low"),
+    "high": ("high", "medium"),
+}
+
+
+def _stay_matches_band(budget_category: Optional[str], band: str) -> bool:
+    if budget_category == "unknown":
+        return True
+    return str(budget_category or "").lower() in _BAND_PREFERENCE.get(band, ("low", "medium"))
+
+
+def _band_order_key(band_order: List[str], stay: Dict[str, Any]) -> Tuple[int, int, float]:
+    """Place budget-fit stays first, then inside-destination, then by rating."""
+    cat = str(stay.get("budget_category") or "unknown").lower()
+    band_pos = band_order.index(cat) if cat in band_order else len(band_order)
+    inside = 0 if stay.get("placement") == "inside" else 1
+    rating = -(float(stay.get("rating") or 0) or 0)
+    return band_pos, inside, rating
+
+
+def _food_order_key(band: str, food: Dict[str, Any]) -> Tuple[int, int, float]:
+    """Budget-fit and outside-first-pass ordering for restaurants."""
+    cls = str(food.get("budget_class") or "ok").lower()
+    order = {"low": ("low", "ok", "high"), "medium": ("ok", "low", "high"), "high": ("high", "ok", "low")}.get(band, ("low", "ok", "high"))
+    cls_pos = order.index(cls) if cls in order else len(order)
+    inside = 0 if food.get("placement") == "inside" else 1
+    rating = -(float(food.get("rating") or 0) or 0)
+    return cls_pos, inside, rating
+
+
+def _food_price_level(avg_cost_for_two: Optional[float]) -> Optional[str]:
+    """Absolute cost indicator (₹ / ₹₹ / ₹₹₹) for restaurants — real price data."""
+    if not avg_cost_for_two:
+        return None
+    if float(avg_cost_for_two) <= 600:
+        return "1"
+    if float(avg_cost_for_two) <= 1200:
+        return "2"
+    return "3"
+
+
+def _food_budget_class(avg_cost_for_two: Optional[float], bmax: Optional[float]) -> str:
+    """Budget-fit class for restaurants: fit, ok, pricey — relative to trip budget."""
+    if not avg_cost_for_two:
+        return "ok"
+    share = float(bmax or 25000) / 8.0  # rough per-meal ceiling for two within the trip
+    if float(avg_cost_for_two) <= share * 0.75:
+        return "low"
+    if float(avg_cost_for_two) <= share * 1.15:
+        return "ok"
+    return "high"
+
+
+def _selection_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise a discovery result into the structured preference shape the
+    planner consumes (id, real coords, distance, price)."""
+    return {
+        "id": item.get("id") or item.get("place_id"),
+        "name": item.get("name", ""),
+        "latitude": item.get("latitude"),
+        "longitude": item.get("longitude"),
+        "distance_km": item.get("distance_km"),
+        "placement": item.get("placement") or "inside",
+        "entry_fee": item.get("entry_fee"),
+        "duration_minutes": item.get("duration_minutes"),
+        "rating": item.get("rating"),
+        "source": item.get("source", "verified_api"),
+    }
+
+
+def _source_anchor(trip: Trip, db: Session) -> Dict[str, Any]:
+    """Registered source ground truth (coordinates + state) for cost estimation."""
+    loc = None
+    if getattr(trip, "source_location_id", None):
+        loc = db.query(Location).filter(Location.id == trip.source_location_id).first()
+    if not loc:
+        return {"coords": None, "state": None, "name": None}
+    return {
+        "coords": (loc.lat, loc.lng) if (getattr(loc, "lat", None) and getattr(loc, "lng", None)) else None,
+        "state": loc.state,
+        "name": loc.name,
+    }
+
+
+def _trip_days(trip: Trip) -> int:
+    try:
+        s, e = trip.start_datetime, trip.end_datetime
+        if s and e:
+            diff = (e - s).days
+            return max(1, diff + 1)
+    except Exception:
+        pass
+    return 2
+
+
+def _raw_budget(profile: dict, trip_budget: float) -> float:
+    """The traveller's RAW max budget BEFORE sanitize_envelope up-scaling.
+
+    sanitize_envelope() maps implausibly small budgets to the 50k default band
+    — that must NEVER decide feasibility. Feasibility is judged on the raw value.
+    """
+    raw = parse_budget((profile or {}).get("budget"), fallback=(0.0, float(trip_budget or 0)))
+    hi = raw[1]
+    if hi > 0:
+        return hi
+    return float(trip_budget or 0)
+
+
+def _budget_verdict(trip: Trip, profile: dict, db: Session) -> Dict[str, Any]:
+    """Run the Budget Feasibility Engine for this trip's real geography."""
+    assert hasattr(trip, "destination_name")
+    dest = trip.destination_name
+    src = _source_anchor(trip, db)
+    dst = _destination_anchor(trip, db)
+    source_coords = tuple(src["coords"]) if src.get("coords") else None
+    dest_coords = tuple(dst["coords"]) if dst.get("coords") else None
+    return check_budget_feasibility(
+        budget=_raw_budget(profile, getattr(trip, "budget", 0) or 0),
+        destination=dest,
+        days=_trip_days(trip),
+        mode=str(trip.mode or "ADVENTUROUS_MODE"),
+        profile=profile,
+        source_name=src.get("name") or "",
+        destination_state=dst.get("state") or "",
+        source_coords=source_coords,
+        dest_coords=dest_coords,
+    )
+
+
+
 # ── 0. Destination discovery catalog: REAL verified places only ─────────────
 
 @router.get("/{trip_id}/destination-catalog")
@@ -225,6 +383,24 @@ def destination_catalog(
             detail="We're unable to verify enough places for this destination right now. Please try another destination.",
         )
 
+    env = _budget_envelope(profile, trip.budget)
+    band = _budget_band(env["max"])
+
+    # Budget tier panel for Step 3: central engine verdict + planner
+    # constraints. The UI surfaces this as an honest advisor strip — never a
+    # normal itinerary for an impossible budget.
+    raw = _raw_budget(profile, trip.budget)
+    raw_tier = tier_for(raw)
+    constraints = get_budget_constraints(raw)
+    tier_meta = {
+        "tier": raw_tier,
+        "label": constraints["tier_label"],
+        "summary": constraints["tier_summary"],
+        "budget_status": constraints["budget_status"],
+        "economy": constraints["economy"],
+        "impossible": raw_tier == "extremely_low",
+    }
+
     attractions = discovery.get("must_visit") or []
     stays = discovery.get("stays") or []
     foods = discovery.get("food") or []
@@ -232,11 +408,15 @@ def destination_catalog(
 
     def _attr(a: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            "id": a.get("id") or a.get("place_id"),
             "name": a.get("name", ""),
             "category": a.get("category", "attraction"),
             "description": a.get("description"),
             "address": a.get("address"),
             "distance_km": a.get("distance_km"),
+            "latitude": a.get("latitude"),
+            "longitude": a.get("longitude"),
+            "placement": a.get("placement") or ("inside" if not a.get("distance_km") else "nearby"),
             "rating": a.get("rating"),
             "review_count": a.get("review_count"),
             "opening_hours": a.get("opening_hours"),
@@ -250,12 +430,18 @@ def destination_catalog(
 
     def _stay(s: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            "id": s.get("id") or s.get("place_id"),
             "name": s.get("name", ""),
             "tier": s.get("tier") or ("Verified stay" if s.get("price_per_night") else None),
             "price_per_night": s.get("price_per_night"),
             "rating": s.get("rating"),
             "amenities": s.get("amenities") or [],
             "address": s.get("address"),
+            "latitude": s.get("latitude"),
+            "longitude": s.get("longitude"),
+            "distance_km": s.get("distance_km"),
+            "placement": s.get("placement") or ("inside" if not s.get("distance_km") else "nearby"),
+            "budget_category": _budget_category(s.get("price_per_night"), profile),
             "source": s.get("source", "verified_api"),
             "verified": s.get("verified", True),
             "already_in_plan": _in_plan(days, s.get("name", "")),
@@ -263,25 +449,53 @@ def destination_catalog(
 
     def _food(f: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            "id": f.get("id") or f.get("place_id"),
             "name": f.get("name", ""),
             "cuisine": f.get("cuisine") or f.get("types"),
             "veg_type": f.get("veg_type"),
             "avg_cost_for_two": f.get("avg_cost_for_two"),
             "rating": f.get("rating"),
             "address": f.get("address"),
+            "latitude": f.get("latitude"),
+            "longitude": f.get("longitude"),
+            "distance_km": f.get("distance_km"),
+            "placement": f.get("placement") or ("inside" if not f.get("distance_km") else "nearby"),
+            "price_level": _food_price_level(f.get("avg_cost_for_two")),
+            "budget_class": _food_budget_class(f.get("avg_cost_for_two"), env["max"]),
             "source": f.get("source", "verified_api"),
             "verified": f.get("verified", True),
             "already_in_plan": _in_plan(days, f.get("name", "")),
         }
 
+    # Budget-aware ordering (never fabrication): budget-fit stays first, then
+    # inside the destination, then rating. For low-budget travellers expensive
+    # category stays are not surfaced as normal results.
+    stays_serialized = [_stay(s) for s in stays]
+    band_order = list(_BAND_PREFERENCE.get(band, ("low", "medium")))
+    if band == "low":
+        stays_serialized = [s for s in stays_serialized if _stay_matches_band(s.get("budget_category"), band)] or stays_serialized
+    stays_serialized.sort(key=lambda s: _band_order_key(band_order, s))
+
+    foods_serialized = [_food(f) for f in foods]
+    foods_serialized.sort(key=lambda f: _food_order_key(band, f))
+
     return {
         "destination": dest,
         "verified_only": True,
         "discovery_source": discovery.get("source"),
-        "counts": {"attractions": len(attractions), "stays": len(stays), "food": len(foods), "activities": len(activities)},
+        "budget_band": band,
+        "budget": {
+            "tier": tier_meta,
+            "budget_status": constraints["budget_status"],
+            "maximum_allowed_spend": constraints["maximum_allowed_spend"],
+            "constraints": constraints,
+            "message": constraints["tier_summary"],
+        },
+        "core_radius_km": discovery.get("core_radius_km"),
+        "counts": {"attractions": len(attractions), "stays": len(stays_serialized), "food": len(foods_serialized), "activities": len(activities)},
         "must_visit": [_attr(a) for a in attractions],
-        "stays": [_stay(s) for s in stays],
-        "food": [_food(f) for f in foods],
+        "stays": stays_serialized,
+        "food": foods_serialized,
         "activities": [_attr(a) for a in activities],
     }
 
@@ -309,11 +523,66 @@ def plan_multi(
     if bmin >= bmax:
         bmin = max(1000.0, bmax * 0.8)
 
+    # ── BUDGET FEASIBILITY GATE ──────────────────────────────────────────────
+    # The backend decides FIRST whether this budget can realistically support
+    # the requested trip. The AI/planner never decides feasibility and never
+    # receives an impossible budget (₹100/₹500/₹1,000 must NEVER yield a normal
+    # itinerary — a previous sanitize_envelope() up-scale made that possible).
+    verdict = _budget_verdict(trip, profile, db)
+    if verdict["status"] == "impossible":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_code": "BUDGET_INSUFFICIENT",
+                "message": verdict["message"],
+                "budget_status": "impossible",
+                "minimum_required_budget": round(float(verdict["minimum_required_budget"])),
+                "max_affordable_days": int(verdict["max_affordable_days"] or 0),
+                "requested_days": int(verdict.get("requested_days") or _trip_days(trip)),
+                "alternatives": verdict.get("alternatives") or [],
+            },
+        )
+    constraints = verdict["constraints"]
+
     # Selections are HARD PREFERENCES: persist them so /choose-plan and any
     # regeneration reproduce the exact same three plans deterministically.
     profile = dict(profile or {})
-    profile["selected_places"] = req.selected_places or []
-    profile["selected_food"] = req.selected_food or []
+    place_items = [dict(x) for x in (req.selected_place_items or [])]
+    food_items = [dict(x) for x in (req.selected_food_items or [])]
+
+    # Structured items are the source of truth; name lists stay in sync so
+    # every consumer (choose-plan, chat, replanning) sees the same selections.
+    selected_places = [str(n) for n in (req.selected_places or [])]
+    selected_food = [str(n) for n in (req.selected_food or [])]
+    for it in place_items:
+        nm = str(it.get("name") or "").strip()
+        if nm and nm not in selected_places:
+            selected_places.append(nm)
+    for it in food_items:
+        nm = str(it.get("name") or "").strip()
+        if nm and nm not in selected_food:
+            selected_food.append(nm)
+
+    profile["selected_places"] = selected_places
+    profile["selected_food"] = selected_food
+    profile["selected_place_items"] = [_selection_item(it) for it in place_items if it.get("name")]
+    profile["selected_food_items"] = [
+        {**_selection_item(it), "cuisine": it.get("cuisine"), "avg_cost_for_two": it.get("avg_cost_for_two"),
+         "price_level": it.get("price_level"), "budget_class": it.get("budget_class")}
+        for it in food_items if it.get("name")
+    ]
+    # Single stay for the entire trip — persisted to keep the same hotel every night.
+    if req.selected_stay:
+        profile["selected_stay"] = {
+            "id": req.selected_stay.get("id", ""),
+            "name": req.selected_stay.get("name", ""),
+            "latitude": req.selected_stay.get("latitude"),
+            "longitude": req.selected_stay.get("longitude"),
+            "distance_km": req.selected_stay.get("distance_km"),
+            "price_per_night": req.selected_stay.get("price_per_night"),
+            "rating": req.selected_stay.get("rating"),
+            "budget_category": req.selected_stay.get("budget_category", "unknown"),
+        }
     profile["selected_stay_tiers"] = {k: v for k, v in (req.stay_tiers or {}).items() if v}
     if trip.profile:
         trip.profile.questions_answers = profile
@@ -350,12 +619,16 @@ def plan_multi(
 
     plans = build_plans(
         base, bmin, bmax,
-        selected_places=req.selected_places,
-        selected_food=req.selected_food,
+        selected_places=selected_places,
+        selected_food=selected_food,
+        selected_place_items=profile.get("selected_place_items") or [],
+        selected_food_items=profile.get("selected_food_items") or [],
+        selected_stay=profile.get("selected_stay") or None,
         stay_tiers=req.stay_tiers or None,
         profile_stay_pref=str(profile.get("stay_pref") or ""),
         resolved_attractions=resolved_attractions,
         resolved_food=resolved_food,
+        constraints=constraints,
     )
 
     # Belt-and-braces: the plan engine already clamps, but the flat 3% rule
@@ -376,6 +649,30 @@ def plan_multi(
                 ),
             )
 
+    # Final itinerary validation: never trust the generator — re-verify totals.
+    for p in plans:
+        check = validate_itinerary_budget(p["final_total"], bmax)
+        if not check["valid"]:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "BUDGET_INSUFFICIENT",
+                    "message": (
+                        f"We couldn't create a realistic itinerary within your current budget. "
+                        "Try increasing your budget or reducing the trip duration."
+                    ),
+                    "budget_status": "impossible",
+                    "minimum_required_budget": round(float(bmax), 0),
+                },
+            )
+
+    # Schedule honesty: surface any overlap/tight-transfer warning on every
+    # plan so the traveller sees reality before choosing, not after.
+    for p in plans:
+        schedule_check = validate_itinerary(p["cost_breakdown"], bmax, days=p["days"])
+        p["warnings"] = merge_warnings(p.get("warnings") or [], schedule_check["warnings"])
+
+    budget_mode = verdict.get("budget_status") == "restricted" or constraints.get("tier") in ("extremely_low", "very_low", "low")
     return [
         {
             "type": p["type"],
@@ -394,6 +691,11 @@ def plan_multi(
             "highlights": p["highlights"],
             "warnings": p["warnings"],
             "recommended": p["type"] == "RECOMMENDED",
+            "budget_status": verdict.get("budget_status"),
+            "budget_mode": budget_mode,
+            "budget_mode_message": constraints["tier_summary"] if budget_mode else None,
+            "minimum_required_budget": round(float(verdict.get("minimum_required_budget") or 0)),
+            "max_affordable_days": int(verdict.get("max_affordable_days") or 0) or None,
         }
         for p in plans
     ]
@@ -412,6 +714,7 @@ def choose_plan(
 
     profile = dict(trip.profile.questions_answers if trip.profile else {})
     env = _budget_envelope(profile, trip.budget)
+    constraints = get_budget_constraints(_raw_budget(profile, trip.budget))
     mode = trip.mode or "ADVENTUROUS_MODE"
     base = generate_base_plan(trip, mode, db)
     base.setdefault("destination", trip.destination_name)
@@ -419,8 +722,12 @@ def choose_plan(
         base, env["min"], env["max"],
         selected_places=profile.get("selected_places") or [],
         selected_food=profile.get("selected_food") or [],
+        selected_place_items=profile.get("selected_place_items") or [],
+        selected_food_items=profile.get("selected_food_items") or [],
+        selected_stay=profile.get("selected_stay") or None,
         stay_tiers=profile.get("selected_stay_tiers") or None,
         profile_stay_pref=str(profile.get("stay_pref") or ""),
+        constraints=constraints,
     )
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:

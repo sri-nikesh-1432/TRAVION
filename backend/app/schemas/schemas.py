@@ -290,6 +290,14 @@ class PlanMultiRequest(BaseModel):
     # planner must include, never replace.
     selected_places: List[str] = []
     selected_food: List[str] = []
+    # Structured selections from the discovery screen (id + real coords +
+    # distance + price). Supplied alongside the name lists so the planner uses
+    # the EXACT place the user picked, not a same-named guess.
+    selected_place_items: List[Dict[str, Any]] = []
+    selected_food_items: List[Dict[str, Any]] = []
+    # User-selected REAL stay from destination discovery — single stay for the
+    # entire trip; the planner must use this stay every night.
+    selected_stay: Optional[Dict[str, Any]] = None
     # Optional per-plan stay tier override, e.g. {"PREMIUM": "5 Star"} from the
     # plan card's star +/- control.
     stay_tiers: Dict[str, str] = {}

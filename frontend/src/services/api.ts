@@ -2,7 +2,8 @@ import {
   AuthSession, LocationItem, TripItem, TripItinerary, TripAssignment,
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
   UserProfile, GuideProfile, PlanOption, ItineraryChange,
-  ItineraryChangeResponse, ExplorePlace, DestinationCatalog
+  ItineraryChangeResponse, ExplorePlace, DestinationCatalog,
+  SelectedPlaceItem, SelectedFoodItem, SelectedStay
 } from '../types';
 
 const API_BASE_URL =
@@ -196,7 +197,14 @@ export const api = {
   planMulti: (
     tripId: string,
     mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE',
-    selections?: { selected_places?: string[]; selected_food?: string[]; stay_tiers?: Record<string, string> }
+    selections?: {
+      selected_places?: string[],
+      selected_food?: string[],
+      selected_place_items?: SelectedPlaceItem[],
+      selected_food_items?: SelectedFoodItem[],
+      selected_stay?: SelectedStay | null,
+      stay_tiers?: Record<string, string>
+    }
   ) =>
     request<PlanOption[]>(`/trips/${tripId}/plan-multi`, {
       method: 'POST',
@@ -205,6 +213,9 @@ export const api = {
         consent_acknowledged: true,
         ...(selections?.selected_places?.length ? { selected_places: selections.selected_places } : {}),
         ...(selections?.selected_food?.length ? { selected_food: selections.selected_food } : {}),
+        ...(selections?.selected_place_items?.length ? { selected_place_items: selections.selected_place_items } : {}),
+        ...(selections?.selected_food_items?.length ? { selected_food_items: selections.selected_food_items } : {}),
+        ...(selections?.selected_stay ? { selected_stay: selections.selected_stay } : {}),
         ...(selections?.stay_tiers && Object.keys(selections.stay_tiers).length ? { stay_tiers: selections.stay_tiers } : {})
       })
     }),
