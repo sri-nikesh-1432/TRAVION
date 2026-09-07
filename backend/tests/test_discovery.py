@@ -3,9 +3,12 @@
 Covers:
   * name resolution robustness (Cochin→Kochi, Dharamshala, Kanyakumari)
   * the Manali wrong-state bug (Tamil Nadu vs Himachal Pradesh)
-  * the HARD 3 km cap: the pipeline returns verified real places within the
-    destination core, and — when none exist within 3 km — returns an HONEST
-    EMPTY (never a fabricated or out-of-radius place).
+  * the HARD 2 km cap: the pipeline returns verified real places within the
+    destination's own footprint first, then the ≤2 km fallback expansion, and
+    — when none exist within the cap — returns an HONEST EMPTY (never a
+    fabricated or out-of-radius place).
+  * destination-first ranking: INSIDE places always outrank NEARBY ones.
+  * pool targets: up to 10 places / 10 activities / 7 restaurants / 7 stays.
 Network tiers (Google/Overpass) are mocked out so the tests are offline and
 deterministic; the geonames index + verified catalog are real local data.
 """
@@ -80,16 +83,16 @@ def test_discovery_unindexed_name_via_coords_surfaces_real_places():
     assert "Tsuglagkhang Complex (Dalai Lama Temple)" in names or "Bhagsu Waterfall" in names
 
 
-def test_discovery_3km_cap_is_honest_never_invents():
-    """The 3 km core rule is HARD: when no verified place lies within 3 km of
-    the anchor, discovery returns an honest empty — it must NEVER fabricate a
-    place or reach outside the cap. (Verified catalog distances for these
-    anchors all exceed the cap; live Google/Overpass tiers are mocked out.)"""
+def test_discovery_2km_cap_is_honest_never_invents():
+    """The 2 km rule is HARD: when no verified place lies within 2 km of the
+    anchor, discovery returns an honest empty — it must NEVER fabricate a place
+    or reach outside the cap. (Verified catalog distances for these anchors all
+    exceed 2 km; live Google/Overpass tiers are mocked out.)"""
     # Goa — absolutely nothing real within the core.
     goa = pd.discover_destination("Goa")
     assert goa["total_places"] == 0
     assert goa["must_visit"] == []
-    # Cochin coords (Fort Kochi anchor) — nothing real within 3 km offline.
+    # Cochin coords (Fort Kochi anchor) — nothing real within 2 km offline.
     cochin = pd.discover_destination("Cochin", coords=(9.9312, 76.2673), state="Kerala")
     assert cochin["total_places"] == 0
     assert cochin["must_visit"] == []
@@ -100,6 +103,53 @@ def test_discovery_3km_cap_is_honest_never_invents():
     for bucket in ("food", "stays", "activities"):
         for item in jaipur[bucket]:
             assert item["verified"] is True
+
+
+def test_discovery_neither_overcap_targets_nor_exceeds_2km():
+    """Pool targets: up to 10 places / 10 activities / up to 7 restaurants /
+    up to 7 stays — and every place with coordinates is inside the hard 2 km
+    Haversine cap. Fewer real results are fine; FAR results are never allowed."""
+    for name in ("Ooty", "Puducherry", "Mahabalipuram"):
+        result = pd.discover_destination(name)
+        assert result["total_places"] > 0, name
+        for bucket, cap in (
+            ("must_visit", pd.TARGET_COUNTS["must_visit"]),
+            ("activities", pd.TARGET_COUNTS["activities"]),
+            ("food", pd.TARGET_COUNTS["food"]),
+            ("stays", pd.TARGET_COUNTS["stays"]),
+        ):
+            items = result[bucket] or []
+            assert len(items) <= cap, f"{name}/{bucket}: {len(items)} > {cap}"
+            for item in items:
+                if item.get("distance_km") is not None:
+                    assert float(item["distance_km"]) <= 2.0 + 1e-6, (
+                        f"{name}/{bucket}: '{item['name']}' is {item['distance_km']} km away"
+                    )
+
+
+def test_discovery_ranks_inside_before_nearby():
+    """Destination-first ranking: inside-core places always outrank the ≤2 km
+    fallback expansion within every bucket."""
+    for name in ("Ooty", "Puducherry", "Dharamshala"):
+        result = pd.discover_destination(name)
+        for bucket in ("must_visit", "activities", "food", "stays"):
+            saw_nearby = False
+            for item in result.get(bucket) or []:
+                placement = item.get("placement") or "inside"
+                if placement == "nearby":
+                    saw_nearby = True
+                else:
+                    assert not saw_nearby, (
+                        f"{name}/{bucket}: an inside place appears after a nearby one"
+                    )
+
+
+def test_discovery_exposes_destination_coordinates():
+    """The discovery payload carries the real destination anchor so the UI can
+    show 'inside destination' relative to the registered spot."""
+    result = pd.discover_destination("Ooty")
+    assert result.get("destination_latitude") is not None
+    assert result.get("destination_longitude") is not None
 
 
 def test_discovery_never_invents():

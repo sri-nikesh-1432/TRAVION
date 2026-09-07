@@ -355,6 +355,7 @@ def build_plans(
     selected_place_items: Optional[List[Dict[str, Any]]] = None,
     selected_food_items: Optional[List[Dict[str, Any]]] = None,
     constraints: Optional[Dict[str, Any]] = None,
+    stay_required: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     """Create the three differentiated plans. See module docstring for rules.
 
@@ -362,17 +363,40 @@ def build_plans(
     AI can never override: economy mode forces budget food/transport/activities
     on every variant, stay_allowed=False drops accommodation entirely (day-trip
     budget mode). User-selected stays always win — they are a direct pick.
+
+    `stay_required` is the traveller's EXPLICIT stay choice: `False` is the
+    "Continue without a stay" rule — accommodation is ₹0 and no hotel is ever
+    auto-added, even when the budget could afford one. `True` means keep a stay
+    (the budget/allowed flags still apply). `None` = not specified: behave as
+    before (stay if the budget allows it, else no-stay).
+
+    BUDGET IS A RANGE: `budget_min` is the floor and `budget_max` the ceiling.
+    Plans are LAYERED — VALUE targets the floor, RECOMMENDED the mid-range and
+    PREMIUM the ceiling — but a plan is never padded UP to hit a target; costs
+    stay honest. If the cheapest real plan lands below the floor the user is
+    told (no price invention).
     """
     dest = str(base.get("destination") or "")
     constraints = constraints or {}
     economy = bool(constraints.get("economy"))
     stay_allowed = bool(constraints.get("stay_allowed", True))
+    force_no_stay = stay_required is False
     plans: List[Dict[str, Any]] = []
     n_selected = len(selected_places or [])
 
     budget_stay_tiers = ["Budget Guesthouse", "2 Star", "Homestay", "3 Star"]
+    span = max(0.0, float(budget_max or 0.0) - float(budget_min or 0.0))
 
     for variant in ("VALUE", "RECOMMENDED", "PREMIUM"):
+        # Laddering: give each variant its own honest cost target inside the
+        # floor→ceiling range. The 3% platform fee still lives INSIDE the target.
+        if variant == "VALUE":
+            variant_target = float(budget_min or 0.0)
+        elif variant == "RECOMMENDED":
+            variant_target = float(budget_min or 0.0) + span * 0.55
+        else:
+            variant_target = float(budget_max or 0.0)
+        variant_target = min(max(variant_target, 0.0), float(budget_max or 0.0))
         p = _variant_params(variant, profile_stay_pref)
         warnings: List[str] = []
 
@@ -421,9 +445,11 @@ def build_plans(
 
         # 2. REAL STAY TIER: use user-selected stay if provided (single stay for entire trip).
         # When the user explicitly selected a hotel in Step 3, that stay is used for
-        # EVERY night of the trip — never replaced by the planner.
+        # EVERY night of the trip — never replaced by the planner. "Continue without
+        # a stay" (stay_required=False) is an ABSOLUTE rule: accommodation is ₹0 and
+        # no hotel is ever auto-added, even when the budget could afford one.
         no_stay_mode = not stay_allowed and not selected_stay
-        if selected_stay:
+        if selected_stay and not force_no_stay:
             stay_pick = selected_stay
             nightly = float(stay_pick.get("price_per_night", 0) or 0)
             # If the selected stay has no price, fall back to a verified catalog match.
@@ -435,17 +461,25 @@ def build_plans(
             stay = stayedge_cost + selection_cost
             stay_label = f"{stay_pick.get('name', 'Selected stay')} — {stay_pick.get('budget_category', 'selected')}"
             stay_tier_used = stay_pick.get("budget_category", "selected")
-        elif no_stay_mode:
-            # Budget too low for accommodation — day-trip style, never a made-up hotel.
+        elif force_no_stay or no_stay_mode:
+            # Either the traveller explicitly chose "Continue without a stay"
+            # (stay_required=False) or the budget genuinely can't hold a stay —
+            # in BOTH cases accommodation is ₹0 and no made-up hotel appears.
             stay = 0.0
-            stay_label = "No stay (day-trip budget mode)"
+            stay_label = "No stay (day-trip style)"
             stay_tier_used = None
             for d in days:
                 d["stops"] = [s for s in d.get("stops", []) if s.get("category") != "stay"]
-            warnings.append(
-                "Your budget doesn't support accommodation for this trip — we planned it as a day-trip "
-                "style itinerary with no stay. Raise the budget or continue as-is."
-            )
+            if force_no_stay:
+                warnings.append(
+                    "You chose to continue without a stay — accommodation costs ₹0 and no hotel was "
+                    "added to any plan. You can add one anytime from the plan cards."
+                )
+            else:
+                warnings.append(
+                    "Your budget doesn't support accommodation for this trip — we planned it as a day-trip "
+                    "style itinerary with no stay. Raise the budget or continue as-is."
+                )
         else:
             candidates = budget_stay_tiers if economy else None
             override_tier = (stay_tiers or {}).get(variant)
@@ -479,9 +513,10 @@ def build_plans(
         # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps.
         _resequence(days)
 
-        # 5. HARD BUDGET: the 3% platform fee lives INSIDE the user's ceiling.
-        #    base x 1.03 <= budget_max  →  base <= budget_max / 1.03
-        base_ceiling = budget_max / (1.0 + PLATFORM_FEE_RATE)
+        # 5. HARD BUDGET: the 3% platform fee lives INSIDE the chosen rung of the
+        #    floor→ceiling range (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling).
+        #    rung x 1.03 <= variant_target  →  base <= variant_target / 1.03
+        base_ceiling = variant_target / (1.0 + PLATFORM_FEE_RATE)
         fixed = transport + guide_fee
         flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
@@ -517,6 +552,19 @@ def build_plans(
 
         platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
         final_total = base_cost + platform_fee
+
+        # Honest budget-range communication — never padding prices to hit a rung.
+        if variant == "VALUE":
+            warnings.append(
+                f"PLAN A targets the low end of your ₹{round(budget_min):,}–₹{round(budget_max):,} budget range; "
+                f"PLAN C explores the top end. We never inflate prices to reach a number."
+            )
+        if float(budget_min or 0) > 0 and final_total < float(budget_min):
+            warnings.append(
+                f"The realistic cheapest version of this trip comes to ₹{round(final_total):,} — below your "
+                f"listed minimum of ₹{round(float(budget_min)):,}. That's fine: we don't pad costs to reach "
+                f"your target. Use the PREMIUM plan or upgrade a stay to spend more deliberately."
+            )
 
         # 6. Trade-off intelligence: explain consequences, never silently.
         if downgraded:
@@ -577,6 +625,8 @@ def build_plans(
             "highlights": highlights,
             "warnings": warnings,
             "recommended": variant == "RECOMMENDED",
+            "stay_required": False if force_no_stay else (stay_required is True or bool(selected_stay)),
+            "stay_cost": float(breakdown.get("stay", 0) or 0),
         })
 
     return _enforce_ordering(plans)

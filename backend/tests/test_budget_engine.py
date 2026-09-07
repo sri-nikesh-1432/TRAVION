@@ -228,3 +228,82 @@ def test_build_plans_honors_engine_constraints():
         stay_cats = [s.get("category") for d in p["days"] for s in d.get("stops", []) if s.get("category") == "stay"]
         assert not stay_cats
         assert any("Budget mode" in w for w in p["warnings"])
+
+
+# ── "Continue without a stay" (stay_required=False) — absolute ₹0 stay rule ───
+
+def test_stay_required_false_keeps_stay_cost_zero_everywhere():
+    """'Continue without a stay' is an ABSOLUTE rule: even on a healthy budget
+    that could afford a hotel, accommodation is ₹0 on every variant and no
+    hotel is ever auto-added."""
+    plans = build_plans(
+        _base_plan(), 15000, 25000,
+        selected_places=["Promenade Beach"],
+        selected_food=["Lunch"],
+        stay_required=False,
+    )
+    assert {p["type"] for p in plans} == {"VALUE", "RECOMMENDED", "PREMIUM"}
+    for p in plans:
+        assert p["stay_required"] is False
+        assert float(p["cost_breakdown"].get("stay") or 0) == 0
+        stay_stops = [s["category"] for d in p["days"] for s in d.get("stops", []) if s.get("category") == "stay"]
+        assert not stay_stops
+        assert any("continue without a stay" in w.lower() for w in p["warnings"])
+
+
+def test_stay_required_false_beats_auto_stay():
+    """Without the flag the planner adds a stay on a healthy budget; with
+    stay_required=False it must not. Also verifies the user-selected stay wins
+    when the flag is True."""
+    auto = build_plans(_base_plan(), 15000, 25000)
+    assert any(float(p["cost_breakdown"].get("stay") or 0) > 0 for p in auto)
+    no_stay = build_plans(_base_plan(), 15000, 25000, stay_required=False)
+    for p in no_stay:
+        assert float(p["cost_breakdown"].get("stay") or 0) == 0
+
+
+# ── Budget RANGE semantics: floor + ceiling, three-rung ladder, no padding ────
+
+def test_budget_range_three_rung_ladder():
+    """₹15,000–₹25,000 is a floor + ceiling, NOT a target max. VALUE leans at
+    the floor, RECOMMENDED mid-range, PREMIUM up to the ceiling — always
+    VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ ceiling."""
+    plans = build_plans(
+        _base_plan(), 15000, 25000,
+        selected_places=["Promenade Beach"],
+        selected_food=["Lunch"],
+    )
+    totals = {p["type"]: p["final_total"] for p in plans}
+    assert totals["VALUE"] <= totals["RECOMMENDED"] <= totals["PREMIUM"] <= 25000
+    # A real ladder spans the range (PREMIUM should cost meaningfully more than
+    # VALUE — they must actually be DIFFERENT plans, not three copies of max).
+    assert totals["PREMIUM"] - totals["VALUE"] >= 1500
+    for p in plans:
+        assert p["budget_min"] == 15000
+        assert p["budget_max"] == 25000
+        assert p["within_budget"] is True
+
+
+def test_below_floor_plan_not_padded_up():
+    """If the realistic cheapest plan lands BELOW the floor, we keep the honest
+    lower price and tell the user — we never pad costs to hit the minimum."""
+    cheap_base = {
+        "destination": "Pondicherry",
+        "days": [
+            {"day": 1, "title": "Day 1", "stops": [
+                {"id": "c1", "time": "10:00 AM", "title": "Promenade Beach",
+                 "category": "attraction", "location_name": "Pondicherry",
+                 "lat": 11.93, "lng": 79.83, "estimated_cost": 0,
+                 "duration_minutes": 90, "source": "verified_api", "verified": True},
+            ]},
+        ],
+        "cost_breakdown": {
+            "transport": 4000.0, "stay": 3000.0, "food": 2000.0,
+            "activities": 0.0, "guide_fee": 0.0, "nights": 0, "headcount": 2.0,
+        },
+    }
+    plans = build_plans(cheap_base, 30000, 40000)
+    value = next(p for p in plans if p["type"] == "VALUE")
+    assert float(value["final_total"]) < 30000  # below the floor, allowed
+    assert value["within_budget"] is True
+    assert any("don't pad costs" in w or "below your" in w for w in value["warnings"])

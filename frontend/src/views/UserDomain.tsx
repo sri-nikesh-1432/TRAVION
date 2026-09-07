@@ -311,7 +311,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   };
 
   // 3a. Selections made → generate the THREE in-budget plans around them
-  const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null) => {
+  const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean) => {
     if (!activeTrip) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
@@ -324,6 +324,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         selected_place_items: placeItems,
         selected_food_items: foodItems,
         ...(stay ? { selected_stay: stay } : {}),
+        stay_required: stayRequired ?? (stay != null),
       });
       setPlanOptions(plans);
       setIsGeneratingPlan(false);

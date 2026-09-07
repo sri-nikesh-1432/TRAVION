@@ -298,6 +298,10 @@ class PlanMultiRequest(BaseModel):
     # User-selected REAL stay from destination discovery — single stay for the
     # entire trip; the planner must use this stay every night.
     selected_stay: Optional[Dict[str, Any]] = None
+    # Explicit stay choice: `False` means "Continue without a stay" — accommo-
+    # dation is a hard ₹0 and no hotel is ever auto-added even when affordable.
+    # `True` keeps a stay; `None` (unset) keeps the old auto behaviour.
+    stay_required: Optional[bool] = None
     # Optional per-plan stay tier override, e.g. {"PREMIUM": "5 Star"} from the
     # plan card's star +/- control.
     stay_tiers: Dict[str, str] = {}

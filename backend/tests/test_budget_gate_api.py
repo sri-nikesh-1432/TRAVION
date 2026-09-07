@@ -108,3 +108,25 @@ def test_normal_budget_generates_normal_plans():
         assert p["within_budget"] is True
         stay_stops = [s["category"] for d in p["days"] for s in d.get("stops", []) if s.get("category") == "stay"]
         assert stay_stops  # a normal budget includes somewhere to sleep
+
+
+def test_continue_without_stay_is_respected_end_to_end():
+    """'Continue without a stay' (stay_required=False) must be explicit through
+    the API: stay cost ₹0 everywhere, no stay stops, selected_stay_id null —
+    even though this budget could afford a hotel (never auto-add one)."""
+    trip_id, headers = _build_trip("₹15,000 - ₹25,000")
+    res = client.post(f"/api/v1/trips/{trip_id}/plan-multi", headers=headers, json={
+        "mode": "ADVENTUROUS_MODE", "consent_acknowledged": True,
+        "stay_required": False,
+    })
+    assert res.status_code == 200, res.text
+    plans = res.json()
+    assert len(plans) == 3
+    for p in plans:
+        assert p["stay_required"] is False
+        assert p["selected_stay_id"] is None
+        assert float(p["stay_cost"]) == 0
+        assert float(p["cost_breakdown"].get("stay") or 0) == 0
+        stay_stops = [s["category"] for d in p["days"] for s in d.get("stops", []) if s.get("category") == "stay"]
+        assert not stay_stops
+        assert any("continue without a stay" in w.lower() for w in p["warnings"])

@@ -17,17 +17,31 @@ The LLM is NEVER a source of place existence. If a source has no data for a
 category, that category is empty or omitted — never filled with inventions.
 Unknown fields are None; the UI must show "Not available" for those.
 
-HARD CONSTRAINT: No place beyond 3 KM from the destination is ever returned.
-The backend enforces this; the frontend must never display out-of-range results.
+HARD CONSTRAINT: The destination's own footprint comes FIRST; fallback
+expansion NEVER goes beyond 2 KM from the destination anchor. The backend
+enforces this with a hard Haversine cap; the frontend must never display
+out-of-range results.
 """
-
-# Hard maximum search radius in km — enforced server-side. Never exceeded.
-MAX_DISTANCE_KM = 3.0
 
 import math
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
+# Hard maximum search radius in km — enforced server-side. Never exceeded.
+MAX_DISTANCE_KM = 2.0
+
+# Target pool sizes per discovery section (we return UP TO these counts of real
+# places; if fewer real places exist inside the cap, we honestly return fewer —
+# we never fabricate to hit a number).
+TARGET_COUNTS: Dict[str, int] = {
+    "must_visit": 10,
+    "activities": 10,
+    "food": 7,
+    "stays": 7,
+}
 
 import requests
 
@@ -344,7 +358,7 @@ def _placement_for(
     origin: Optional[Tuple[float, float]],
     core_km: float,
 ) -> str:
-    """Classify a real place as INSIDE the destination or NEARBY (≤3 km).
+    """Classify a real place as INSIDE the destination or NEARBY (≤2 km).
 
     Curated verified entries for the destination are inherently inside it.
     Everything else is judged by its computed distance: inside when it falls
@@ -384,9 +398,9 @@ def _google_search(query: str, api_key: str, origin: Optional[Tuple[float, float
     """Google Places (New) text search.
 
     When destination coordinates are available a hard locationRestriction circle
-    (3 km) is attached so the provider itself never returns city-wide results —
+    (2 km) is attached so the provider itself never returns city-wide results —
     "restaurants in Chennai" can never come back from Marina Beach. The backend
-    then still enforces the same 3 km cap independently.
+    then still enforces the same 2 km cap independently.
     """
     body: Dict[str, Any] = {"textQuery": query, "languageCode": "en", "regionCode": "IN"}
     if origin and origin[0] and origin[1]:
@@ -550,7 +564,7 @@ def _discover_osm(destination: str, resolved: Dict[str, Any]) -> Dict[str, List[
     buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
     lat, lng = resolved["lat"], resolved["lng"]
     origin = (lat, lng)
-    # Search radius mirrors the hard 3 km product rule — Overpass never scans
+    # Search radius mirrors the hard 2 km product rule — Overpass never scans
     # the whole city, so results can never leak beyond the boundary either.
     q = _overpass_query([flt for _, flt in _OSM_FILTERS], lat, lng, int(MAX_DISTANCE_KM * 1000))
     data: Optional[Dict[str, Any]] = None
@@ -628,7 +642,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
     # must-visit entries so the Activities bucket is never empty for a real
     # destination (they are genuinely things a traveller does there).
     activity_pool = activity_like or list(attractions)
-    for a in activity_pool[:6]:
+    for a in activity_pool[: TARGET_COUNTS["activities"]]:
         out["activities"].append({
             "id": f"cata_{_norm(a.get('name', ''))[:40]}",
             "place_id": None,
@@ -777,7 +791,15 @@ _INTEREST_KEYWORDS = {
 }
 
 
-def _rank(items: List[Dict[str, Any]], interests: List[str], veg_only: bool) -> List[Dict[str, Any]]:
+def _rank(
+    items: List[Dict[str, Any]],
+    interests: List[str],
+    veg_only: bool,
+    inside_first: bool = True,
+) -> List[Dict[str, Any]]:
+    """Rank real places: same-rank by score, but places INSIDE the destination
+    always outrank nearby ones (destination-first contract), then distance and
+    rating refine the pool."""
     def score(item: Dict[str, Any]) -> float:
         s = 0.0
         rating = item.get("rating")
@@ -796,6 +818,12 @@ def _rank(items: List[Dict[str, Any]], interests: List[str], veg_only: bool) -> 
         return s
 
     items = sorted(items, key=score, reverse=True)
+    if inside_first:
+        # Destination-first contract: inside-core real places always outrank
+        # the ≤2 km fallback expansion, each group keeping score order.
+        inside = [i for i in items if i.get("placement") == "inside"]
+        nearby = [i for i in items if i.get("placement") != "inside"]
+        items = inside + nearby
     if veg_only:
         veg_first = [i for i in items if "veg" in _norm(str(i.get("veg_type") or " veg"))]
         veg_first.extend(i for i in items if "veg" not in _norm(str(i.get("veg_type") or " veg")))
@@ -887,7 +915,7 @@ def discover_destination(
 
     # Last resort: real gazetteer entries around the destination — fills the
     # must-visit bucket so the section is never silently empty for a real
-    # location. Run BEFORE the hard 3km boundary + ranking below so these real
+    # location. Run BEFORE the hard 2km boundary + ranking below so these real
     # entries are filtered, classified and ranked with everything else.
     if anchor and not buckets["must_visit"]:
         buckets["must_visit"].extend(_index_items(destination, anchor))
@@ -897,10 +925,13 @@ def discover_destination(
         source = "verified_local"
 
     result: Dict[str, Any] = {"destination": destination, "resolved": anchor, "source": source}
+    if anchor and anchor.get("lat") is not None and anchor.get("lng") is not None:
+        result["destination_latitude"] = anchor["lat"]
+        result["destination_longitude"] = anchor["lng"]
     total = 0
-    # Hard 3km boundary: discard any place farther than MAX_DISTANCE_KM from the
-    # destination anchor. This is enforced server-side so the frontend never sees
-    # out-of-range results (4 km, 5 km, 10 km, etc.).
+    # Hard 2km boundary: discard any place farther than MAX_DISTANCE_KM from the
+    # destination anchor (Haversine). This is enforced server-side so the
+    # frontend never sees out-of-range results (4 km, 5 km, 10 km, etc.).
     origin = (anchor["lat"], anchor["lng"]) if anchor and anchor.get("lat") and anchor.get("lng") else None
     core_km = _core_radius_kms((anchor or {}).get("kind"))
     result["core_radius_km"] = core_km
@@ -910,7 +941,10 @@ def discover_destination(
             items = _filter_by_distance(items, origin, MAX_DISTANCE_KM)
         for item in items:
             item["placement"] = _placement_for(item, origin, core_km)
-        items = _rank(items, interests, veg_only)
+            item["inside_destination"] = bool(item["placement"] == "inside")
+        # Destination-first ranking, then truncate to the target pool size.
+        items = _rank(items, interests, veg_only, inside_first=True)
+        items = items[: TARGET_COUNTS.get(category, 10)]
         result[category] = items
         result.setdefault("counts", {})[category] = len(items)
         total += len(items)

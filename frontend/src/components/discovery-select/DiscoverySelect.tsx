@@ -13,6 +13,7 @@ interface DiscoverySelectProps {
     placeItems: SelectedPlaceItem[],
     foodItems: SelectedFoodItem[],
     selectedStay: SelectedStay | null,
+    stayRequired: boolean,
   ) => void;
   onBack: () => void;
   busy?: boolean;
@@ -111,6 +112,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       .reduce((sum, p) => sum + (p ? (p.entry_fee ?? 0) : 0), 0);
   }, [catalog, selected]);
 
+  const selectedStayCost = selectedStay?.price_per_night ?? 0;
+
   const handleConfirm = () => {
     const allItems = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
     const itemBySelection = (name: string) => {
@@ -122,7 +125,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       const hit = (catalog?.food ?? []).find((f) => f.name === name);
       return hit ? toFoodItem(hit) : { name, source: 'selected' };
     });
-    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay);
+    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null);
   };
 
   return (
@@ -205,7 +208,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             )}
           </div>
 
-          {/* Must visit — honest empty state when the 3 km core has no verified place */}
+          {/* Must visit — honest empty state when the 2 km core has no verified place */}
           <div className="mb-8">
             <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
               <Mountain className="w-4 h-4 text-travion-600" /> Must visit
@@ -453,6 +456,19 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               <p className="text-[12px] font-bold text-amber-700">
                 Selected entry fees add up to ₹{selectedEntryFees.toLocaleString('en-IN')}, more than your budget of ₹{Math.round(budgetPanel.maximum_allowed_spend).toLocaleString('en-IN')}. Drop a few paid places or the plan can't stay within budget.
               </p>
+            </div>
+          )}
+
+          {/* Live selection estimate — no hidden costs, updated as you pick */}
+          {(totalSelected > 0 || selectedStay) && (
+            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-slate-600">
+              <span className="text-slate-500">
+                Estimated add-on spend so far
+              </span>
+              <span className="text-travion-700">
+                ₹{selectedEntryFees.toLocaleString('en-IN')} entry fees
+                {selectedStayCost > 0 && <> · ₹{selectedStayCost.toLocaleString('en-IN')}/night stay</>}
+              </span>
             </div>
           )}
 

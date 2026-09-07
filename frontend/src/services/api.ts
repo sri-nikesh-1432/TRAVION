@@ -203,6 +203,7 @@ export const api = {
       selected_place_items?: SelectedPlaceItem[],
       selected_food_items?: SelectedFoodItem[],
       selected_stay?: SelectedStay | null,
+      stay_required?: boolean,
       stay_tiers?: Record<string, string>
     }
   ) =>
@@ -216,6 +217,7 @@ export const api = {
         ...(selections?.selected_place_items?.length ? { selected_place_items: selections.selected_place_items } : {}),
         ...(selections?.selected_food_items?.length ? { selected_food_items: selections.selected_food_items } : {}),
         ...(selections?.selected_stay ? { selected_stay: selections.selected_stay } : {}),
+        ...(typeof selections?.stay_required === 'boolean' ? { stay_required: selections.stay_required } : {}),
         ...(selections?.stay_tiers && Object.keys(selections.stay_tiers).length ? { stay_tiers: selections.stay_tiers } : {})
       })
     }),

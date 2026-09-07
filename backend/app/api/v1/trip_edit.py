@@ -417,6 +417,7 @@ def destination_catalog(
             "latitude": a.get("latitude"),
             "longitude": a.get("longitude"),
             "placement": a.get("placement") or ("inside" if not a.get("distance_km") else "nearby"),
+            "inside_destination": bool(a.get("placement") == "inside") if a.get("placement") else not a.get("distance_km"),
             "rating": a.get("rating"),
             "review_count": a.get("review_count"),
             "opening_hours": a.get("opening_hours"),
@@ -441,6 +442,7 @@ def destination_catalog(
             "longitude": s.get("longitude"),
             "distance_km": s.get("distance_km"),
             "placement": s.get("placement") or ("inside" if not s.get("distance_km") else "nearby"),
+            "inside_destination": bool(s.get("placement") == "inside") if s.get("placement") else not s.get("distance_km"),
             "budget_category": _budget_category(s.get("price_per_night"), profile),
             "source": s.get("source", "verified_api"),
             "verified": s.get("verified", True),
@@ -460,6 +462,7 @@ def destination_catalog(
             "longitude": f.get("longitude"),
             "distance_km": f.get("distance_km"),
             "placement": f.get("placement") or ("inside" if not f.get("distance_km") else "nearby"),
+            "inside_destination": bool(f.get("placement") == "inside") if f.get("placement") else not f.get("distance_km"),
             "price_level": _food_price_level(f.get("avg_cost_for_two")),
             "budget_class": _food_budget_class(f.get("avg_cost_for_two"), env["max"]),
             "source": f.get("source", "verified_api"),
@@ -481,6 +484,8 @@ def destination_catalog(
 
     return {
         "destination": dest,
+        "destination_latitude": discovery.get("destination_latitude"),
+        "destination_longitude": discovery.get("destination_longitude"),
         "verified_only": True,
         "discovery_source": discovery.get("source"),
         "budget_band": band,
@@ -544,6 +549,14 @@ def plan_multi(
         )
     constraints = verdict["constraints"]
 
+    # Stay contract: "Continue without a stay" (stay_required=False) is an
+    # ABSOLUTE rule — accommodation costs ₹0 and no hotel is ever auto-added,
+    # even when the budget could afford one.
+    req_stay_required = req.stay_required
+    if req_stay_required is None and req.selected_stay:
+        req_stay_required = True
+    force_no_stay = req_stay_required is False
+
     # Selections are HARD PREFERENCES: persist them so /choose-plan and any
     # regeneration reproduce the exact same three plans deterministically.
     profile = dict(profile or {})
@@ -572,7 +585,7 @@ def plan_multi(
         for it in food_items if it.get("name")
     ]
     # Single stay for the entire trip — persisted to keep the same hotel every night.
-    if req.selected_stay:
+    if req.selected_stay and not force_no_stay:
         profile["selected_stay"] = {
             "id": req.selected_stay.get("id", ""),
             "name": req.selected_stay.get("name", ""),
@@ -583,6 +596,10 @@ def plan_multi(
             "rating": req.selected_stay.get("rating"),
             "budget_category": req.selected_stay.get("budget_category", "unknown"),
         }
+    if force_no_stay:
+        profile.pop("selected_stay", None)
+    profile["stay_required"] = not force_no_stay
+    profile["selected_stay_id"] = (req.selected_stay or {}).get("id") if not force_no_stay else None
     profile["selected_stay_tiers"] = {k: v for k, v in (req.stay_tiers or {}).items() if v}
     if trip.profile:
         trip.profile.questions_answers = profile
@@ -629,6 +646,7 @@ def plan_multi(
         resolved_attractions=resolved_attractions,
         resolved_food=resolved_food,
         constraints=constraints,
+        stay_required=req_stay_required,
     )
 
     # Belt-and-braces: the plan engine already clamps, but the flat 3% rule
@@ -643,9 +661,10 @@ def plan_multi(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"The {p['type']} plan exceeds your selected budget "
+                    f"The {p['type']} plan exceeds your selected budget ceiling "
                     f"(₹{round(float(p['final_total'])):,} > ₹{round(bmax):,}). "
-                    "Please raise your budget or remove some selections."
+                    "This destination/duration combination genuinely costs more than your maximum. "
+                    "Raise your budget, shorten the trip, or choose a closer destination."
                 ),
             )
 
@@ -696,6 +715,9 @@ def plan_multi(
             "budget_mode_message": constraints["tier_summary"] if budget_mode else None,
             "minimum_required_budget": round(float(verdict.get("minimum_required_budget") or 0)),
             "max_affordable_days": int(verdict.get("max_affordable_days") or 0) or None,
+            "stay_required": False if force_no_stay else (True if req.selected_stay else bool(profile.get("stay_required") or True)),
+            "selected_stay_id": profile.get("selected_stay_id"),
+            "stay_cost": float(p["cost_breakdown"].get("stay", 0) or 0),
         }
         for p in plans
     ]
@@ -728,6 +750,7 @@ def choose_plan(
         stay_tiers=profile.get("selected_stay_tiers") or None,
         profile_stay_pref=str(profile.get("stay_pref") or ""),
         constraints=constraints,
+        stay_required=profile.get("stay_required"),
     )
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:

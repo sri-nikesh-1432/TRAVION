@@ -163,6 +163,9 @@ export interface PlanOption {
   budget_mode_message?: string | null;
   minimum_required_budget?: number;
   max_affordable_days?: number | null;
+  stay_required?: boolean;
+  selected_stay_id?: string | null;
+  stay_cost?: number;
 }
 
 /* ── Budget Feasibility Engine — Step 3 advisor strip ── */
@@ -298,6 +301,8 @@ export interface BudgetTierPanel {
 
 export interface DestinationCatalog {
   destination: string;
+  destination_latitude?: number | null;
+  destination_longitude?: number | null;
   verified_only: boolean;
   discovery_source?: string | null;
   budget_band?: string | null;
