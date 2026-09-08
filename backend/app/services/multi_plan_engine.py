@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.services.verified_data import VERIFIED_STAYS, VERIFIED_ATTRACTIONS, VERIFIED_FOOD
 
 PLATFORM_FEE_RATE = 0.03  # explicit product rule: 3% of the generated plan cost
+GUIDE_FEE_RATE = 0.125  # product rule: 12.5% of plan base cost in GUIDE_MODE
 
 
 # ── Time helpers (existing planners use "%I:%M %p", e.g. "10:00 AM") ────────
@@ -207,6 +208,7 @@ def _inject_selected_places(
     resolved_food: Optional[List[Dict[str, Any]]] = None,
     selected_place_items: Optional[List[Dict[str, Any]]] = None,
     selected_food_items: Optional[List[Dict[str, Any]]] = None,
+    verbose: bool = True,
 ) -> float:
     """Insert the user's selected real places into the schedule.
 
@@ -267,9 +269,10 @@ def _inject_selected_places(
         )
         start = _bump(str(last.get("time", "10:00 AM")), int(last.get("duration_minutes", 90) or 90) + 30) if last else "10:00 AM"
         if _to_minutes(start) is None or _to_minutes(start) > 19 * 60:
-            warnings.append(
-                f"'{match.get('name')}' could not fit the current day timings — it was added to a later day; drag it anywhere you like."
-            )
+            if verbose:
+                warnings.append(
+                    f"'{match.get('name')}' could not fit the current day timings — it was added to a later day; drag it anywhere you like."
+                )
             target = days[min(len(days) - 1, days.index(target) + 1)]
             start = "09:30 AM"
         fee = float(match.get("entry_fee", 0) or 0)
@@ -356,6 +359,8 @@ def build_plans(
     selected_food_items: Optional[List[Dict[str, Any]]] = None,
     constraints: Optional[Dict[str, Any]] = None,
     stay_required: Optional[bool] = None,
+    mode: str = "ADVENTUROUS_MODE",
+    verbose: bool = True,
 ) -> List[Dict[str, Any]]:
     """Create the three differentiated plans. See module docstring for rules.
 
@@ -381,8 +386,12 @@ def build_plans(
     economy = bool(constraints.get("economy"))
     stay_allowed = bool(constraints.get("stay_allowed", True))
     force_no_stay = stay_required is False
+    guide_mode = mode == "GUIDE_MODE"
     plans: List[Dict[str, Any]] = []
     n_selected = len(selected_places or [])
+    # Fee total factor over the plan's base cost (travel spend): GUIDE_MODE adds
+    # the 12.5% guide fee + 3% platform fee on top; otherwise only 3% platform.
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
 
     budget_stay_tiers = ["Budget Guesthouse", "2 Star", "Homestay", "3 Star"]
     span = max(0.0, float(budget_max or 0.0) - float(budget_min or 0.0))
@@ -431,13 +440,13 @@ def build_plans(
             resolved_food=resolved_food,
             selected_place_items=selected_place_items,
             selected_food_items=selected_food_items,
+            verbose=verbose,
         )
 
         bd0 = dict(base.get("cost_breakdown") or {})
         transport = float(bd0.get("transport", 0) or 0)
         stay = float(bd0.get("stay", 0) or 0) + selection_cost
         food = float(bd0.get("food", 0) or 0)
-        guide_fee = float(bd0.get("guide_fee", 0) or 0)
 
         nights = int(bd0.get("nights") or max(1, len(days) - 1) or 1)
         pax = int(bd0.get("headcount") or 2)
@@ -513,22 +522,22 @@ def build_plans(
         # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps.
         _resequence(days)
 
-        # 5. HARD BUDGET: the 3% platform fee lives INSIDE the chosen rung of the
-        #    floor→ceiling range (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling).
-        #    rung x 1.03 <= variant_target  →  base <= variant_target / 1.03
-        base_ceiling = variant_target / (1.0 + PLATFORM_FEE_RATE)
-        fixed = transport + guide_fee
+        # 5. HARD BUDGET: the fees (guide 12.5% in GUIDE_MODE + platform 3%) live
+        #    INSIDE the chosen rung of the floor→ceiling range
+        #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling). The plan's base cost
+        #    (travel spend) is clamped so spend × fee_factor <= variant_target.
+        base_ceiling = variant_target / fee_factor
+        fixed = transport
         flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
         downgraded = False
         if flexible_budget <= 0:
-            # Transport + guide fees alone exceed the ceiling: fit the transport
-            # line to the budget (cheaper class) — NEVER return an over-budget
-            # plan. The user is told exactly why.
+            # Transport alone exceeds the ceiling: fit the transport line to the
+            # budget (cheaper class) — NEVER return an over-budget plan.
             stay = food = activities = 0.0
             if fixed > base_ceiling:
-                transport = max(base_ceiling - guide_fee, 0.0)
-                fixed = transport + guide_fee
+                transport = max(base_ceiling, 0.0)
+                fixed = transport
                 warnings.append(
                     f"Transport for this route consumes most of your ₹{round(budget_max):,} budget — "
                     "we fitted the most affordable option. Raise the budget or shorten the trip for more comfort."
@@ -540,7 +549,7 @@ def build_plans(
                 downgraded = True
 
         stay, food, activities = round(stay, 0), round(food, 0), round(activities, 0)
-        base_cost = transport + stay + food + activities + guide_fee
+        base_cost = transport + stay + food + activities
 
         # Rounding-safe exact shave (activities → food → stay).
         if base_cost > base_ceiling:
@@ -548,18 +557,20 @@ def build_plans(
             take = min(activities, excess); activities -= take; excess -= take
             take = min(food, excess); food -= take; excess -= take
             take = min(stay, excess); stay -= take; excess -= take
-            base_cost = transport + stay + food + activities + guide_fee
+            base_cost = transport + stay + food + activities
 
-        platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
-        final_total = base_cost + platform_fee
+        spend = round(base_cost, 0)
+        guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
+        platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
+        final_total = spend + guide_fee + platform_fee
 
         # Honest budget-range communication — never padding prices to hit a rung.
-        if variant == "VALUE":
+        if variant == "VALUE" and verbose:
             warnings.append(
                 f"PLAN A targets the low end of your ₹{round(budget_min):,}–₹{round(budget_max):,} budget range; "
                 f"PLAN C explores the top end. We never inflate prices to reach a number."
             )
-        if variant == "VALUE" and float(budget_min or 0) > 0 and final_total < float(budget_min):
+        if verbose and variant == "VALUE" and float(budget_min or 0) > 0 and final_total < float(budget_min):
             warnings.append(
                 f"The realistic cheapest version of this trip comes to ₹{round(final_total):,} — below your "
                 f"listed minimum of ₹{round(float(budget_min)):,}. That's fine: we don't pad costs to reach "
@@ -567,7 +578,7 @@ def build_plans(
             )
 
         # 6. Trade-off intelligence: explain consequences, never silently.
-        if downgraded:
+        if verbose and downgraded:
             warnings.append(
                 f"You've selected {n_selected} place(s). To keep this plan under ₹{round(budget_max):,} "
                 f"(including the {int(PLATFORM_FEE_RATE * 100)}% platform fee), the stay budget was trimmed to "
@@ -579,11 +590,11 @@ def build_plans(
             "stay": stay,
             "food": food,
             "activities": round(activities, 0),
-            "travel_spend": round(transport + stay + food + activities, 0),
+            "travel_spend": spend,
             "guide_fee": round(guide_fee, 0),
             "platform_fee": platform_fee,
             "payable": round(guide_fee + platform_fee, 0),
-            "base_plan_cost": round(base_cost, 0),
+            "base_plan_cost": spend,
             "final_total": round(final_total, 0),
             "total": round(final_total, 0),
             "budget": budget_max,
@@ -595,6 +606,7 @@ def build_plans(
             "transport_label": p["transport_label"],
             "food_label": p["food_label"],
             "selected_places_count": n_selected,
+            "guide_mode": guide_mode,
         }
 
         highlights = [
@@ -612,7 +624,7 @@ def build_plans(
             "type": variant,
             "label": p["label"],
             "tagline": p["tagline"],
-            "base_plan_cost": round(base_cost, 0),
+            "base_plan_cost": spend,
             "platform_fee": platform_fee,
             "final_total": round(final_total, 0),
             "total_cost": round(final_total, 0),
@@ -629,7 +641,7 @@ def build_plans(
             "stay_cost": float(breakdown.get("stay", 0) or 0),
         })
 
-    return _enforce_ordering(plans)
+    return _enforce_ordering(plans, verbose=verbose)
 
 
 def _resequence(days: List[Dict[str, Any]]) -> None:
@@ -650,7 +662,7 @@ def _resequence(days: List[Dict[str, Any]]) -> None:
             cursor = start + dur
 
 
-def _enforce_ordering(plans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List[Dict[str, Any]]:
     """VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ budget_max — deterministic guarantee."""
     by_type = {p["type"]: p for p in plans}
     budget_max = float(plans[0]["budget_max"]) if plans else 0.0
@@ -660,52 +672,59 @@ def _enforce_ordering(plans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     rec = min(by_type["RECOMMENDED"]["final_total"], prem)
     val = min(by_type["VALUE"]["final_total"], rec)
     if by_type["PREMIUM"]["final_total"] > budget_max:
-        _shave_final_to(by_type["PREMIUM"], float(budget_max))
+        _shave_final_to(by_type["PREMIUM"], float(budget_max), verbose=verbose)
     for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
         if plan["final_total"] > target:
-            _shave_final_to(plan, float(target))
+            _shave_final_to(plan, float(target), verbose=verbose)
     # Keep everyone's within_budget flag exact (no tolerance): total must be ≤ budget_max.
     for plan in plans:
         plan["within_budget"] = bool(float(plan["final_total"]) <= float(plan["budget_max"]))
     return plans
 
 
-def _shave_final_to(plan: Dict[str, Any], target: float) -> None:
-    """Shave a plan's flexible buckets so its final total (incl. fee) hits target."""
-    fee_rate = 1.0 + PLATFORM_FEE_RATE
-    base_target = target / fee_rate
+def _shave_final_to(plan: Dict[str, Any], target: float, verbose: bool = True) -> None:
+    """Shave a plan's flexible buckets so its final total (incl. fees) hits target."""
     bd = plan["cost_breakdown"]
+    guide_mode = bool(bd.get("guide_mode"))
+    # Target is the final total (incl. fees). The plan's base spend must satisfy
+    # spend × (1 + guide_rate + platform_rate) <= target in GUIDE_MODE, else
+    # spend × (1 + platform_rate) <= target.
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
+    spend_target = target / fee_factor
     transport = float(bd.get("transport", 0) or 0)
-    guide_fee = float(bd.get("guide_fee", 0) or 0)
     stay = float(bd.get("stay", 0) or 0)
     food = float(bd.get("food", 0) or 0)
     activities = float(bd.get("activities", 0) or 0)
 
-    excess = (transport + stay + food + activities + guide_fee) - base_target
-    if excess <= 0:
-        return
-    take = min(activities, excess); activities -= take; excess -= take
-    take = min(food, excess); food -= take; excess -= take
-    take = min(stay, excess); stay -= take; excess -= take
+    excess = (transport + stay + food + activities) - spend_target
     if excess > 0:
-        take = min(transport, excess); transport -= take; excess -= take
+        take = min(activities, excess); activities -= take; excess -= take
+        take = min(food, excess); food -= take; excess -= take
+        take = min(stay, excess); stay -= take; excess -= take
+        if excess > 0:
+            take = min(transport, excess); transport -= take; excess -= take
 
-    base_cost = transport + stay + food + activities + guide_fee
-    platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
-    final_total = base_cost + platform_fee
+    spend = round(transport + stay + food + activities, 0)
+    spend = min(spend, int(target / fee_factor))
+    guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
+    platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
+    final_total = spend + guide_fee + platform_fee
     bd.update({
         "stay": round(stay, 0), "food": round(food, 0), "activities": round(activities, 0),
-        "travel_spend": round(transport + stay + food + activities, 0),
-        "platform_fee": platform_fee, "base_plan_cost": round(base_cost, 0),
+        "travel_spend": spend,
+        "guide_fee": round(guide_fee, 0),
+        "platform_fee": platform_fee, "base_plan_cost": spend,
         "final_total": round(final_total, 0), "total": round(final_total, 0),
         "payable": round(guide_fee + platform_fee, 0),
     })
     plan.update({
-        "base_plan_cost": round(base_cost, 0), "platform_fee": platform_fee,
+        "base_plan_cost": spend, "platform_fee": platform_fee,
         "final_total": round(final_total, 0), "total_cost": round(final_total, 0),
         "remaining_budget": round(plan["budget_max"] - final_total, 0),
     })
-    plan.setdefault("warnings", []).append("Trimmed slightly to keep the plan ladder fair within your budget.")
+    plan.setdefault("warnings", [])
+    if verbose:
+        plan["warnings"].append("Trimmed slightly to keep the plan ladder fair within your budget.")
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -770,22 +789,21 @@ def recalculate_change(
         return (
             float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
             + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0)
-            + float(breakdown.get("guide_fee", 0) or 0)
         )
 
     def _recompute_totals() -> None:
-        base_cost = _base_total()
-        platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
-        final_total = base_cost + platform_fee
+        guide_mode = bool(breakdown.get("guide_mode"))
+        spend = _base_total()
+        guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else float(breakdown.get("guide_fee", 0) or 0)
+        platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
+        final_total = spend + guide_fee + platform_fee
+        breakdown["guide_fee"] = round(guide_fee, 0)
         breakdown["platform_fee"] = platform_fee
-        breakdown["base_plan_cost"] = round(base_cost, 0)
+        breakdown["base_plan_cost"] = round(spend, 0)
         breakdown["final_total"] = round(final_total, 0)
         breakdown["total"] = round(final_total, 0)
-        breakdown["payable"] = round(float(breakdown.get("guide_fee", 0) or 0) + platform_fee, 0)
-        breakdown["travel_spend"] = round(
-            float(breakdown.get("transport", 0) or 0) + float(breakdown.get("stay", 0) or 0)
-            + float(breakdown.get("food", 0) or 0) + float(breakdown.get("activities", 0) or 0), 0
-        )
+        breakdown["payable"] = round(guide_fee + platform_fee, 0)
+        breakdown["travel_spend"] = round(spend, 0)
 
     def _shift_bucket(cat: str, delta: float) -> None:
         key = {"food": "food", "stay": "stay"}.get(cat, "activities")

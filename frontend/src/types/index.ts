@@ -325,6 +325,42 @@ export interface DestinationCatalog {
   activities: CatalogPlace[];
 }
 
+export type DiscoveryCategory = 'must_visit' | 'activities' | 'food' | 'stays';
+
+export interface MapPlace {
+  id?: string | null;
+  provider_place_id?: string | null;
+  name: string;
+  category: string;
+  description?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  placement?: 'inside' | 'nearby' | 'outside' | string;
+  inside_destination?: boolean;
+  rating?: number | null;
+  source: string;
+  verified: boolean;
+  entry_fee?: number | null;
+  price_per_night?: number | null;
+  avg_cost_for_two?: number | null;
+  cuisine?: string | null;
+  tier?: string | null;
+}
+
+export interface MapPlacesPayload {
+  destination: string;
+  destination_latitude?: number | null;
+  destination_longitude?: number | null;
+  destination_radius_km?: number | null;
+  discovery_source?: string | null;
+  map_places: Partial<Record<DiscoveryCategory | 'shopping' | 'healthcare' | 'education' | 'transport' | 'other', MapPlace[]>>;
+  map_counts: Record<string, number>;
+  map_counts_full: Record<string, number>;
+  catalog_meta?: Record<string, { requested: number; available: number; status: string; note: string }>;
+}
+
 export interface ExplorePlace {
   name: string;
   category: string;

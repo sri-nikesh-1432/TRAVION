@@ -189,6 +189,8 @@ def generate_trip_plan(
             selected_food=selected_food,
             stay_tiers=selected_stay_tiers,
             profile_stay_pref=str(profile_dict.get("stay_pref", "") or ""),
+            mode=req.mode,
+            verbose=False,
         )
         chosen = next((p for p in plans if p["type"] == "RECOMMENDED"), None) or plans[0]
         if chosen["final_total"] > env_max:

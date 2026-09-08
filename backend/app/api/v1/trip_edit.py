@@ -44,9 +44,9 @@ from app.services.place_selections import (
 )
 from app.services.budget_service import (
     parse_budget, base_ceiling_for, remaining_budget as budget_remaining,
-    sanitize_envelope, compute_totals, fit_to_budget,
+    sanitize_envelope, compute_totals, PLATFORM_FEE_RATE,
 )
-from app.services.pricing_service import reprice_breakdown
+from app.services.pricing_service import reprice_breakdown, GUIDE_FEE_RATE
 from app.services.budget_engine import (
     tier_for, get_budget_constraints, display_band_for,
     check_budget_feasibility, validate_itinerary_budget,
@@ -73,22 +73,37 @@ def _budget_envelope(profile: dict | None, trip_budget: float) -> Dict[str, floa
 
 def _normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     """Belt-and-suspenders clamp: recompute a plan's fee/total from the single
-    source of truth (BudgetService) so the flat 3% rule is ALWAYS the last word,
-    regardless of which engine generated the plan."""
+    source of truth (BudgetService) so the fee math is ALWAYS the last word,
+    regardless of which engine generated the plan. In GUIDE_MODE the 12.5% guide
+    fee is a % over the plan's base cost and is preserved.
+
+    The plan's base cost (travel spend) is clamped so spend × fee_factor
+    never exceeds the traveller's maximum budget.
+    """
     bd = plan["cost_breakdown"]
-    base = fit_to_budget(float(plan["base_plan_cost"]), budget_max)
-    totals = compute_totals(base)
-    plan["base_plan_cost"] = totals["base_plan_cost"]
-    plan["platform_fee"] = totals["platform_fee"]
-    plan["final_total"] = totals["final_total"]
-    plan["total_cost"] = totals["final_total"]
-    plan["remaining_budget"] = round(float(budget_max) - totals["final_total"], 0)
-    plan["within_budget"] = bool(plan["final_total"] <= float(budget_max))
-    bd["base_plan_cost"] = totals["base_plan_cost"]
-    bd["platform_fee"] = totals["platform_fee"]
-    bd["final_total"] = totals["final_total"]
-    bd["total"] = totals["final_total"]
-    bd["payable"] = round(float(bd.get("guide_fee", 0) or 0) + totals["platform_fee"], 0)
+    guide_mode = bool(bd.get("guide_mode"))
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
+    raw_spend = float(plan["base_plan_cost"])
+    if float(budget_max) > 0:
+        spend = int(min(raw_spend, float(budget_max) / fee_factor))
+    else:
+        spend = round(raw_spend, 0)
+    guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
+    guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else guid_fee_seed
+    platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
+    final_total = round(spend + guide_fee + platform_fee, 0)
+    plan["base_plan_cost"] = spend
+    plan["platform_fee"] = platform_fee
+    plan["final_total"] = final_total
+    plan["total_cost"] = final_total
+    plan["remaining_budget"] = round(float(budget_max) - final_total, 0)
+    plan["within_budget"] = bool(final_total <= float(budget_max))
+    bd["base_plan_cost"] = spend
+    bd["guide_fee"] = round(guide_fee, 0)
+    bd["platform_fee"] = platform_fee
+    bd["final_total"] = final_total
+    bd["total"] = final_total
+    bd["payable"] = round(guide_fee + platform_fee, 0)
 
 
 def _destination_anchor(trip: Trip, db: Session) -> Dict[str, Any]:
@@ -949,10 +964,13 @@ def plan_multi(
         resolved_food=resolved_food,
         constraints=constraints,
         stay_required=req_stay_required,
+        mode=req.mode,
+        verbose=False,
     )
 
-    # Belt-and-braces: the plan engine already clamps, but the flat 3% rule
-    # from the BudgetService is the final word on every returned total.
+    # Belt-and-braces: the plan engine already clamps, but the fee/total math
+    # (12.5% guide in GUIDE_MODE + 3% platform over base spend) is the final
+    # word on every returned total.
     for p in plans:
         _normalize_plan_totals(p, bmax)
 
@@ -987,11 +1005,10 @@ def plan_multi(
                 },
             )
 
-    # Schedule honesty: surface any overlap/tight-transfer warning on every
-    # plan so the traveller sees reality before choosing, not after.
-    for p in plans:
-        schedule_check = validate_itinerary(p["cost_breakdown"], bmax, days=p["days"])
-        p["warnings"] = merge_warnings(p.get("warnings") or [], schedule_check["warnings"])
+    # Real schedule problems (overlaps / tight transfers) are surfaced during
+    # LIVE editing (PATCH /itinerary), not on the clean Step-4 plan cards. The
+    # plan cards only carry actionable budget warnings the traveller must see.
+    # (Budget over-runs are already gated above with a loud 400/422.)
 
     budget_mode = verdict.get("budget_status") == "restricted" or constraints.get("tier") in ("extremely_low", "very_low", "low")
     return [
@@ -1053,6 +1070,8 @@ def choose_plan(
         profile_stay_pref=str(profile.get("stay_pref") or ""),
         constraints=constraints,
         stay_required=profile.get("stay_required"),
+        mode=mode,
+        verbose=False,
     )
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:

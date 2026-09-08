@@ -36,7 +36,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
           Three ways to experience {destinationName}
         </h2>
         <p className="mt-1.5 text-[13px] font-medium text-slate-500">
-          Every plan includes your selected places and stays within your budget — the 3% platform fee is included in the ceiling, so what you see is what you spend.
+          Every plan includes your selected places and stays within your budget — the platform fee is included in the ceiling, so what you see is what you spend.
         </p>
       </div>
 
@@ -124,12 +124,14 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                 {(bd.activities || 0) > 0 && (
                   <div className="flex justify-between"><span>Activities & extras</span><span>{inr(bd.activities || 0)}</span></div>
                 )}
-                {(bd.guide_fee || 0) > 0 && (
-                  <div className="flex justify-between"><span>Guide</span><span>{inr(bd.guide_fee || 0)}</span></div>
-                )}
                 <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-800">
                   <span>Base plan cost</span><span>{inr(plan.base_plan_cost)}</span>
                 </div>
+                {(bd.guide_fee || 0) > 0 && (
+                  <div className="flex justify-between text-travion-700 font-bold">
+                    <span>Guide fee (12.5%)</span><span>{inr(bd.guide_fee || 0)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-travion-700 font-bold">
                   <span>Platform fee (3%)</span><span>{inr(plan.platform_fee)}</span>
                 </div>

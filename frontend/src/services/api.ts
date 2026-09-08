@@ -2,7 +2,7 @@ import {
   AuthSession, LocationItem, TripItem, TripItinerary, TripAssignment,
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
   UserProfile, GuideProfile, PlanOption, ItineraryChange,
-  ItineraryChangeResponse, ExplorePlace, DestinationCatalog,
+  ItineraryChangeResponse, ExplorePlace, DestinationCatalog, MapPlacesPayload,
   SelectedPlaceItem, SelectedFoodItem, SelectedStay,
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
 } from '../types';
@@ -193,6 +193,11 @@ export const api = {
   // Destination discovery: REAL verified places for the trip's destination
   getDestinationCatalog: (tripId: string) =>
     request<DestinationCatalog>(`/trips/${tripId}/destination-catalog`),
+
+  // Step 3 interactive map: the FULL real dataset (recommended buckets plus the
+  // broader provider-verified map categories) — click-to-select markers.
+  getMapPlaces: (tripId: string) =>
+    request<MapPlacesPayload>(`/trips/${tripId}/map-places`),
 
   // Multi-plan: exactly 3 budget-clamped options built around the user's selections
   planMulti: (

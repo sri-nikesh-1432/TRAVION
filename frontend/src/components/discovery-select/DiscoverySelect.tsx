@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay } from '../../types';
+import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace } from '../../types';
 import { api } from '../../services/api';
 
 interface DiscoverySelectProps {
@@ -21,22 +21,33 @@ interface DiscoverySelectProps {
   busy?: boolean;
 }
 
-const insideFirst = <T extends { placement?: string | null; distance_km?: number | null }>(list: T[]): T[] =>
-  [...list].sort((a, b) => {
-    const aIn = (a.placement ?? 'inside') === 'inside' ? 0 : 1;
-    const bIn = (b.placement ?? 'inside') === 'inside' ? 0 : 1;
-    if (aIn !== bIn) return aIn - bIn;
-    return (a.distance_km ?? 0) - (b.distance_km ?? 0);
-  });
 
-const CATEGORY_COLORS: Record<string, string> = {
+const COLORS: Record<string, string> = {
   must_visit: '#10b981',
   activities: '#0ea5e9',
   food: '#f59e0b',
   stays: '#8b5cf6',
+  shopping: '#ec4899',
+  healthcare: '#ef4444',
+  education: '#3b82f6',
+  transport: '#64748b',
+  other: '#f97316',
 };
 
-const MAP_FILTERS = ['all', 'must_visit', 'activities', 'food', 'stays', 'shopping', 'healthcare', 'education', 'transport', 'other'];
+const MAP_KEY_ORDER = ['must_visit', 'activities', 'food', 'stays', 'shopping', 'healthcare', 'education', 'transport', 'other'];
+
+// Map layer titles (label + which recommendation bucket a click maps into).
+const MAP_LAYERS: Record<string, { label: string; kind: 'place' | 'food' | 'stay' }> = {
+  must_visit: { label: 'Must Visit', kind: 'place' },
+  activities: { label: 'Activities', kind: 'place' },
+  food: { label: 'Restaurants · Cafés', kind: 'food' },
+  stays: { label: 'Stays · Hotels', kind: 'stay' },
+  shopping: { label: 'Shopping', kind: 'place' },
+  healthcare: { label: 'Healthcare', kind: 'place' },
+  education: { label: 'Education', kind: 'place' },
+  transport: { label: 'Transport', kind: 'place' },
+  other: { label: 'Other', kind: 'place' },
+};
 
 const placementLabel = (p?: string | null, dist?: number | null) =>
   p === 'inside' || dist == null || dist === 0 ? 'Inside destination' : 'Nearby';
@@ -71,6 +82,29 @@ function toFoodItem(food: CatalogFood): SelectedFoodItem {
   };
 }
 
+const insideFirst = <T extends { placement?: string | null; distance_km?: number | null }>(list: T[]): T[] =>
+  [...list].sort((a, b) => {
+    const aIn = (a.placement ?? 'inside') === 'inside' ? 0 : 1;
+    const bIn = (b.placement ?? 'inside') === 'inside' ? 0 : 1;
+    if (aIn !== bIn) return aIn - bIn;
+    return (a.distance_km ?? 0) - (b.distance_km ?? 0);
+  });
+
+function toPlaceItemFromMap(p: MapPlace): SelectedPlaceItem {
+  return {
+    id: p.id ?? null,
+    name: p.name,
+    latitude: p.latitude ?? null,
+    longitude: p.longitude ?? null,
+    distance_km: p.distance_km ?? null,
+    placement: p.placement ?? 'inside',
+    entry_fee: p.entry_fee ?? null,
+    duration_minutes: null,
+    rating: p.rating ?? null,
+    source: p.source,
+  };
+}
+
 /**
  * Destination Discovery — "Choose what you want to experience".
  * Shows ONLY real verified places (each carries verified: true from the backend).
@@ -82,6 +116,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   tripId, destinationName, onConfirm, onBack, busy,
 }) => {
   const [catalog, setCatalog] = useState<DestinationCatalog | null>(null);
+  const [mapData, setMapData] = useState<MapPlacesPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set());
@@ -94,6 +129,28 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     if (next.has(name)) next.delete(name); else next.add(name);
     setter(next);
   };
+
+  // The map plots the FULL real dataset from map-places: recommended buckets +
+  // every broader provider-verified category. Click → add to the visit list.
+  const mapPlaces = useMemo(() => {
+    const all: Array<{ key: string; item: MapPlace }> = [];
+    if (mapData) {
+      for (const key of MAP_KEY_ORDER) {
+        for (const item of (mapData.map_places as Record<string, MapPlace[]>)[key] ?? []) {
+          if (item.latitude && item.longitude) all.push({ key, item });
+        }
+      }
+    } else if (catalog) {
+      const push = (key: string, arr: Array<MapPlace | CatalogFood | CatalogStay>) => {
+        for (const it of arr) if (it.latitude && it.longitude) all.push({ key, item: it as MapPlace });
+      };
+      push('must_visit', catalog.must_visit);
+      push('activities', catalog.activities);
+      push('food', catalog.food);
+      push('stays', catalog.stays);
+    }
+    return all;
+  }, [mapData, catalog]);
 
   // Step 3 interactive map (raw Leaflet — leaflet is the only map dependency).
   const mapDiv = useRef<HTMLDivElement | null>(null);
@@ -123,83 +180,88 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   }, []);
 
   const mapFilterCount = useMemo(() => {
-    if (!catalog) return {};
-    return {
-      all: (catalog.must_visit?.length ?? 0) + (catalog.activities?.length ?? 0) + (catalog.food?.length ?? 0) + (catalog.stays?.length ?? 0),
-      must_visit: catalog.must_visit?.length ?? 0,
-      activities: catalog.activities?.length ?? 0,
-      food: catalog.food?.length ?? 0,
-      stays: catalog.stays?.length ?? 0,
-    };
-  }, [catalog]);
+    if (!mapData) return {};
+    const counts: Record<string, number> = {};
+    for (const key of MAP_KEY_ORDER) {
+      counts[key] = (mapData.map_places as Record<string, MapPlace[]>)[key]?.length ?? 0;
+    }
+    counts['all'] = MAP_KEY_ORDER.reduce((s, k) => s + counts[k], 0);
+    return counts;
+  }, [mapData]);
+
+  // Clicking a marker adds/removes it from the traveller's visit list.
+  // Places/activities/swapping categories → the places set; food → the food
+  // set; stays → the single selected stay. Selections flow to the planner.
+  const toggleMapItem = useCallback((key: string, item: MapPlace) => {
+    const kind = MAP_LAYERS[key]?.kind ?? 'place';
+    if (kind === 'food') {
+      toggle(selectedFood, setSelectedFood, item.name);
+    } else if (kind === 'stay') {
+      setSelectedStay({
+        id: item.id ?? null, name: item.name,
+        latitude: item.latitude ?? null, longitude: item.longitude ?? null,
+        distance_km: item.distance_km ?? null, budget_category: null,
+        price_per_night: item.price_per_night ?? null,
+      });
+    } else {
+      toggle(selected, setSelected, item.name);
+    }
+  }, [selected, selectedFood]);
 
   useEffect(() => {
-    if (!catalog || !mapRef.current || !layerRef.current) return;
+    if (!mapRef.current || !layerRef.current) return;
     const layer = layerRef.current;
     layer.clearLayers();
     const points: L.LatLng[] = [];
-    const sink = (kind: string) => (name: string) => {
-      if (kind === 'food') toggle(selectedFood, setSelectedFood, name);
-      else if (kind === 'stays') {
-        const stay = catalog.stays.find((s) => s.name === name);
-        if (stay) setSelectedStay({
-          id: stay.id ?? null, name: stay.name,
-          latitude: stay.latitude ?? null, longitude: stay.longitude ?? null,
-          distance_km: stay.distance_km ?? null, budget_category: stay.budget_category ?? null,
-          price_per_night: stay.price_per_night ?? null,
-        });
-      } else toggle(selected, setSelected, name);
-    };
-    const addMarkers = (items: Array<CatalogPlace | CatalogFood | CatalogStay>, kind: string) => {
-      if (mapFilter !== 'all' && mapFilter !== kind) return;
-      for (const item of items) {
-        const lat = Number((item as any).latitude ?? (item as any).lat);
-        const lng = Number((item as any).longitude ?? (item as any).lng);
-        if (!lat || !lng) continue;
-        points.push(L.latLng(lat, lng));
-        const name = (() => {
-          if (kind === 'stays') return (item as CatalogStay).name;
-          if (kind === 'food') return (item as CatalogFood).name;
-          return (item as CatalogPlace).name;
-        })();
-        const active = kind === 'food' || kind === 'stays'
-          ? (kind === 'stays' ? selectedStay?.name === name : selectedFood.has(name))
+    const visible = mapPlaces.filter(({ key }) => mapFilter === 'all' || key === mapFilter);
+    for (const { key, item } of visible) {
+      const lat = Number(item.latitude);
+      const lng = Number(item.longitude);
+      if (!lat || !lng) continue;
+      points.push(L.latLng(lat, lng));
+      const kind = MAP_LAYERS[key]?.kind ?? 'place';
+      const name = item.name;
+      const active = kind === 'food'
+        ? selectedFood.has(name)
+        : kind === 'stay'
+          ? selectedStay?.name === name
           : selected.has(name);
-        const color = CATEGORY_COLORS[kind] || '#64748b';
-        const marker = L.circleMarker([lat, lng], {
-          radius: active ? 12 : 8,
-          color: '#ffffff',
-          weight: 2,
-          fillColor: active ? color : `${color}cc`,
-          fillOpacity: active ? 1 : 0.75,
-        });
-        marker.bindTooltip(name);
-        marker.on('click', () => sink(kind)(name));
-        marker.addTo(layer);
-      }
-    };
-    addMarkers(catalog.must_visit || [], 'must_visit');
-    addMarkers(catalog.activities || [], 'activities');
-    addMarkers(catalog.food || [], 'food');
-    addMarkers(catalog.stays || [], 'stays');
+      const color = COLORS[key] ?? '#64748b';
+      const marker = L.circleMarker([lat, lng], {
+        radius: active ? 12 : 8,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: active ? color : `${color}cc`,
+        fillOpacity: active ? 1 : 0.75,
+      });
+      marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${active ? '<br/>✓ selected' : '<br/>tap to add'}`);
+      marker.on('click', () => toggleMapItem(key, item));
+      marker.addTo(layer);
+    }
 
     if (points.length > 0) {
       if (!hasFitRef.current) {
         hasFitRef.current = true;
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.18), { maxZoom: 13 });
-      }
-      if (mapFilter !== 'all') {
-        const filtered = points.length ? L.latLngBounds(points) : null;
-        if (filtered) mapRef.current.fitBounds(filtered.pad(0.25), { maxZoom: 15 });
+      } else if (mapFilter !== 'all') {
+        mapRef.current.fitBounds(L.latLngBounds(points).pad(0.25), { maxZoom: 15 });
       }
     }
-  }, [catalog, mapFilter, selected, selectedFood, selectedStay]);
+  }, [mapPlaces, mapFilter, selected, selectedFood, selectedStay, toggleMapItem]);
 
   useEffect(() => {
     let alive = true;
     api.getDestinationCatalog(tripId)
       .then((cat) => { if (alive) setCatalog(cat); })
       .catch(() => { if (alive) setLoadError('Could not load verified places for this destination.'); });
+    return () => { alive = false; };
+  }, [tripId]);
+
+  useEffect(() => {
+    let alive = true;
+    api.getMapPlaces(tripId)
+      .then((m) => { if (alive) setMapData(m); })
+      .catch(() => { /* fall back to catalog markers */ });
     return () => { alive = false; };
   }, [tripId]);
 
@@ -228,7 +290,16 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
   const handleConfirm = () => {
     const allItems = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
-    const itemBySelection = (name: string) => {
+    // Map places can come from broader (non-recommended) categories too; look
+    // them up across the full map dataset first, then the catalog cards.
+    const allMap: Array<[string, MapPlace]> = mapData
+      ? MAP_KEY_ORDER.flatMap((k) => ((mapData.map_places as Record<string, MapPlace[]>)[k] ?? []).map((i) => [k, i] as [string, MapPlace]))
+      : [];
+    const byName = new Map<string, MapPlace>();
+    for (const [, i] of allMap) if (!byName.has(i.name)) byName.set(i.name, i);
+    const itemBySelection = (name: string): SelectedPlaceItem => {
+      const mapHit = byName.get(name);
+      if (mapHit) return toPlaceItemFromMap(mapHit);
       const hit = allItems.find((p) => p.name === name);
       return hit ? toPlaceItem(hit) : { name, source: 'selected' };
     };
@@ -325,14 +396,25 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             ) : null}
           </div>
 
-          {/* Step 3 interactive map — every verified place, click to select */}
+          {/* Step 3 interactive map — every real place, click to add */}
           <div className="mb-8">
             <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-              {MAP_FILTERS.map((f) => {
+              <button
+                key="all"
+                type="button"
+                onClick={() => setMapFilter('all')}
+                className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all ${
+                  mapFilter === 'all' ? 'text-white bg-slate-900 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
+                All places <span className="ml-0.5 text-[10px] font-black opacity-80">{mapFilterCount.all ?? 0}</span>
+              </button>
+              {MAP_KEY_ORDER.map((f) => {
                 const count = (mapFilterCount as Record<string, number>)[f] ?? 0;
-                const zero = count === 0 && f !== 'all';
-                const label = f === 'all' ? 'All' : f.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
-                const color = CATEGORY_COLORS[f];
+                const zero = count === 0;
+                const label = MAP_LAYERS[f]?.label ?? f;
+                const color = COLORS[f];
                 return (
                   <button
                     key={f}
@@ -347,20 +429,23 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     }`}
                     style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#0f172a' } : undefined}
                   >
-                    {f === 'all' && <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
                     {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-slate-400'}`}>{count}</span>
                   </button>
                 );
               })}
             </div>
             <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
-              <div ref={mapDiv} className="h-[380px] w-full z-0 relative" />
+              <div ref={mapDiv} className="h-[440px] w-full z-0 relative" />
               <p className="flex flex-wrap items-center justify-center gap-4 px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] font-bold text-slate-500">
-                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.must_visit }} /> Must Visit</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.activities }} /> Activities</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.food }} /> Food</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CATEGORY_COLORS.stays }} /> Stays</span>
-                <span className="text-slate-400 font-medium">Tap a marker to add or remove it</span>
+                {(Object.entries(COLORS) as Array<[string, string]>)
+                  .filter(([k]) => MAP_KEY_ORDER.includes(k))
+                  .map(([k, c]) => (
+                    <span key={k} className="inline-flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
+                      {MAP_LAYERS[k]?.label ?? k}
+                    </span>
+                  ))}
+                <span className="text-slate-400 font-medium">Tap a marker to add it to your trip</span>
               </p>
             </div>
           </div>

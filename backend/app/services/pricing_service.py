@@ -43,10 +43,15 @@ PARTY_HEADCOUNT: Dict[str, float] = {
     "Friends Group": 4.5,
 }
 
-# Base guide rate per day (INR) for a standard guided day.
+# Base guide rate per day (INR) for a standard guided day (fallback only).
 GUIDE_BASE_PER_DAY = 900.0
 GUIDE_MIN_FEE = 1500.0
 GUIDE_MAX_FEE = 30000.0
+
+# Guide fee as a percentage of the plan's base cost (travel spend) in GUIDE_MODE.
+# Product spec: e.g. a ₹15,000 plan -> 12.5% guide fee = ₹1,875, plus a 3%
+# platform fee. Only ever charged in GUIDE_MODE.
+GUIDE_FEE_RATE = 0.125
 
 # Platform fee: percentage bands over the estimated travel spend by budget tier.
 PLATFORM_RATE_BANDS = [
@@ -95,10 +100,21 @@ def compute_guide_fee(
     destination: str,
     party_type: Optional[str] = None,
     luxury_level: Optional[str] = None,
+    base_cost: Optional[float] = None,
 ) -> float:
-    """Rule-based guide fee: base/day x days x destination x party x service level."""
+    """Guide fee in GUIDE_MODE.
+
+    Preferred rule (product spec): 12.5% of the plan's BASE COST (travel spend).
+    A conference-style per-day fallback (base/day x days x destination x party x
+    service level, min ₹1,500, max ₹30,000) is used only when no base cost is
+    known yet (e.g. an early estimate before the plan exists).
+    """
     if mode != "GUIDE_MODE":
         return 0.0
+
+    if base_cost is not None and float(base_cost) > 0:
+        fee = float(base_cost) * GUIDE_FEE_RATE
+        return round(fee, 0)
 
     days = max(1, int(days))
     fee = (
@@ -171,6 +187,7 @@ def guide_fee_for(
     destination: str,
     party_type: Optional[str] = None,
     guide: Any = None,
+    base_cost: Optional[float] = None,
 ) -> float:
     """Authoritative guide fee.
 
@@ -178,8 +195,8 @@ def guide_fee_for(
        manager-configured `rate_per_day`, the fee is their rate × guided days
        (clamped to Travion's published guide-fee bounds). This is the future
        manager-configurable per-guide pricing path.
-    2. Otherwise the platform's rule-based fee applies (₹900/day × days ×
-       destination/party multipliers, min ₹1,500, max ₹30,000).
+    2. Otherwise, in GUIDE_MODE, the fee is 12.5% of the plan's base cost
+       (travel spend) per the product spec — e.g. a ₹15,000 plan → ₹1,875.
     3. Never a hardcoded universal amount; never ₹0 for a trip where a guide
        is actually required (GUIDE_MODE).
     """
@@ -187,7 +204,7 @@ def guide_fee_for(
     if guide is not None and getattr(guide, "rate_per_day", None):
         fee = float(guide.rate_per_day) * days
         return round(max(GUIDE_MIN_FEE, min(fee, GUIDE_MAX_FEE)), 0)
-    return compute_guide_fee(mode, days, destination, party_type)
+    return compute_guide_fee(mode, days, destination, party_type, base_cost=base_cost)
 
 
 def reprice_breakdown(
@@ -201,24 +218,26 @@ def reprice_breakdown(
 ) -> Dict[str, Any]:
     """Recompute a cost breakdown with the CURRENT guide fee (e.g. after the
     traveller removed/added a day or the itinerary was edited). Keeps the guide
-    fee consistent with the new guided-day count instead of freezing the old one.
-    Returns a full breakdown dict with authoritative payable/platform/travel."""
+    fee consistent with the new plan instead of freezing the old one.
+    Returns a full breakdown dict with authoritative payable/platform/travel.
+    """
     bd = dict(breakdown or {})
     transport = float(bd.get("transport", 0) or 0)
     stay = float(bd.get("stay", 0) or 0)
     food = float(bd.get("food", 0) or 0)
     activities = float(bd.get("activities", 0) or 0)
-    guide_fee = guide_fee_for(mode, days, destination, party_type, guide)
     travel_spend = round(transport + stay + food + activities, 0)
-    base_cost = round(transport + stay + food + activities + guide_fee, 0)
-    platform_fee = round(base_cost * PLATFORM_FEE_RATE, 0)
-    final_total = round(base_cost + platform_fee, 0)
+    guide_fee = guide_fee_for(mode, days, destination, party_type, guide, base_cost=travel_spend)
+    # base_cost in GUIDE_MODE = travel spend; both fees are %s over it.
+    fee_base = travel_spend
+    platform_fee = round(fee_base * PLATFORM_FEE_RATE, 0)
+    final_total = round(fee_base + guide_fee + platform_fee, 0)
     bd.update({
         "guide_fee": round(guide_fee, 0),
         "platform_fee": platform_fee,
         "payable": round(guide_fee + platform_fee, 0),
         "travel_spend": travel_spend,
-        "base_plan_cost": base_cost,
+        "base_plan_cost": round(fee_base, 0),
         "final_total": final_total,
         "total": final_total,
         "total_cost": final_total,

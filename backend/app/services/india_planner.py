@@ -25,10 +25,8 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.services.budget_service import (
-    base_ceiling_for, compute_totals
-)
-from app.services.pricing_service import compute_guide_fee, party_headcount
+from app.services.budget_service import PLATFORM_FEE_RATE
+from app.services.pricing_service import compute_guide_fee, party_headcount, GUIDE_FEE_RATE
 from app.services.ai_orchestrator import _parse_days, _parse_budget, _party, _budget_envelope
 
 # Real national emergency / helpline numbers (Government of India).
@@ -477,17 +475,22 @@ def build_estimate_plan(
         })
 
     lo, hi = _budget_envelope(profile)
+    travel_spend = round(transport_cost + stay_cost + food_total + activity_total, 0)
+    # Fees are %s over the travel spend and added on top, so the spend must be
+    # clamped so the TOTAL (incl. fees) never exceeds the user's maximum.
+    fee_factor = 1.0 + (GUIDE_FEE_RATE if mode == "GUIDE_MODE" else 0.0) + PLATFORM_FEE_RATE
+    travel_spend = min(travel_spend, int(float(hi) / fee_factor))
     guide_fee = compute_guide_fee(
         mode=mode, days=days, destination=destination_name,
         party_type=party, luxury_level=profile.get("stay_pref"),
+        base_cost=travel_spend,
     )
-    travel_spend = round(transport_cost + stay_cost + food_total + activity_total, 0)
-    base_plan_cost = round(travel_spend + guide_fee, 0)
-    # Total incl. the 3% platform fee must NEVER exceed the user's maximum.
-    base_plan_cost = min(base_plan_cost, base_ceiling_for(hi))
-    totals = compute_totals(base_plan_cost)
-    platform_fee = totals["platform_fee"]
-    total = totals["final_total"]
+    # Plan's base cost is the travel spend itself; both fees are %s over it and
+    # are added on top. GUIDE_MODE: guide 12.5% + platform 3% (per product spec).
+    base_plan_cost = travel_spend
+    platform_fee = round(travel_spend * PLATFORM_FEE_RATE, 0)
+    final_total = round(travel_spend + guide_fee + platform_fee, 0)
+    total = final_total
 
     cost_breakdown = {
         "transport": round(transport_cost, 0),

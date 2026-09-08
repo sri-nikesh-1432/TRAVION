@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.db import Base, engine, SessionLocal
 from app.models.entities import Guide, GuideAssignment, PaymentSplit
-from app.services.pricing_service import compute_guide_fee, GUIDE_MIN_FEE, GUIDE_MAX_FEE
+from app.services.pricing_service import GUIDE_MIN_FEE, GUIDE_MAX_FEE
 
 client = TestClient(app)
 
@@ -208,8 +208,9 @@ def test_add_day_reprices_guide_fee_never_frozen():
 
     pr1 = _pricing(trip_id, headers)
     assert pr1["days"] == d0 + 1
-    expected_fee = compute_guide_fee("GUIDE_MODE", d0 + 1, "Ooty", "Solo")
-    assert pr1["guide_fee"] == expected_fee, "guide fee must track the new day count, never stay frozen"
+    # GUIDE_MODE guide fee = 12.5% of the plan's base cost (travel spend).
+    expected_fee = round(float(pr1["travel_spend"]) * 0.125)
+    assert pr1["guide_fee"] == expected_fee, "guide fee must track the plan cost, never stay frozen"
     assert pr1["amount_payable"] == pr1["guide_fee"] + pr1["platform_fee"]
 
     # The persisted itinerary carries the repriced breakdown (plan versioning)
