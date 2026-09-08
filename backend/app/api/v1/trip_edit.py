@@ -34,7 +34,7 @@ from app.schemas.schemas import (
 from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import (
     build_plans, recalculate_change, _resequence, _haversine_km, validate_days,
-    _norm,
+    _norm, normalize_plan_totals,
 )
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
 from app.services.places_discovery import discover_destination, discover_nearby
@@ -43,10 +43,10 @@ from app.services.place_selections import (
     sync_selections, selections_for_plan, selection_payload,
 )
 from app.services.budget_service import (
-    parse_budget, base_ceiling_for, remaining_budget as budget_remaining,
-    sanitize_envelope, compute_totals, PLATFORM_FEE_RATE,
+    parse_budget, remaining_budget as budget_remaining,
+    sanitize_envelope,
 )
-from app.services.pricing_service import reprice_breakdown, GUIDE_FEE_RATE
+from app.services.pricing_service import reprice_breakdown
 from app.services.budget_engine import (
     tier_for, get_budget_constraints, display_band_for,
     check_budget_feasibility, validate_itinerary_budget,
@@ -69,41 +69,6 @@ def _budget_envelope(profile: dict | None, trip_budget: float) -> Dict[str, floa
     if bmin >= bmax:
         bmin = max(1000.0, bmax * 0.8)
     return {"min": bmin, "max": bmax}
-
-
-def _normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
-    """Belt-and-suspenders clamp: recompute a plan's fee/total from the single
-    source of truth (BudgetService) so the fee math is ALWAYS the last word,
-    regardless of which engine generated the plan. In GUIDE_MODE the 12.5% guide
-    fee is a % over the plan's base cost and is preserved.
-
-    The plan's base cost (travel spend) is clamped so spend × fee_factor
-    never exceeds the traveller's maximum budget.
-    """
-    bd = plan["cost_breakdown"]
-    guide_mode = bool(bd.get("guide_mode"))
-    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
-    raw_spend = float(plan["base_plan_cost"])
-    if float(budget_max) > 0:
-        spend = int(min(raw_spend, float(budget_max) / fee_factor))
-    else:
-        spend = round(raw_spend, 0)
-    guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
-    guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else guid_fee_seed
-    platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
-    final_total = round(spend + guide_fee + platform_fee, 0)
-    plan["base_plan_cost"] = spend
-    plan["platform_fee"] = platform_fee
-    plan["final_total"] = final_total
-    plan["total_cost"] = final_total
-    plan["remaining_budget"] = round(float(budget_max) - final_total, 0)
-    plan["within_budget"] = bool(final_total <= float(budget_max))
-    bd["base_plan_cost"] = spend
-    bd["guide_fee"] = round(guide_fee, 0)
-    bd["platform_fee"] = platform_fee
-    bd["final_total"] = final_total
-    bd["total"] = final_total
-    bd["payable"] = round(guide_fee + platform_fee, 0)
 
 
 def _destination_anchor(trip: Trip, db: Session) -> Dict[str, Any]:
@@ -972,7 +937,7 @@ def plan_multi(
     # (12.5% guide in GUIDE_MODE + 3% platform over base spend) is the final
     # word on every returned total.
     for p in plans:
-        _normalize_plan_totals(p, bmax)
+        normalize_plan_totals(p, bmax)
 
     # A single plan that still exceeds the traveller's selected maximum is an
     # unacceptable result. Reject it loudly instead of shipping an over-budget plan.
@@ -1077,7 +1042,7 @@ def choose_plan(
     if not chosen:
         raise HTTPException(status_code=400, detail="Unknown plan type.")
 
-    _normalize_plan_totals(chosen, env["max"])
+    normalize_plan_totals(chosen, env["max"])
 
     itin = _persist_version(db, trip, chosen["days"], chosen["total_cost"], chosen["cost_breakdown"])
     trip.status = "PLANNED"

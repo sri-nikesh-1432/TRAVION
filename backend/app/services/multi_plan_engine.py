@@ -765,6 +765,41 @@ def validate_days(days: List[Dict[str, Any]], budget_max: float, total_cost: flo
 
 # ── Change recalculation (drag & drop / remove / add / reorder) ─────────────
 
+def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
+    """Mode-aware belt-and-braces clamp, shared by EVERY plan surface.
+
+    Recomputs a plan's fee/total from the single rule — base cost = travel
+    spend, guide fee 12.5% of it in GUIDE_MODE, platform fee 3% of it — and
+    clamps the base cost so spend × fee_factor never exceeds the traveller's
+    maximum budget. Guarantees the invariant:
+        final_total == base_plan_cost + guide_fee + platform_fee.
+    """
+    bd = plan["cost_breakdown"]
+    guide_mode = bool(bd.get("guide_mode"))
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
+    raw_spend = float(plan["base_plan_cost"])
+    if float(budget_max) > 0:
+        spend = int(min(raw_spend, float(budget_max) / fee_factor))
+    else:
+        spend = round(raw_spend, 0)
+    guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
+    guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else guid_fee_seed
+    platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
+    final_total = round(spend + guide_fee + platform_fee, 0)
+    plan["base_plan_cost"] = spend
+    plan["platform_fee"] = platform_fee
+    plan["final_total"] = final_total
+    plan["total_cost"] = final_total
+    plan["remaining_budget"] = round(float(budget_max) - final_total, 0)
+    plan["within_budget"] = bool(final_total <= float(budget_max))
+    bd["base_plan_cost"] = spend
+    bd["guide_fee"] = round(guide_fee, 0)
+    bd["platform_fee"] = platform_fee
+    bd["final_total"] = final_total
+    bd["total"] = final_total
+    bd["payable"] = round(guide_fee + platform_fee, 0)
+
+
 def recalculate_change(
     days: List[Dict[str, Any]],
     cost_breakdown: Dict[str, Any],

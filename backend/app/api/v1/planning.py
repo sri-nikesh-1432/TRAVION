@@ -8,8 +8,8 @@ from app.schemas.schemas import PlanTripRequest, ItineraryResponse
 from app.services.ai_orchestrator import AIOrchestrator, PACKAGE_DESTINATIONS
 from app.services.india_planner import build_estimate_plan
 from app.services.verified_data import VERIFIED_TRANSPORT
-from app.services.multi_plan_engine import build_plans
-from app.services.budget_service import sanitize_envelope, base_ceiling_for
+from app.services.multi_plan_engine import build_plans, normalize_plan_totals
+from app.services.budget_service import sanitize_envelope
 
 
 def _is_india(country: Optional[str]) -> bool:
@@ -193,14 +193,10 @@ def generate_trip_plan(
             verbose=False,
         )
         chosen = next((p for p in plans if p["type"] == "RECOMMENDED"), None) or plans[0]
-        if chosen["final_total"] > env_max:
-            chosen["final_total"] = min(chosen["final_total"], env_max)
-            chosen["total_cost"] = chosen["final_total"]
-            chosen["cost_breakdown"]["final_total"] = chosen["final_total"]
-            chosen["cost_breakdown"]["total"] = chosen["final_total"]
-            chosen["cost_breakdown"]["base_plan_cost"] = min(
-                float(chosen["cost_breakdown"].get("base_plan_cost", 0)), base_ceiling_for(env_max)
-            )
+        # Guard the invariant final_total == base + guide + platform: recompute
+        # via the shared mode-aware clamp (GUIDE_MODE != sport mode fee factors)
+        # so the persisted total can never drift over the budget ceiling.
+        normalize_plan_totals(chosen, env_max)
 
         breakdown = chosen["cost_breakdown"]
         itinerary_plan = {

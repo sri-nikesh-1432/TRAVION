@@ -307,3 +307,45 @@ def test_below_floor_plan_not_padded_up():
     assert float(value["final_total"]) < 30000  # below the floor, allowed
     assert value["within_budget"] is True
     assert any("don't pad costs" in w or "below your" in w for w in value["warnings"])
+
+
+def test_guide_mode_minimum_cost_uses_percentage_fee():
+    """The affordability floor must use the SAME fee model as generated plans:
+    guide fee = 12.5% of the minimum travel spend in GUIDE_MODE (not the old
+    per-day rate), platform = 3% of the spend, contingency only as a buffer."""
+    from app.services.budget_engine import calculate_minimum_trip_cost
+
+    m = calculate_minimum_trip_cost(
+        "Pondicherry", 3, "GUIDE_MODE", {"party": "Solo"},
+        source_name="Chennai", source_coords=(13.0827, 80.2707),
+        dest_coords=(11.93, 79.83), stay_allowed=True,
+    )
+    assert m["guide_fee"] == round(float(m["travel_spend"]) * 0.125)
+    assert m["platform_fee"] == round(float(m["travel_spend"]) * 0.03)
+    assert m["final_total"] == (
+        m["travel_spend"] + m["contingency"] + m["guide_fee"] + m["platform_fee"]
+    )
+
+
+def test_normalize_plan_totals_invariant_even_over_budget():
+    """A GUIDE_MODE plan that would exceed its budget must be clamped so the
+    invariant final_total == base + guide + platform holds and stays in budget
+    (regression for the old base_ceiling_for fallback that forgot the guide fee)."""
+    from app.services.multi_plan_engine import normalize_plan_totals
+
+    plan = {
+        "base_plan_cost": 20000.0,
+        "cost_breakdown": {
+            "guide_mode": True,
+            "transport": 5000.0, "stay": 8000.0, "food": 4000.0, "activities": 3000.0,
+            "guide_fee": 2500.0, "platform_fee": 600.0, "final_total": 23100.0,
+            "total": 23100.0,
+        },
+    }
+    normalize_plan_totals(plan, 20000.0)
+    bd = plan["cost_breakdown"]
+    assert plan["final_total"] <= 20000.0
+    assert plan["final_total"] == plan["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
+    assert bd["total"] == bd["final_total"] == plan["final_total"]
+    assert bd["payable"] == bd["guide_fee"] + bd["platform_fee"]
+    assert plan["within_budget"] is True

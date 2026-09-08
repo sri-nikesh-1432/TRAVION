@@ -20,7 +20,7 @@ scattered across the codebase. See the "Budget tiers" product spec.
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.services.budget_service import compute_totals, base_ceiling_for, PLATFORM_FEE_RATE
+from app.services.budget_service import PLATFORM_FEE_RATE
 from app.services.pricing_service import compute_guide_fee, party_headcount
 from app.services.ai_orchestrator import _party
 from app.services.india_planner import _estimate_transport, STAY_TIERS
@@ -221,12 +221,13 @@ def calculate_minimum_trip_cost(
 
     travel_spend = round(transport_cost + stay_cost + food_cost + activity_cost, 0)
     contingency = round(travel_spend * BUDGET_CONFIG["contingency_rate"], 0)
-    guide_fee = float(compute_guide_fee(mode, days, destination, party_type=party))
-
-    base_plan_cost = round(travel_spend + contingency + guide_fee, 0)
-    totals = compute_totals(base_plan_cost)
-    totals["base_plan_cost"] = base_plan_cost
-    totals["final_total"] = round(base_plan_cost + totals["platform_fee"], 0)
+    # Same fee model as every generated plan: guide 12.5% of the travel spend in
+    # GUIDE_MODE, platform 3% of the travel spend. The contingency stays an
+    # extra conservative buffer so the affordability floor never over-commits.
+    guide_fee = float(compute_guide_fee(mode, days, destination, party_type=party, base_cost=travel_spend))
+    platform_fee = round(travel_spend * PLATFORM_FEE_RATE, 0)
+    base_plan_cost = round(travel_spend, 0)
+    total_cost = round(travel_spend + contingency + guide_fee + platform_fee, 0)
 
     return {
         "days": days,
@@ -241,10 +242,10 @@ def calculate_minimum_trip_cost(
         "guide_fee": guide_fee,
         "travel_spend": travel_spend,
         "base_plan_cost": base_plan_cost,
-        "platform_fee": totals["platform_fee"],
-        "total_cost": round(float(totals["final_total"]), 0),
-        "final_total": round(float(totals["final_total"]), 0),
-        "minimum_required_budget": round(float(totals["final_total"]), 0),
+        "platform_fee": platform_fee,
+        "total_cost": total_cost,
+        "final_total": total_cost,
+        "minimum_required_budget": total_cost,
     }
 
 
