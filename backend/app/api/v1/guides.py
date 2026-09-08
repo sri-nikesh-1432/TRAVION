@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import require_role, get_current_identity
+from app.services.privacy import mask_phone
 from app.models.entities import Guide, GuideAssignment, Trip, Review, Identity, Itinerary
 from app.schemas.schemas import (
     GuideOnboardingUpdate, GuideStatusUpdate, ReviewVisibilityUpdate, ReviewResponse

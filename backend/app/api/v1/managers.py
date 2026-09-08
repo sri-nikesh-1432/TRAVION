@@ -342,7 +342,13 @@ def _trip_pricing_for(db: Session, trip: Trip) -> Optional[Dict[str, Any]]:
     if not itin:
         return None
     profile = trip.profile.questions_answers if trip.profile else {}
-    guide = trip.guide_assignment.guide if (trip.guide_assignment and trip.guide_assignment.guide) else None
+    # Only an ACCEPTED/CONFIRMED real guide is load-bearing for the per-guide
+    # rate (matches checkout/_pricing_context). REQUESTED → rule-based fee.
+    guide = None
+    if (trip.guide_assignment
+            and trip.guide_assignment.guide
+            and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")):
+        guide = trip.guide_assignment.guide
     return calculate_trip_pricing(
         mode=trip.mode or "ADVENTUROUS_MODE",
         days=max(1, len(itin.days_data or [])),

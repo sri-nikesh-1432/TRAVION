@@ -153,7 +153,7 @@ def test_assigned_guide_rate_per_day_drives_fee():
     _, headers, trip_id = _build_trip("GUIDE_MODE")
 
     # Manager-configured rate on an ASSIGNED + CONFIRMED guide
-    _, _, gdata = _new_user("GUIDE")
+    _, gheaders, gdata = _new_user("GUIDE")
     db = SessionLocal()
     try:
         guide = db.query(Guide).filter(Guide.identity_id == gdata["identity_id"]).first()
@@ -180,6 +180,14 @@ def test_assigned_guide_rate_per_day_drives_fee():
     co = _checkout(trip_id, headers)
     assert co["breakdown"]["guide_fee"] == expected
     assert co["amount"] == co["breakdown"]["guide_fee"] + co["breakdown"]["platform_fee"]
+
+    # The assigned guide sees the SAME authoritative fee on their dashboard
+    at = client.get("/api/v1/guides/assigned-trips", headers=gheaders)
+    assert at.status_code == 200, at.text
+    row = next((a for a in at.json() if a["trip"]["id"] == trip_id), None)
+    assert row is not None
+    assert row["trip"]["pricing"]["guide_fee"] == expected
+    assert row["trip"]["pricing"]["amount_payable"] == expected + row["trip"]["pricing"]["platform_fee"]
 
 
 def test_add_day_reprices_guide_fee_never_frozen():
