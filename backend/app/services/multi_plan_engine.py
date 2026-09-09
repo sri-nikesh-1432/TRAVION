@@ -522,11 +522,13 @@ def build_plans(
         # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps.
         _resequence(days)
 
-        # 5. HARD BUDGET: the fees (guide 12.5% in GUIDE_MODE + platform 3%) live
-        #    INSIDE the chosen rung of the floor→ceiling range
-        #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling). The plan's base cost
-        #    (travel spend) is clamped so spend × fee_factor <= variant_target.
-        base_ceiling = variant_target / fee_factor
+        # 5. HARD BUDGET: the budget range is the TRAVEL-SPEND range. In
+        #    GUIDE_MODE the 12.5% guide fee + 3% platform fee are charged ON TOP
+        #    of that spend (budget 10,000 → guide 1,250 → total 11,550), so the
+        #    plan's base cost fills the chosen rung directly
+        #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling). In ADVENTUROUS
+        #    the 3% platform fee lives INSIDE the rung (spend backed out).
+        base_ceiling = variant_target if guide_mode else variant_target / fee_factor
         fixed = transport
         flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
@@ -632,8 +634,8 @@ def build_plans(
             "days": days,
             "budget_min": budget_min,
             "budget_max": budget_max,
-            "remaining_budget": round(budget_max - final_total, 0),
-            "within_budget": final_total <= budget_max,
+            "remaining_budget": round(budget_max - (spend if guide_mode else final_total), 0),
+            "within_budget": bool((spend if guide_mode else final_total) <= budget_max),
             "highlights": highlights,
             "warnings": warnings,
             "recommended": variant == "RECOMMENDED",
@@ -663,22 +665,33 @@ def _resequence(days: List[Dict[str, Any]]) -> None:
 
 
 def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List[Dict[str, Any]]:
-    """VALUE ≤ RECOMMENDED ≤ PREMIUM ≤ budget_max — deterministic guarantee."""
+    """VALUE ≤ RECOMMENDED ≤ PREMIUM; travel spend ≤ budget_max — deterministic."""
     by_type = {p["type"]: p for p in plans}
     budget_max = float(plans[0]["budget_max"]) if plans else 0.0
-    # The traveller's selected maximum budget is the HARD ceiling: even the
-    # premium plan must never exceed it (fee included).
-    prem = min(by_type["PREMIUM"]["final_total"], budget_max)
+    # The traveller's selected maximum budget is the HARD ceiling for the
+    # plan's TRAVEL SPEND. In GUIDE_MODE the guide (12.5%) and platform (3%)
+    # fees are added ON TOP of the spend, so the premium plan may reach a
+    # final_total of budget_max × fee_factor; otherwise fees stay inside
+    # budget_max (ADVENTUROUS = 3% platform only, inside the ceiling).
+    def _final_cap(p: Dict[str, Any]) -> float:
+        fac = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE)
+        fac = fac if (p["cost_breakdown"] or {}).get("guide_mode") else (1.0 + PLATFORM_FEE_RATE)
+        return float(budget_max * fac)
+    prem_cap = _final_cap(by_type["PREMIUM"])
+    prem = min(by_type["PREMIUM"]["final_total"], prem_cap)
     rec = min(by_type["RECOMMENDED"]["final_total"], prem)
     val = min(by_type["VALUE"]["final_total"], rec)
-    if by_type["PREMIUM"]["final_total"] > budget_max:
-        _shave_final_to(by_type["PREMIUM"], float(budget_max), verbose=verbose)
+    if by_type["PREMIUM"]["final_total"] > prem_cap:
+        _shave_final_to(by_type["PREMIUM"], float(prem_cap), verbose=verbose)
     for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
         if plan["final_total"] > target:
             _shave_final_to(plan, float(target), verbose=verbose)
-    # Keep everyone's within_budget flag exact (no tolerance): total must be ≤ budget_max.
+    # within_budget is exact (no tolerance): in GUIDE_MODE the TRAVEL SPEND
+    # must sit within the budget (fees are on top); otherwise the total must.
     for plan in plans:
-        plan["within_budget"] = bool(float(plan["final_total"]) <= float(plan["budget_max"]))
+        guide_mode = bool((plan.get("cost_breakdown") or {}).get("guide_mode"))
+        comparable = plan["base_plan_cost"] if guide_mode else float(plan["final_total"])
+        plan["within_budget"] = bool(comparable <= float(plan["budget_max"]))
     return plans
 
 
@@ -720,7 +733,11 @@ def _shave_final_to(plan: Dict[str, Any], target: float, verbose: bool = True) -
     plan.update({
         "base_plan_cost": spend, "platform_fee": platform_fee,
         "final_total": round(final_total, 0), "total_cost": round(final_total, 0),
-        "remaining_budget": round(plan["budget_max"] - final_total, 0),
+        # GUIDE_MODE: fees sit on top of the travel spend; what remains of the
+        # traveller's budget is budget − spend. ADVENTUROUS: budget − total.
+        "remaining_budget": round(
+            plan["budget_max"] - (spend if guide_mode else final_total), 0
+        ),
     })
     plan.setdefault("warnings", [])
     if verbose:
@@ -769,9 +786,11 @@ def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     """Mode-aware belt-and-braces clamp, shared by EVERY plan surface.
 
     Recomputs a plan's fee/total from the single rule — base cost = travel
-    spend, guide fee 12.5% of it in GUIDE_MODE, platform fee 3% of it — and
-    clamps the base cost so spend × fee_factor never exceeds the traveller's
-    maximum budget. Guarantees the invariant:
+    spend, guide fee 12.5% of it in GUIDE_MODE, platform fee 3% of it.
+    In GUIDE_MODE the fees are added ON TOP of the travel spend (budget 10,000
+    → guide 1,250, platform 300, total 11,550), so the spend is clamped to the
+    budget while the final total may exceed it. In ADVENTUROUS the 3% platform
+    fee lives INSIDE the budget (spend backed out). Guarantees the invariant:
         final_total == base_plan_cost + guide_fee + platform_fee.
     """
     bd = plan["cost_breakdown"]
@@ -779,7 +798,10 @@ def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
     raw_spend = float(plan["base_plan_cost"])
     if float(budget_max) > 0:
-        spend = int(min(raw_spend, float(budget_max) / fee_factor))
+        # GUIDE_MODE: budget = travel spend, fees added on top.
+        # ADVENTUROUS: 3% platform fee backed out of the budget ceiling.
+        divider = 1.0 if guide_mode else fee_factor
+        spend = int(min(raw_spend, float(budget_max) / divider))
     else:
         spend = round(raw_spend, 0)
     guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
@@ -790,8 +812,8 @@ def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     plan["platform_fee"] = platform_fee
     plan["final_total"] = final_total
     plan["total_cost"] = final_total
-    plan["remaining_budget"] = round(float(budget_max) - final_total, 0)
-    plan["within_budget"] = bool(final_total <= float(budget_max))
+    plan["remaining_budget"] = round(float(budget_max) - (spend if guide_mode else final_total), 0)
+    plan["within_budget"] = bool((spend if guide_mode else final_total) <= float(budget_max))
     bd["base_plan_cost"] = spend
     bd["guide_fee"] = round(guide_fee, 0)
     bd["platform_fee"] = platform_fee

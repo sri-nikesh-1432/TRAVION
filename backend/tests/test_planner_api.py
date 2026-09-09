@@ -155,3 +155,44 @@ def test_confirm_validates_normal_plan_before_payment():
     assert not body["missing"]
     assert body["version"] >= 1
     assert "ready for payment" in body["message"]
+
+
+def test_plan_multi_guide_mode_checkout_collects_guide_fee_on_top():
+    """Step-4 GUIDE_MODE (plan-multi → choose-plan → checkout) regression:
+    the mode is persisted so pricing sees GUIDE_MODE (never ₹0 guide fee), and
+    the fee sits ON TOP of the travel budget — 12.5% guide + 3% platform."""
+    trip_id, headers = _build_trip()
+
+    res = client.post(f"/api/v1/trips/{trip_id}/plan-multi", headers=headers, json={
+        "mode": "GUIDE_MODE", "consent_acknowledged": True,
+    })
+    assert res.status_code == 200, res.text
+    plans = res.json()
+    assert plans and len(plans) == 3
+    for p in plans:
+        bd = p["cost_breakdown"]
+        assert bd["guide_mode"] is True
+        assert bd["guide_fee"] == round(float(p["base_plan_cost"]) * 0.125)
+        assert bd["platform_fee"] == round(float(p["base_plan_cost"]) * 0.03)
+        assert p["final_total"] == p["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
+        assert p["within_budget"] is True  # travel spend inside the budget
+
+    chosen = client.post(f"/api/v1/trips/{trip_id}/choose-plan", headers=headers, json={
+        "plan_type": "RECOMMENDED",
+    })
+    assert chosen.status_code == 200, chosen.text
+
+    trip = client.get(f"/api/v1/trips/{trip_id}", headers=headers).json()
+    assert trip["mode"] == "GUIDE_MODE"
+    assert trip["status"] == "REQUESTED"
+
+    pr = client.get(f"/api/v1/trips/{trip_id}/pricing", headers=headers).json()
+    assert pr["guide_required"] is True
+    assert pr["guide_assigned"] is False
+    assert pr["guide_fee"] > 0, "GUIDE_MODE via Step-4 must carry a real guide fee"
+    assert abs(pr["guide_fee"] - round(float(pr["travel_spend"]) * 0.125)) <= 1
+    assert pr["amount_payable"] == pr["guide_fee"] + pr["platform_fee"]
+
+    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay"})
+    assert co.status_code == 200, co.text
+    assert co.json()["amount"] == pr["amount_payable"]

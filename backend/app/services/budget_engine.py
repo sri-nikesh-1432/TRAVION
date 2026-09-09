@@ -21,7 +21,7 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.budget_service import PLATFORM_FEE_RATE
-from app.services.pricing_service import compute_guide_fee, party_headcount
+from app.services.pricing_service import compute_guide_fee, party_headcount, GUIDE_FEE_RATE
 from app.services.ai_orchestrator import _party
 from app.services.india_planner import _estimate_transport, STAY_TIERS
 
@@ -245,7 +245,13 @@ def calculate_minimum_trip_cost(
         "platform_fee": platform_fee,
         "total_cost": total_cost,
         "final_total": total_cost,
-        "minimum_required_budget": total_cost,
+        # GUIDE_MODE: the traveller's budget is the TRAVEL SPEND — the 12.5%
+        # guide fee + 3% platform fee are charged on top, so the minimum budget
+        # that must actually fit is the travel spend itself. Feasibility and
+        # "how many days fit" guidance therefore compare against this.
+        "minimum_required_budget": (
+            round(travel_spend, 0) if mode == "GUIDE_MODE" else total_cost
+        ),
     }
 
 
@@ -273,8 +279,11 @@ def calculate_max_affordable_days(
         stay_allowed=stay_allowed,
     )
     for days in range(1, int(BUDGET_CONFIG["max_days_cap"]) + 1):
-        cost = calculate_minimum_trip_cost(destination, days, mode, profile, **base_kw)["final_total"]
-        if cost > budget:
+        cost = calculate_minimum_trip_cost(destination, days, mode, profile, **base_kw)
+        # In GUIDE_MODE the fees sit on top of the travel spend, so use the
+        # spend as the comparable; otherwise compare the fee-inclusive total.
+        comparable = cost["base_plan_cost"] if mode == "GUIDE_MODE" else cost["final_total"]
+        if comparable > budget:
             return max(0, days - 1)
     return int(BUDGET_CONFIG["max_days_cap"])
 
@@ -372,10 +381,17 @@ def check_budget_feasibility(
             {"heading": "Continue without a stay", "text": "Skip accommodation entirely — we'll plan day-trip style with every night skipped."},
         ]
     else:
-        message = (
-            f"Good news — ₹{budget:,.0f} can fund this trip. We'll keep the total (including the "
-            f"{int(PLATFORM_FEE_RATE * 100)}% Travion fee) inside your budget."
-        )
+        if mode == "GUIDE_MODE":
+            message = (
+                f"Good news — ₹{budget:,.0f} can fund the travel cost of this trip. "
+                f"The {int(GUIDE_FEE_RATE * 100)}% guide fee and {int(PLATFORM_FEE_RATE * 100)}% "
+                f"platform fee are added on top when you book."
+            )
+        else:
+            message = (
+                f"Good news — ₹{budget:,.0f} can fund this trip. We'll keep the total (including the "
+                f"{int(PLATFORM_FEE_RATE * 100)}% Travion fee) inside your budget."
+            )
         alternatives = []
 
     return {

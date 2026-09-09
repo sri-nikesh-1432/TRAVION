@@ -25,12 +25,20 @@ def validate_itinerary(
     `cost_breakdown` and `days` directly (the common plan-engine output).
     """
     bd = cost_breakdown if cost_breakdown is not None else itinerary
-    total = (
-        bd.get("final_total")
-        or bd.get("total")
-        or bd.get("total_cost")
-        or float(bd.get("base_plan_cost") or 0) + float(bd.get("platform_fee") or 0)
-    )
+    guide_mode = bool(bd.get("guide_mode"))
+    # GUIDE_MODE: the 12.5% guide + 3% platform fees sit ON TOP of the travel
+    # spend, so the budget gates the base (travel) cost — the fee-inclusive
+    # total intentionally exceeds it. ADVENTUROUS: the 3% platform fee lives
+    # inside the budget, so the whole total must fit.
+    if guide_mode:
+        total = float(bd.get("base_plan_cost") or 0) or float(bd.get("travel_spend") or 0)
+    else:
+        total = (
+            bd.get("final_total")
+            or bd.get("total")
+            or bd.get("total_cost")
+            or float(bd.get("base_plan_cost") or 0) + float(bd.get("platform_fee") or 0)
+        )
     budget_check = validate_itinerary_budget(float(total or 0.0), float(budget_max or 0.0))
 
     day_list = days if days is not None else (itinerary.get("days") or [])
@@ -61,9 +69,14 @@ def validate_plans(
     """Convenience gate over a list of generated plans — rejects over-budget."""
     problems: List[str] = []
     for p in plans:
-        check = validate_itinerary_budget(
-            p.get("cost_breakdown") or p.get("final_total"), float(budget_max or 0.0)
+        bd = p.get("cost_breakdown") or {}
+        # GUIDE_MODE gates the travel spend (fees are on top); ADVENTUROUS the
+        # fee-inclusive total — either way just the amount that must fit.
+        check_total = (
+            float(bd.get("base_plan_cost") or 0) if bd.get("guide_mode")
+            else (bd or p.get("final_total"))
         )
+        check = validate_itinerary_budget(check_total, float(budget_max or 0.0))
         if not check["valid"]:
             problems.append(
                 f"{p.get('type', 'Plan')} is ₹{check['over_by']:,.0f} over budget — "

@@ -1521,13 +1521,12 @@ def discover_destination(
             # The dedup runs after ranking, so rejected candidates leave the
             # NEXT best real activity to take the slot — nothing is invented.
             items = _unique_activities(items, result.get("must_visit") or [])
-        # The MAP dataset is BROADER than the cards: every real candidate beyond
-        # the top-ten is still a genuine verified place (deduped + geofiltered
-        # + ranked) — the map can plot up to 25 of them per category while the
-        # cards honestly show only the target count. Nothing beyond the real
-        # candidate pool is ever fabricated.
-        if len(items) > requested:
-            map_candidates[category] = items[: 25]
+        # THE MAP SHOWS EVERY REAL CANDIDATE — not just the top-ten cards. This
+        # full pool (deduped + geofiltered + ranked, then extended by any topup
+        # below) is what the Step-3 map plots, so every restaurant, stay/hotel
+        # and must-visit attraction in the destination appears on the map.
+        # Nothing beyond the real candidate pool is ever fabricated.
+        full_pool = list(items)
         items = items[: requested]
         # GUARANTEED FULL POOLS — real, never invented. When live providers and
         # the curated catalog cannot supply the whole section, verified GeoNames
@@ -1546,9 +1545,11 @@ def discover_destination(
             if topup:
                 items = _rank(items + topup, interests, veg_only, inside_first=True)
                 items = items[: requested]
+                full_pool = _rank(list(full_pool) + topup, interests, veg_only, inside_first=True)
         result[category] = items
         result.setdefault("counts", {})[category] = len(items)
         total += len(items)
+        map_candidates[category] = full_pool
         # HONEST discovery contract: every section reports how many real places
         # were requested vs actually available, so the UI can never show "10"
         # when only 6 verified things exist.

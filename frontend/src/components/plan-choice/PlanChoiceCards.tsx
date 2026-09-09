@@ -36,7 +36,9 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
           Three ways to experience {destinationName}
         </h2>
         <p className="mt-1.5 text-[13px] font-medium text-slate-500">
-          Every plan includes your selected places and stays within your budget — the platform fee is included in the ceiling, so what you see is what you spend.
+          {plans[0]?.cost_breakdown?.guide_mode
+            ? 'Every plan fits your travel budget — the 12.5% guide fee and 3% platform fee are added on top and shown per plan.'
+            : 'Every plan includes your selected places and stays within your budget — the platform fee is included in the ceiling, so what you see is what you spend.'}
         </p>
       </div>
 
@@ -44,9 +46,13 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
         {plans.map((plan, i) => {
           const isSelected = selected === plan.type;
           const bd = plan.cost_breakdown || {};
+          const guideTrip = Boolean(bd.guide_mode);
           const budgetOk = isSane(plan.budget_max) && isSane(plan.final_total);
+          const comparable = guideTrip
+            ? Number(plan.base_plan_cost || 0)
+            : Number(plan.final_total || plan.base_plan_cost || 0);
           const usedPct = budgetOk
-            ? Math.max(4, Math.min(100, (plan.final_total / plan.budget_max) * 100))
+            ? Math.max(4, Math.min(100, (comparable / plan.budget_max) * 100))
             : 100;
           return (
             <motion.button
@@ -97,12 +103,12 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                 </div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${plan.final_total > plan.budget_max ? 'bg-red-500' : 'bg-travion-600'}`}
+                    className={`h-full rounded-full ${comparable > plan.budget_max ? 'bg-red-500' : 'bg-travion-600'}`}
                     style={{ width: `${usedPct}%` }}
                   />
                 </div>
                 <div className="mt-1 flex justify-between text-[9.5px] font-bold text-slate-400">
-                  <span>{budgetOk ? 'of your selected budget' : ''}</span>
+                  <span>{budgetOk ? (guideTrip ? 'of your travel budget' : 'of your selected budget') : ''}</span>
                   <span>{fmtBudget(plan.budget_max)}</span>
                 </div>
               </div>

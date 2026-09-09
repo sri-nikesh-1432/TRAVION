@@ -328,9 +328,11 @@ def test_guide_mode_minimum_cost_uses_percentage_fee():
 
 
 def test_normalize_plan_totals_invariant_even_over_budget():
-    """A GUIDE_MODE plan that would exceed its budget must be clamped so the
-    invariant final_total == base + guide + platform holds and stays in budget
-    (regression for the old base_ceiling_for fallback that forgot the guide fee)."""
+    """GUIDE_MODE fees sit ON TOP of the travel spend: a travel spend at the
+    budget ceiling keeps its guide (12.5%) + platform (3%) fees added on top
+    and the invariant final_total == base + guide + platform always holds.
+    (Regression for the old base_ceiling_for fallback that forgot the guide fee
+    — and the on-top model with budget 10,000 → guide 1,250 → total 11,550.)"""
     from app.services.multi_plan_engine import normalize_plan_totals
 
     plan = {
@@ -344,8 +346,11 @@ def test_normalize_plan_totals_invariant_even_over_budget():
     }
     normalize_plan_totals(plan, 20000.0)
     bd = plan["cost_breakdown"]
-    assert plan["final_total"] <= 20000.0
+    assert plan["base_plan_cost"] == 20000.0  # travel spend fits the budget
+    assert bd["guide_fee"] == round(20000.0 * 0.125) == 2500.0
+    assert bd["platform_fee"] == round(20000.0 * 0.03) == 600.0
+    assert plan["final_total"] == 23100.0 == 20000.0 + 2500.0 + 600.0
     assert plan["final_total"] == plan["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
     assert bd["total"] == bd["final_total"] == plan["final_total"]
     assert bd["payable"] == bd["guide_fee"] + bd["platform_fee"]
-    assert plan["within_budget"] is True
+    assert plan["within_budget"] is True  # travel spend within budget

@@ -576,10 +576,12 @@ class AIOrchestrator:
 
         lo, hi = _budget_envelope(profile)
         travel_spend = round(transport_cost + stay_cost + food_total + activity_total, 0)
-        # Fees are %s over the travel spend and added on top, so the spend must be
-        # clamped so the TOTAL (incl. fees) never exceeds the user's maximum.
+        # Fees are %s over the travel spend and ADDED ON TOP in GUIDE_MODE
+        # (guide 12.5% + platform 3%) — the spend itself is the traveller's
+        # budget, so only ADVENTUROUS backs the 3% platform fee out of the
+        # ceiling here.
         fee_factor = 1.0 + (GUIDE_FEE_RATE if mode == "GUIDE_MODE" else 0.0) + PLATFORM_FEE_RATE
-        travel_spend = min(travel_spend, int(float(hi) / fee_factor))
+        travel_spend = min(travel_spend, int(float(hi) * (1.0 if mode == "GUIDE_MODE" else 1.0 / fee_factor)))
         guide_fee = compute_guide_fee(
             mode=mode,
             days=days,
@@ -610,7 +612,7 @@ class AIOrchestrator:
             "budget": budget,
             "budget_min": lo,
             "budget_max": hi,
-            "within_budget": total <= hi,
+            "within_budget": (travel_spend if mode == "GUIDE_MODE" else total) <= hi,
             "party_type": party,
             "headcount": pax,
             "days": days,

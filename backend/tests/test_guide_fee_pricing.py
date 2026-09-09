@@ -272,6 +272,30 @@ def test_non_guide_mode_honestly_zero_fee():
     assert co["amount"] == co["breakdown"]["platform_fee"]
 
 
+def test_guide_fee_12_5_percent_of_budget_on_top():
+    """User spec: budget ₹10,000 → guide fee = 12.5% → ₹1,250, subtotal
+    ₹11,250, platform fee 3% → ₹300, grand total ₹11,550. The fees are paid ON
+    TOP of the travel budget, never carved out of it."""
+    from app.services.multi_plan_engine import normalize_plan_totals
+
+    plan = {
+        "base_plan_cost": 10000.0,
+        "cost_breakdown": {
+            "guide_mode": True,
+            "transport": 3000.0, "stay": 4000.0, "food": 2000.0, "activities": 1000.0,
+            "guide_fee": 0.0, "platform_fee": 0.0, "final_total": 0.0, "total": 0.0,
+        },
+    }
+    normalize_plan_totals(plan, 10000.0)
+    bd = plan["cost_breakdown"]
+    assert plan["base_plan_cost"] == 10000.0
+    assert bd["guide_fee"] == 1250.0
+    assert bd["platform_fee"] == 300.0
+    assert plan["final_total"] == 11250.0 + 300.0 == 11550.0
+    assert plan["within_budget"] is True  # travel spend fits the budget
+    assert plan["remaining_budget"] == 0.0
+
+
 def test_manager_rate_endpoint_drives_assigned_guide_fee():
     # Manager token (valid access code from the auth flow)
     mgr_email = f"pricing_mgr_{datetime.now().time().microsecond}@travion.in"

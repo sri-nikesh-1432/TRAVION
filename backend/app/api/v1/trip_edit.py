@@ -886,6 +886,18 @@ def plan_multi(
             )
         db.flush()
 
+    # TRAVEL MODE persistence (single source of truth for pricing): Step-4 always
+    # records the mode the traveller planned with so every later consumer
+    # (choose-plan, itinerary edits, checkout pricing) prices the trip exactly as
+    # presented — a GUIDE_MODE trip can never silently fall back to
+    # ADVENTUROUS (guide fee ₹0) at checkout. GUIDE_MODE additionally flags the
+    # trip for guide assignment so the 12.5% guide fee is collected.
+    trip.mode = req.mode
+    if req.mode == "GUIDE_MODE":
+        trip.status = "REQUESTED"
+        if not db.query(GuideAssignment).filter(GuideAssignment.trip_id == trip.id).first():
+            db.add(GuideAssignment(trip_id=trip.id, status="REQUESTED"))
+
     base = generate_base_plan(trip, req.mode, db)
     base.setdefault("destination", trip.destination_name)
 
@@ -941,21 +953,28 @@ def plan_multi(
 
     # A single plan that still exceeds the traveller's selected maximum is an
     # unacceptable result. Reject it loudly instead of shipping an over-budget plan.
+    # In GUIDE_MODE the 12.5% guide + 3% platform fees are charged ON TOP of the
+    # travel spend, so the ceiling that must hold is the plan's base (travel) cost.
     for p in plans:
-        if float(p["final_total"]) > bmax + 0.01:
+        bd = p.get("cost_breakdown") or {}
+        comparable = float(bd.get("base_plan_cost") or p["final_total"]) if bd.get("guide_mode") else float(p["final_total"])
+        if comparable > bmax + 0.01:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"The {p['type']} plan exceeds your selected budget ceiling "
-                    f"(₹{round(float(p['final_total'])):,} > ₹{round(bmax):,}). "
+                    f"(₹{round(comparable):,} > ₹{round(bmax):,}). "
                     "This destination/duration combination genuinely costs more than your maximum. "
                     "Raise your budget, shorten the trip, or choose a closer destination."
                 ),
             )
 
     # Final itinerary validation: never trust the generator — re-verify totals.
+    # For GUIDE_MODE the travel spend (not the fee-inclusive total) must fit the budget.
     for p in plans:
-        check = validate_itinerary_budget(p["final_total"], bmax)
+        bd = p.get("cost_breakdown") or {}
+        check_total = float(bd.get("base_plan_cost") or p["final_total"]) if bd.get("guide_mode") else p["final_total"]
+        check = validate_itinerary_budget(check_total, bmax)
         if not check["valid"]:
             raise HTTPException(
                 status_code=422,
@@ -974,6 +993,11 @@ def plan_multi(
     # LIVE editing (PATCH /itinerary), not on the clean Step-4 plan cards. The
     # plan cards only carry actionable budget warnings the traveller must see.
     # (Budget over-runs are already gated above with a loud 400/422.)
+
+    # Persist the travel mode (+ GUIDE_MODE REQUESTED status/assignment) so
+    # every later request — choose-plan, itinerary edits, checkout pricing —
+    # prices this trip exactly as the traveller planned it.
+    db.commit()
 
     budget_mode = verdict.get("budget_status") == "restricted" or constraints.get("tier") in ("extremely_low", "very_low", "low")
     return [
@@ -1045,7 +1069,14 @@ def choose_plan(
     normalize_plan_totals(chosen, env["max"])
 
     itin = _persist_version(db, trip, chosen["days"], chosen["total_cost"], chosen["cost_breakdown"])
-    trip.status = "PLANNED"
+    if (trip.mode or "") == "GUIDE_MODE":
+        # Guided trips stay flagged for guide assignment: the 12.5% guide fee is
+        # part of the booking and checkout must price the trip as GUIDE_MODE.
+        trip.status = "REQUESTED"
+        if not db.query(GuideAssignment).filter(GuideAssignment.trip_id == trip.id).first():
+            db.add(GuideAssignment(trip_id=trip.id, status="REQUESTED"))
+    else:
+        trip.status = "PLANNED"
     _log_change(
         db, trip, itin.version, "plan_selected",
         f"Selected the {req.plan_type.title()} plan",
@@ -1582,11 +1613,21 @@ def confirm_plan(
     valid = bool(not missing)
     version = itin.version or 0
     total_cost = float(itin.total_cost or 0)
+    bd = itin.cost_breakdown or {}
     if valid:
-        message = (
-            f"Your plan (v{version}) is validated and ready for payment at "
-            f"₹{round(total_cost):,} — within your ₹{round(bmax):,} budget."
-        )
+        if bd.get("guide_mode"):
+            spend = float(bd.get("base_plan_cost") or bd.get("travel_spend") or 0)
+            message = (
+                f"Your plan (v{version}) is validated and ready for payment. "
+                f"Travel cost ₹{round(spend):,} fits your ₹{round(bmax):,} travel budget; "
+                f"the 12.5% guide fee and 3% platform fee are added on top at checkout "
+                f"(total ₹{round(total_cost):,})."
+            )
+        else:
+            message = (
+                f"Your plan (v{version}) is validated and ready for payment at "
+                f"₹{round(total_cost):,} — within your ₹{round(bmax):,} budget."
+            )
     else:
         message = "Your plan still needs final edits before payment."
     return ConfirmPlanResponse(

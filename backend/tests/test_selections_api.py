@@ -147,6 +147,18 @@ def test_map_places_counts_are_real():
     # Recommended buckets always exist (verified local data) as real pins.
     assert body["map_counts"]["must_visit"] == len(body["map_places"]["must_visit"])
 
+    # THE MAP SHOWS EVERY real candidate: counts exposed must exactly equal the
+    # arrays plotted, and every plotted pin must carry real coordinates.
+    for cat in ("must_visit", "activities", "food", "stays"):
+        assert cat in body["map_places"], f"map must return a {cat} layer"
+        arr = body["map_places"][cat]
+        assert body["map_counts_full"][cat] == len(arr), f"{cat} full-pool mismatch"
+        assert arr, f"map must never ship an empty {cat} pool"
+        for item in arr:
+            assert float(item.get("latitude") or 0) and float(item.get("longitude") or 0), (
+                f"every plotted {cat} pin needs real coordinates: {item.get('name')}"
+            )
+
 
 def test_place_details_resolves_and_tracks_selection_status():
     trip_id, headers = _build_trip()

@@ -159,6 +159,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const hasFitRef = useRef(false);
 
   useEffect(() => {
+    // The map container only mounts once `catalog` is populated (the discovery
+    // section renders conditionally), so the init must retry when it appears —
+    // an empty-deps effect would run before the div exists and leave a blank map.
     if (!mapDiv.current || mapRef.current) return;
     const map = L.map(mapDiv.current, {
       center: [20.5937, 78.9629],
@@ -171,13 +174,18 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     }).addTo(map);
     mapRef.current = map;
     layerRef.current = L.layerGroup().addTo(map);
+    // The container may already be displayed when created; invalidate so
+    // Leaflet measures the real size instead of 0×0.
+    requestAnimationFrame(() => {
+      if (mapRef.current) map.invalidateSize();
+    });
     return () => {
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
       hasFitRef.current = false;
     };
-  }, []);
+  }, [catalog]);
 
   const mapFilterCount = useMemo(() => {
     if (!mapData) return {};

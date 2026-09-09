@@ -113,6 +113,7 @@ export interface CostBreakdown {
   destination?: string;
   days?: number;
   nights?: number;
+  guide_mode?: boolean;
 }
 
 export interface TripAssignment {
