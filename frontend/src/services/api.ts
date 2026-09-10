@@ -5,6 +5,7 @@ import {
   ItineraryChangeResponse, ExplorePlace, DestinationCatalog, MapPlacesPayload,
   SelectedPlaceItem, SelectedFoodItem, SelectedStay, TripEventItem,
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
+  GeoTileUrl, GeoViewportPayload,
 } from '../types';
 
 const API_BASE_URL =
@@ -207,10 +208,21 @@ export const api = {
       body: JSON.stringify({ items, replace }),
     }),
 
-  // Date-relevant live events for the destination + travel dates. An empty list
+  //  Date-relevant live events for the destination + travel dates. An empty list
   // means no provider is configured / nothing real matched — never fake data.
   getTripEvents: (tripId: string) =>
     request<{ destination: string; provider: string; events: TripEventItem[] }>(`/trips/${tripId}/events`),
+
+  // ── GeoApify server-side proxy — the API key stays in the backend ──
+  // Tile layer for the interactive map (GeoApify basemap, Travion-styled).
+  getTileUrl: () =>
+    request<GeoTileUrl>('/geo/tile-url'),
+
+  // Viewport-based map loading (spec §30): real POIs for the visible map area
+  // across every Travion category — attractions, food, stays, worship, shopping,
+  // healthcare, transport. Debounced on pan/zoom by the discovery map.
+  getViewportPlaces: (bbox: { south: number; west: number; north: number; east: number }, limit = 100) =>
+    request<GeoViewportPayload>(`/geo/viewport-places?bbox=${bbox.south},${bbox.west},${bbox.north},${bbox.east}&limit=${limit}`),
 
   // Multi-plan: exactly 3 budget-clamped options built around the user's selections
   planMulti: (

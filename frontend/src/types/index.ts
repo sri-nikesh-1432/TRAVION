@@ -381,6 +381,30 @@ export interface MapPlacesPayload {
   catalog_meta?: Record<string, { requested: number; available: number; status: string; note: string }>;
 }
 
+// ── GeoApify server-side proxy (/geo/*) — the key NEVER reaches the browser ──
+export interface GeoTileUrl {
+  url: string;
+  attribution: string;
+}
+
+export interface GeoViewportPlace {
+  place_id: string | null;
+  name: string;
+  categories: string[];
+  formatted: string | null;
+  lat: number;
+  lng: number;
+  opening_hours: string | null;
+  website: string | null;
+  source: string;
+}
+
+export interface GeoViewportPayload {
+  count: number;
+  places: GeoViewportPlace[];
+  bbox: { south: number; west: number; north: number; east: number };
+}
+
 export interface ExplorePlace {
   name: string;
   category: string;
