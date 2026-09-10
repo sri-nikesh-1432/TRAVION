@@ -193,6 +193,6 @@ def test_plan_multi_guide_mode_checkout_collects_guide_fee_on_top():
     assert abs(pr["guide_fee"] - round(float(pr["travel_spend"]) * 0.125)) <= 1
     assert pr["amount_payable"] == pr["guide_fee"] + pr["platform_fee"]
 
-    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay"})
+    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay", "non_refundable_acknowledged": True})
     assert co.status_code == 200, co.text
     assert co.json()["amount"] == pr["amount_payable"]

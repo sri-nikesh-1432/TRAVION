@@ -89,6 +89,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [checkoutData, setCheckoutData] = useState<any>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentNote, setPaymentNote] = useState<string | null>(null);
+  // §20 non-refundable acknowledgement — must be checked before Confirm & Pay.
+  const [nonRefundableAcknowledged, setNonRefundableAcknowledged] = useState(false);
+  // Authoritative pricing preview shown while the popup opens (order created
+  // only after the acknowledgement is checked).
+  const [pricingSummary, setPricingSummary] = useState<{ travel_spend: number; guide_fee: number; platform_fee: number; amount_payable: number; guide_required: boolean; guide_assigned: boolean; breakdown: Record<string, any> } | null>(null);
   const [navigatingStop, setNavigatingStop] = useState<ItineraryStop | null>(null);
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
@@ -356,15 +361,28 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // Planner → payment: only reachable after the backend validates (confirm=valid).
+  // Planner → payment: opens the confirmation popup. §20: the order is only
+  // created after the traveller checks the non-refundable acknowledgement in
+  // the popup itself — the backend independently enforces the same rule.
   const handlePlannerProceedToPayment = async () => {
     if (!activeTrip) return;
+    setNonRefundableAcknowledged(false);
+    setPaymentNote(null);
+    setCheckoutData(null); // always create a FRESH order on confirmation
+    setShowCheckoutModal(true);
     try {
-      const checkout = await api.checkoutTrip(activeTrip.id);
-      setCheckoutData(checkout);
-      setShowCheckoutModal(true);
-      setCurrentView('planner');
+      const pricing = await api.getTripPricing(activeTrip.id);
+      setPricingSummary({
+        travel_spend: pricing.travel_spend,
+        guide_fee: pricing.guide_fee,
+        platform_fee: pricing.platform_fee,
+        amount_payable: pricing.amount_payable,
+        guide_required: pricing.guide_required,
+        guide_assigned: pricing.guide_assigned,
+        breakdown: pricing.breakdown || {},
+      });
     } catch (err) {
+      setShowCheckoutModal(false);
       setPlanError(getPlanErrorMessage(err));
     }
   };
@@ -379,23 +397,34 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // Live checkout = genuine Razorpay test-mode order (real keys configured & reachable).
   // If the SDK/API is unavailable, gracefully falls back to the verified simulation flow.
   const handleExecutePayment = async () => {
-    if (!activeTrip || !checkoutData) return;
+    if (!activeTrip) return;
+    // §20 hard rule: payment confirmation is impossible until the checkbox
+    // is checked. The backend rejects the order for the same reason.
+    if (!nonRefundableAcknowledged) {
+      setPaymentNote("Please accept the non-refundable acknowledgement before confirming payment.");
+      return;
+    }
     setPaymentNote(null);
     setIsProcessingPayment(true);
 
     try {
-      const canDoLive = checkoutData.live_checkout === true;
+      // Order creation happens here — only after the acknowledgement is
+      // checked — so the stored transaction carries proof of acceptance.
+      const checkout = checkoutData ?? await api.checkoutTrip(activeTrip.id, true);
+      setCheckoutData(checkout);
+
+      const canDoLive = checkout.live_checkout === true;
       const sdkReady = canDoLive ? await loadRazorpayScript() : false;
 
       if (canDoLive && sdkReady && window.Razorpay) {
         await new Promise<void>((resolve, reject) => {
           const rzp = new window.Razorpay({
-            key: checkoutData.key_id,
-            amount: Math.round(checkoutData.amount * 100),
-            currency: checkoutData.currency || 'INR',
+            key: checkout.key_id,
+            amount: Math.round(checkout.amount * 100),
+            currency: checkout.currency || 'INR',
             name: 'Travion',
             description: `${activeTrip.source_name} to ${activeTrip.destination_name} trip`,
-            order_id: checkoutData.order_id,
+            order_id: checkout.order_id,
             prefill: { email: session.email },
             theme: { color: '#0284c7' },
             handler: async (response: any) => {
@@ -419,7 +448,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       } else {
         // Simulated fallback — same server-side signature-verified flow
         await api.verifyPaymentWebhook({
-          razorpay_order_id: checkoutData.order_id,
+          razorpay_order_id: checkout.order_id,
           razorpay_payment_id: `pay_${Date.now()}`,
           razorpay_signature: `sim_sig_verified_${Date.now()}`
         });
@@ -491,6 +520,35 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       onClick: () => setShowReviewModal(true)
     }
   ];
+
+  // Unified checkout-display values: the popup shows the authoritative pricing
+  // summary the moment it opens, then the real Razorpay order once created.
+  // Both sources are backend truth — the same numbers checkout stores.
+  const checkoutView = checkoutData
+    ? {
+        live: !!checkoutData.live_checkout,
+        transport: Number(checkoutData.breakdown?.transport || 0),
+        stay: Number(checkoutData.breakdown?.stay || 0),
+        food: Number(checkoutData.breakdown?.food || 0),
+        activities: Number(checkoutData.breakdown?.activities || 0),
+        travelSpend: Number(checkoutData.breakdown?.travel_spend ?? pricingSummary?.travel_spend ?? 0),
+        guideFee: Number(checkoutData.breakdown?.guide_fee || 0),
+        platformFee: Number(checkoutData.breakdown?.platform_fee || 0),
+        payable: Number(checkoutData.amount || 0),
+      }
+    : pricingSummary
+      ? {
+          live: false,
+          transport: Number(pricingSummary.breakdown?.transport || 0),
+          stay: Number(pricingSummary.breakdown?.stay || 0),
+          food: Number(pricingSummary.breakdown?.food || 0),
+          activities: Number(pricingSummary.breakdown?.activities || 0),
+          travelSpend: Number(pricingSummary.travel_spend || 0),
+          guideFee: Number(pricingSummary.guide_fee || 0),
+          platformFee: Number(pricingSummary.platform_fee || 0),
+          payable: Number(pricingSummary.amount_payable || 0),
+        }
+      : null;
 
   return (
     <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
@@ -925,9 +983,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Transparent Checkout & Payment Split Modal */}
+      {/* Transparent Checkout & Payment Split Modal — §20: the non-refundable
+          acknowledgement checkbox lives HERE, and Confirm & Pay stays disabled
+          until it is checked. The order is created only on confirmation. */}
       <AnimatePresence>
-        {showCheckoutModal && checkoutData && (
+        {showCheckoutModal && (checkoutData || pricingSummary) && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -941,7 +1001,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <h3 className="text-lg font-bold text-slate-900">Transparent Checkout</h3>
                 </div>
                 <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-travion-100 text-travion-700">
-                  {checkoutData.live_checkout ? 'Razorpay · Test Mode' : 'Razorpay Verified'}
+                  {checkoutData?.live_checkout ? 'Razorpay · Test Mode' : 'Razorpay Verified'}
                 </span>
               </div>
 
@@ -954,10 +1014,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 </div>
                 <div className="space-y-2 text-xs text-slate-700 font-medium">
                   {[
-                    { icon: TrainFront, color: '#0284c7', label: 'Transport (round trip)', value: checkoutData.breakdown.transport },
-                    { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: checkoutData.breakdown.stay },
-                    { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: checkoutData.breakdown.food },
-                    { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: checkoutData.breakdown.activities }
+                    { icon: TrainFront, color: '#0284c7', label: 'Transport (round trip)', value: checkoutView!.transport },
+                    { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: checkoutView!.stay },
+                    { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: checkoutView!.food },
+                    { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: checkoutView!.activities }
                   ].map((row) => (
                     <div key={row.label} className="flex justify-between py-1 border-b border-slate-100">
                       <span className="flex items-center gap-2">
@@ -971,7 +1031,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   ))}
                   <div className="flex justify-between pt-1 text-[11px] text-slate-500">
                     <span>Travel spend estimate</span>
-                    <span className="font-bold">₹{checkoutData.breakdown.travel_spend?.toLocaleString?.() ?? checkoutData.breakdown.total.toLocaleString()}</span>
+                    <span className="font-bold">₹{checkoutView!.travelSpend.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -988,46 +1048,75 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                       <Compass className="w-3.5 h-3.5" />
                       <span>Guide fee</span>
                     </span>
-                    <span className="font-bold">₹{(Number(checkoutData.breakdown.guide_fee || 0)).toLocaleString()}</span>
+                    <span className="font-bold">₹{checkoutView!.guideFee.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
                     <span className="font-semibold flex items-center gap-1.5">
                       <BadgeCheck className="w-3.5 h-3.5" />
                       <span>Travion platform fee</span>
                     </span>
-                    <span className="font-bold">₹{checkoutData.breakdown.platform_fee.toLocaleString()}</span>
+                    <span className="font-bold">₹{checkoutView!.platformFee.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
                     <span>Amount payable to Travion</span>
-                    <span className="text-travion-700">₹{checkoutData.amount.toLocaleString()}</span>
+                    <span className="text-travion-700">₹{checkoutView!.payable.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-6 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-                Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects {Number(checkoutData.breakdown.guide_fee || 0) > 0 ? 'only the guide and platform fees shown above' : 'only the platform fee shown above — on this trip no guide fee applies (no verified guide is assigned)'} — never your full travel budget.
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-4 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
+                Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects {checkoutView!.guideFee > 0 ? 'only the guide and platform fees shown above' : 'only the platform fee shown above — on this trip no guide fee applies (no verified guide is assigned)'} — never your full travel budget.
               </p>
+
+              {/* §20 — Non-refundable acknowledgement: MANDATORY before Confirm & Pay.
+                  The pay button stays disabled until this box is checked, and the
+                  backend independently refuses the order without it. */}
+              <label
+                htmlFor="non-refundable-ack"
+                className={`flex items-start gap-3 mb-5 p-3.5 rounded-2xl border cursor-pointer select-none transition-colors ${
+                  nonRefundableAcknowledged
+                    ? 'border-travion-300 bg-travion-50/60'
+                    : paymentNote && !nonRefundableAcknowledged
+                      ? 'border-amber-300 bg-amber-50/50'
+                      : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+                }`}
+              >
+                <input
+                  id="non-refundable-ack"
+                  type="checkbox"
+                  checked={nonRefundableAcknowledged}
+                  onChange={(e) => {
+                    setNonRefundableAcknowledged(e.target.checked);
+                    if (e.target.checked) setPaymentNote(null);
+                  }}
+                  className="mt-0.5 w-[18px] h-[18px] shrink-0 accent-travion-600 cursor-pointer"
+                />
+                <span className="text-[11.5px] leading-relaxed text-slate-700 font-medium">
+                  I understand that the applicable fee paid is <span className="font-bold text-slate-900">non-refundable</span> if a guide has not yet been assigned and the trip plan has not yet become active.
+                </span>
+              </label>
 
               <button
                 type="button"
                 onClick={handleExecutePayment}
-                disabled={isProcessingPayment}
-                className="w-full py-3.5 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-black text-sm shadow-md hover:shadow-soft transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={isProcessingPayment || !nonRefundableAcknowledged}
+                title={nonRefundableAcknowledged ? undefined : "Please accept the non-refundable acknowledgement first"}
+                className="w-full py-3.5 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-black text-sm shadow-md hover:shadow-soft transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isProcessingPayment ? (
                   <span className="flex items-center justify-center gap-2">
                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}>
                       <Compass className="w-4 h-4" />
                     </motion.div>
-                    {checkoutData.live_checkout ? "Opening Secure Checkout…" : "Verifying Signature…"}
+                    {checkoutData?.live_checkout ? "Opening Secure Checkout…" : "Verifying Signature…"}
                   </span>
-                ) : `Pay ${checkoutData.amount.toLocaleString()} · Activate Trip`}
+                ) : `Confirm & Pay ₹${checkoutView!.payable.toLocaleString()} · Activate Trip`}
               </button>
 
               <p className="text-center text-[10px] text-slate-500 font-medium mt-3 flex items-center justify-center gap-1.5">
                 <Lock className="w-3 h-3 text-emerald-500" />
                 <span>
-                  {checkoutData.live_checkout
+                  {checkoutData?.live_checkout
                     ? 'Secure Razorpay test mode — UPI, cards and netbanking supported'
                     : 'Verified sandbox verification flow — no real charge is created'}
                 </span>
@@ -1060,12 +1149,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Chat Drawer */}
+      {/* Chat Drawer — guide chat opens only when a guide is REALLY assigned
+          (spec §26); trip status alone never unlocks it. */}
       <TripChatDrawer
         tripId={activeTrip?.id || ""}
         isOpen={showChatDrawer}
         onClose={() => setShowChatDrawer(false)}
-        isGuideAssigned={activeTrip?.status === 'GUIDE_ASSIGNED' || activeTrip?.status === 'ACTIVE'}
+        isGuideAssigned={!!assignedGuide || activeTrip?.status === 'GUIDE_ASSIGNED'}
         assignedGuideName={assignedGuide?.name || ''}
         onTriggerReplan={() => handleTriggerReplan('TIREDNESS')}
         currentPosition={livePosition}

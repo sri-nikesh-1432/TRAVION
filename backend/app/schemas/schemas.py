@@ -297,6 +297,9 @@ class GuideRateUpdateRequest(BaseModel):
 # --- Payment & Razorpay ---
 class CheckoutRequest(BaseModel):
     payment_method: Optional[str] = "razorpay"
+    # §20: the non-refundable acknowledgement MUST be accepted before payment.
+    # Server-enforced so direct API calls cannot bypass the checkbox.
+    non_refundable_acknowledged: bool = False
 
 class CheckoutResponse(BaseModel):
     order_id: str

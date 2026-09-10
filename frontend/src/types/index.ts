@@ -92,10 +92,24 @@ export interface ItineraryStop {
   };
 }
 
+// Real GeoApify road leg between two consecutive stops of a day (additive
+// overlay from the backend — never straight-line unless clearly flagged).
+export interface ItineraryRouteLeg {
+  from: string;
+  to: string;
+  distance_km: number;
+  duration_min: number;
+  mode: string;
+  source: string; // geoapify_routematrix | geoapify_routing | estimate_haversine
+}
+
 export interface ItineraryDay {
   day: number;
   title: string;
   stops: ItineraryStop[];
+  routes?: ItineraryRouteLeg[];
+  route_distance_km?: number;
+  route_duration_min?: number;
 }
 
 export interface CostBreakdown {
@@ -114,6 +128,8 @@ export interface CostBreakdown {
   days?: number;
   nights?: number;
   guide_mode?: boolean;
+  route_distance_km?: number;
+  route_source?: string;
 }
 
 export interface TripAssignment {

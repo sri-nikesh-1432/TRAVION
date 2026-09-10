@@ -219,9 +219,11 @@ def test_full_user_trip_flow():
     assert plan["total_cost"] > 0
     assert len(plan["days"]) >= 2
 
-    # Checkout & Razorpay split
+    # Checkout & Razorpay split — §20: the order is refused until the
+    # non-refundable acknowledgement is accepted.
     checkout_res = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={
-        "payment_method": "razorpay"
+        "payment_method": "razorpay",
+        "non_refundable_acknowledged": True,
     })
     assert checkout_res.status_code == 200
     order_data = checkout_res.json()
@@ -341,7 +343,9 @@ def test_admin_dual_revenue():
         "mode": "ADVENTUROUS_MODE",
         "consent_acknowledged": True,
     }).json()
-    checkout = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=uheaders, json={}).json()
+    checkout = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=uheaders, json={
+        "non_refundable_acknowledged": True,
+    }).json()
     client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": checkout["order_id"],
         "razorpay_payment_id": "pay_revseed",
@@ -356,3 +360,128 @@ def test_admin_dual_revenue():
     assert "total_guide_fees_payout" in data
     # Verify strict separation
     assert data["actual_platform_revenue"] != data["total_platform_transactions"]
+
+
+def test_non_refundable_acknowledgement_is_mandatory_and_stored():
+    """Spec §20: checkout must be REFUSED without the non-refundable
+    acknowledgement, and the acceptance must be stored with the payment."""
+    user_email = f"ack_user_{datetime.now().timestamp()}@test.com"
+    s = client.post("/api/v1/auth/signup", json={
+        "email": user_email,
+        "password": "Password123!",
+        "role": "USER",
+        "first_name": "Ack",
+        "last_name": "Test",
+        "phone": "+919876543210"
+    })
+    headers = {"Authorization": f"Bearer {s.json()['access_token']}"}
+
+    locs = client.get("/api/v1/locations/all", headers=headers).json()
+    src = next(l for l in locs if l["name"] == "Bangalore")
+    dst = next(l for l in locs if l["name"] == "Ooty")
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=headers, json={
+        "source_location_id": src["id"],
+        "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=15)).isoformat(),
+        "end_datetime": (now + timedelta(days=18)).isoformat(),
+    }).json()
+    client.post(f"/api/v1/trips/{trip['id']}/discovery/next", headers=headers, json={
+        "answers_so_far": {
+            "budget": "₹15,000 - ₹25,000",
+            "party": "Solo",
+            "experience": ["Nature"],
+        }
+    })
+    client.post(f"/api/v1/trips/{trip['id']}/plan", headers=headers, json={
+        "mode": "ADVENTUROUS_MODE",
+        "consent_acknowledged": True,
+    })
+
+    # 1. Missing acknowledgement → order creation is refused outright.
+    no_ack = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=headers, json={
+        "payment_method": "razorpay",
+        "non_refundable_acknowledged": False,
+    })
+    assert no_ack.status_code == 400
+    assert "non-refundable" in no_ack.json()["detail"].lower()
+
+    # 2. With the acknowledgement the order is created...
+    ok = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=headers, json={
+        "payment_method": "razorpay",
+        "non_refundable_acknowledged": True,
+    })
+    assert ok.status_code == 200
+
+    # 3. ...and the acceptance is stored ON the payment record.
+    from app.models.entities import Payment as PaymentModel
+    db = SessionLocal()
+    try:
+        p = db.query(PaymentModel).filter(PaymentModel.trip_id == trip["id"]).first()
+        assert p is not None
+        assert p.non_refundable_acknowledged is True
+        assert p.acknowledged_at is not None
+    finally:
+        db.close()
+
+
+def test_guide_chat_locked_until_guide_actually_assigned():
+    """Spec §26/§28: an ACTIVE trip without an accepted/confirmed guide
+    assignment must NOT expose the guide channel to the traveller."""
+    user_email = f"chat_user_{datetime.now().timestamp()}@test.com"
+    s = client.post("/api/v1/auth/signup", json={
+        "email": user_email,
+        "password": "Password123!",
+        "role": "USER",
+        "first_name": "Chat",
+        "last_name": "Test",
+        "phone": "+919876543210"
+    })
+    headers = {"Authorization": f"Bearer {s.json()['access_token']}"}
+
+    locs = client.get("/api/v1/locations/all", headers=headers).json()
+    src = next(l for l in locs if l["name"] == "Bangalore")
+    dst = next(l for l in locs if l["name"] == "Ooty")
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=headers, json={
+        "source_location_id": src["id"],
+        "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=20)).isoformat(),
+        "end_datetime": (now + timedelta(days=23)).isoformat(),
+    }).json()
+    trip_id = trip["id"]
+    client.post(f"/api/v1/trips/{trip_id}/discovery/next", headers=headers, json={
+        "answers_so_far": {
+            "budget": "₹15,000 - ₹25,000",
+            "party": "Solo",
+            "experience": ["Nature"],
+        }
+    })
+    client.post(f"/api/v1/trips/{trip_id}/plan", headers=headers, json={
+        "mode": "ADVENTUROUS_MODE",
+        "consent_acknowledged": True,
+    })
+    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={
+        "payment_method": "razorpay",
+        "non_refundable_acknowledged": True,
+    }).json()
+    wh = client.post("/api/v1/payments/webhook", json={
+        "razorpay_order_id": co["order_id"],
+        "razorpay_payment_id": "pay_chatlock",
+        "razorpay_signature": "sim_sig_verified_123",
+    })
+    assert wh.status_code == 200  # trip is now ACTIVE
+
+    # AI channel still works for the traveller...
+    ai_res = client.get(f"/api/v1/trips/{trip_id}/chat-history?channel=AI", headers=headers)
+    assert ai_res.status_code == 200
+
+    # ...but the guide channel stays locked: payment success alone is NOT a
+    # guide assignment.
+    locked = client.get(f"/api/v1/trips/{trip_id}/chat-history?channel=GUIDE", headers=headers)
+    assert locked.status_code == 403
+    send_locked = client.post(f"/api/v1/trips/{trip_id}/chat-message", headers=headers, json={
+        "channel": "GUIDE",
+        "message": "Hello guide?",
+    })
+    assert send_locked.status_code == 403

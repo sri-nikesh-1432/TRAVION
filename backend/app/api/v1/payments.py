@@ -7,6 +7,7 @@ from app.schemas.schemas import CheckoutRequest, CheckoutResponse, PaymentWebhoo
 from app.services.payment_service import PaymentService
 from app.services.offline_service import OfflinePackageService
 from app.services.pricing_service import calculate_trip_pricing
+from app.models.entities import get_utc_now
 
 router = APIRouter(prefix="", tags=["Payments"])
 
@@ -62,6 +63,16 @@ def create_trip_checkout(
     if not itinerary:
         raise HTTPException(status_code=400, detail="Active itinerary required before checkout")
 
+    # §20 hard gate: the traveller must have accepted the non-refundable
+    # acknowledgement BEFORE payment can even be prepared. Stored with the
+    # transaction record so the order itself carries proof of acceptance.
+    if not req.non_refundable_acknowledged:
+        raise HTTPException(
+            status_code=400,
+            detail="Please accept the non-refundable acknowledgement before confirming payment.",
+        )
+    acknowledged_at = get_utc_now()
+
     # Server-side truth: THE authoritative backend pricing (never client input).
     pricing = calculate_trip_pricing(**_pricing_context(trip, itinerary, db))
     payable = float(pricing["amount_payable"])
@@ -82,7 +93,9 @@ def create_trip_checkout(
             razorpay_order_id=order_info["order_id"],
             status="PENDING",
             total_amount=payable,
-            currency="INR"
+            currency="INR",
+            non_refundable_acknowledged=bool(req.non_refundable_acknowledged),
+            acknowledged_at=acknowledged_at,
         )
         db.add(payment)
         db.flush()
@@ -90,6 +103,8 @@ def create_trip_checkout(
         payment.razorpay_order_id = order_info["order_id"]
         payment.total_amount = payable
         payment.status = "PENDING"
+        payment.non_refundable_acknowledged = bool(req.non_refundable_acknowledged)
+        payment.acknowledged_at = acknowledged_at
 
     # Persist the authoritative fee SNAPSHOT at order time (not only after
     # success) so the transaction record always carries the exact

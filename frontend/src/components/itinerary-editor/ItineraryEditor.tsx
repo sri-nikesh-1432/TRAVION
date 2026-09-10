@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
-  GripVertical, Trash2, Plus, CalendarDays, Clock, Sparkles, X, Check, Compass,
+  GripVertical, Trash2, Plus, CalendarDays, Clock, Sparkles, X, Check, Compass, Route,
 } from 'lucide-react';
 import { TripItinerary, ItineraryDay, ExplorePlace } from '../../types';
 import { api } from '../../services/api';
@@ -107,6 +107,12 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
 
   const days: ItineraryDay[] = [...itinerary.days].sort((a, b) => a.day - b.day);
 
+  // Real road facts from the backend GeoApify overlay (additive; absent when
+  // routing is unavailable — nothing is ever invented).
+  const totalRoadKm = Number(itinerary.cost_breakdown?.route_distance_km)
+    || days.reduce((sum, d) => sum + (Number(d.route_distance_km) || 0), 0);
+  const hasRouteFacts = totalRoadKm > 0 || days.some((d) => (d.routes?.length ?? 0) > 0);
+
   return (
     <div className="relative">
       {/* Budget bar */}
@@ -121,6 +127,11 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
             {remaining != null && (
               <span className={`text-[13px] font-bold ${remaining >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 · {remaining >= 0 ? `${inr(remaining)} left` : `${inr(-remaining)} over`}
+              </span>
+            )}
+            {hasRouteFacts && totalRoadKm > 0 && (
+              <span className="text-[13px] font-bold text-travion-700" title="Real road distance between the planned stops (GeoApify)">
+                · <Route className="w-3.5 h-3.5 inline -mt-0.5" /> {totalRoadKm.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km total road distance
               </span>
             )}
           </p>
@@ -184,6 +195,19 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
                 <p className="text-[11px] font-semibold text-slate-400 truncate">{day.title}</p>
               </div>
             </div>
+
+            {(day.routes?.length ?? 0) > 0 && (
+              <div className="mb-2 px-3 py-2 rounded-2xl bg-slate-50 border border-slate-100">
+                <p className="text-[10.5px] font-bold text-slate-500 flex items-center gap-1.5 flex-wrap">
+                  <Route className="w-3.5 h-3.5 text-travion-600 shrink-0" />
+                  <span className="text-travion-700">
+                    {(Number(day.route_distance_km) || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km
+                    {Number(day.route_duration_min) > 0 && <> · ~{Math.round(Number(day.route_duration_min) / 6) / 10} h on the road</>}
+                  </span>
+                  <span className="text-slate-400 font-semibold">real road legs</span>
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               {(day.stops || []).map((stop) => (

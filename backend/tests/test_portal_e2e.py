@@ -149,7 +149,7 @@ def _user_trip_via_plan(headers, mode: str = "GUIDE_MODE") -> str:
 
 
 def _pay(headers, trip_id) -> dict:
-    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay"})
+    co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay", "non_refundable_acknowledged": True})
     assert co.status_code == 200, co.text
     order = co.json()
     assert order["amount"] > 0

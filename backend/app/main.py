@@ -41,6 +41,7 @@ def _ensure_runtime_columns():
         "chat_messages": {"lat": "FLOAT", "lng": "FLOAT"},
         "trip_profiles": {"selected_stay": "JSON"},
         "guides": {"rate_per_day": "FLOAT"},
+        "payments": {"non_refundable_acknowledged": "BOOLEAN", "acknowledged_at": "DATETIME"},
     }
     try:
         inspector = inspect(engine)

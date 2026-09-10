@@ -54,6 +54,21 @@ def _authorize_chat_access(db: Session, trip: Trip, current: dict, channel: str)
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only access the chat of your own trip."
             )
+        if channel == "GUIDE":
+            # Guide chat is ONLY the traveller <-> assigned-guide thread. A trip
+            # status alone must never unlock it (spec §26/§28): ACTIVE/PAID just
+            # means payment succeeded — a real ACCEPTED/CONFIRMED guide
+            # assignment is additionally required before this channel opens.
+            assignment = db.query(GuideAssignment).filter(
+                GuideAssignment.trip_id == trip.id,
+                GuideAssignment.guide_id.isnot(None),
+                GuideAssignment.status.in_(["ACCEPTED", "CONFIRMED"]),
+            ).first()
+            if not assignment:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Guide chat unlocks once a guide has actually been assigned and has accepted your trip.",
+                )
         return
 
     if role == "GUIDE":

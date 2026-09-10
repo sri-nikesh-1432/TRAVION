@@ -216,6 +216,10 @@ class Payment(Base):
     status = Column(String(50), default="PENDING")  # PENDING, SUCCESS, FAILED
     total_amount = Column(Float, nullable=False)
     currency = Column(String(10), default="INR")
+    # §20 non-refundable acknowledgement: stored WITH the transaction record so
+    # every payment can prove the traveller accepted the policy before paying.
+    non_refundable_acknowledged = Column(Boolean, default=False, nullable=False)
+    acknowledged_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
     trip = relationship("Trip", back_populates="payment")

@@ -99,7 +99,7 @@ def _pricing(trip_id, headers):
 
 
 def _checkout(trip_id, headers):
-    res = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay"})
+    res = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay", "non_refundable_acknowledged": True})
     assert res.status_code == 200, res.text
     return res.json()
 
