@@ -198,6 +198,73 @@ def places_endpoint(
     return {"count": len(out), "places": out, "region": region, "categories": cats}
 
 
+@router.get("/viewport-places")
+def viewport_places_endpoint(
+    bbox: str = Query(..., description="Visible map area 'south,west,north,east' in degrees"),
+    experience: Optional[str] = Query(None, max_length=40),
+    categories: Optional[str] = Query(None, max_length=300),
+    limit: int = Query(80, ge=1, le=100),
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+):
+    """Viewport-based map loading (spec §30): the map asks for the POIs of the
+    area actually on screen. Accepts ANY visible rectangle (south,west,north,
+    east), converts it to a GeoApify rect filter server-side, and returns
+    classified, deduplicated real places. Category paging: `offset` style
+    fetches are avoided by requesting a generous batch per viewport move."""
+    _rate_limit("viewport", str(current.get("identity_id")), 60)
+    try:
+        parts = [float(p) for p in str(bbox).split(",")]
+        if len(parts) != 4:
+            raise ValueError
+        south, west, north, east = parts
+        if not (-90 <= south < north <= 90 and -180 <= west < east <= 180):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bbox must be 'south,west,north,east' numeric degrees")
+    if categories:
+        cats = [c.strip() for c in _clean(categories, 300).split(",") if c.strip()]
+        for c in cats:
+            if not c.startswith(_VALID_PREFIXES):
+                raise HTTPException(status_code=400, detail=f"Unsupported category: {c}")
+    else:
+        cats = list(dict.fromkeys(
+            geo.BASE_CATEGORIES["must_visit"] + geo.BASE_CATEGORIES["food"]
+            + geo.BASE_CATEGORIES["stays"] + geo.BASE_CATEGORIES["activities"]
+            + geo.EXPERIENCE_CATEGORIES.get(str(experience or "mixed").strip().lower(), [])
+            + ["commercial.marketplace", "commercial.shopping_mall", "healthcare.hospital",
+               "public_transport"]  # parent category — subcategories like
+            # public_transport.railway/aerodrome are NOT in this key's plan
+            # (provider 400s the whole batched request when one category is invalid)
+        ))
+    region = geo.rect_filter(south, west, north, east)
+    features = geo.places(cats, region, limit=limit)
+    out: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+    for f in features:
+        p = f.get("properties") or {}
+        name = str(p.get("name") or "").strip()
+        if not name or p.get("lat") is None:
+            continue
+        pid = str(p.get("place_id") or "")
+        key = pid or f"{round(float(p['lat']), 4)}:{round(float(p['lon']), 4)}:{name.lower()}"
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
+        cats_prop = p.get("categories") or []
+        out.append({
+            "place_id": pid or None,
+            "name": name,
+            "categories": cats_prop,
+            "formatted": p.get("formatted"),
+            "lat": p.get("lat"),
+            "lng": p.get("lon"),
+            "opening_hours": p.get("opening_hours"),
+            "website": p.get("website"),
+            "source": "geoapify",
+        })
+    return {"count": len(out), "places": out, "bbox": {"south": south, "west": west, "north": north, "east": east}}
+
+
 # ── 4. Place details ─────────────────────────────────────────────────────────
 
 @router.get("/places/{place_id}/details")
