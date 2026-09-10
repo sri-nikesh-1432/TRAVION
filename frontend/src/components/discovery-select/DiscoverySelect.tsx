@@ -3,7 +3,10 @@ import { motion } from 'framer-motion';
 import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem } from '../../types';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem, GeoViewportPlace } from '../../types';
 import { api } from '../../services/api';
 
 interface DiscoverySelectProps {
@@ -105,6 +108,40 @@ function toPlaceItemFromMap(p: MapPlace): SelectedPlaceItem {
   };
 }
 
+// Classify a live GeoApify viewport POI into Travion's map buckets from its
+// real provider categories — tourist spots, food, stays, worship, shopping,
+// healthcare, education, transport (spec §8: every category on the map).
+function viewportBucket(vp: GeoViewportPlace): string {
+  const cats = vp.categories || [];
+  if (cats.some((c) => c.startsWith('accommodation'))) return 'stays';
+  if (cats.some((c) => c.startsWith('catering'))) return 'food';
+  if (cats.some((c) => c.startsWith('sport'))) return 'activities';
+  if (cats.some((c) => c.startsWith('commercial'))) return 'shopping';
+  if (cats.some((c) => c.startsWith('healthcare'))) return 'healthcare';
+  if (cats.some((c) => c.startsWith('education'))) return 'education';
+  if (cats.some((c) => c.startsWith('public_transport'))) return 'transport';
+  if (cats.some((c) => c.startsWith('tourism') || c.startsWith('leisure') ||
+                     c.startsWith('entertainment') || c.startsWith('religion') ||
+                     c.startsWith('natural'))) return 'must_visit';
+  return 'other';
+}
+
+function vpToMapPlace(vp: GeoViewportPlace): MapPlace {
+  return {
+    id: vp.place_id,
+    provider_place_id: vp.place_id,
+    name: vp.name,
+    category: viewportBucket(vp),
+    address: vp.formatted,
+    latitude: vp.lat,
+    longitude: vp.lng,
+    placement: 'inside',
+    source: vp.source || 'geoapify',
+    verified: true,
+    opening_hours: (vp as unknown as { opening_hours?: string | null }).opening_hours ?? null,
+  };
+}
+
 /**
  * Destination Discovery — "Choose what you want to experience".
  * Shows ONLY real verified places (each carries verified: true from the backend).
@@ -125,6 +162,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const [mapFilter, setMapFilter] = useState('all');
   const [autoSelected, setAutoSelected] = useState(false);
   const [events, setEvents] = useState<TripEventItem[]>([]);
+  // GeoApify basemap + viewport-based POI loading (spec §8/§30): the map asks
+  // the backend /geo proxy for the places actually visible, debounced on
+  // pan/zoom, clustered so large POI sets stay smooth.
+  const [viewportPlaces, setViewportPlaces] = useState<GeoViewportPlace[]>([]);
+  const [vpLoading, setVpLoading] = useState(false);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
@@ -158,7 +200,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const mapDiv = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const hasFitRef = useRef(false);
+  const tileUrlRef = useRef<string | null>(null);
+  const vpSeq = useRef(0);
+  const vpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // The map container only mounts once `catalog` is populated (the discovery
@@ -170,12 +216,36 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       zoom: 10,
       scrollWheelZoom: false,
     });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Basemap: render instantly with OSM tiles, then transparently upgrade to
+    // the GeoApify basemap once the server-side proxy answers (spec §2: the
+    // API key never reaches the browser; spec §31: graceful fallback).
+    const osmBase = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map);
+    api.getTileUrl()
+      .then((t) => {
+        tileUrlRef.current = t.url;
+        if (mapRef.current) {
+          map.removeLayer(osmBase);
+          L.tileLayer(t.url, {
+            maxZoom: 19,
+            attribution: t.attribution || '&copy; OpenStreetMap contributors &copy; GeoApify',
+          }).addTo(mapRef.current);
+        }
+      })
+      .catch(() => { /* OSM basemap stays — never a blank map */ });
     mapRef.current = map;
     layerRef.current = L.layerGroup().addTo(map);
+    // Marker clustering (spec §30): large POI sets stay smooth and readable.
+    const cluster = L.markerClusterGroup({
+      maxClusterRadius: 42,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      disableClusteringAtZoom: 16,
+    });
+    clusterRef.current = cluster;
+    map.addLayer(cluster);
     // The container may already be displayed when created; invalidate so
     // Leaflet measures the real size instead of 0×0.
     requestAnimationFrame(() => {
@@ -185,21 +255,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      clusterRef.current = null;
       hasFitRef.current = false;
     };
   }, [catalog]);
 
-  const mapFilterCount = useMemo(() => {
-    if (!mapData) return {};
-    const counts: Record<string, number> = {};
-    for (const key of MAP_KEY_ORDER) {
-      counts[key] = (mapData.map_places as Record<string, MapPlace[]>)[key]?.length ?? 0;
-    }
-    counts['all'] = MAP_KEY_ORDER.reduce((s, k) => s + counts[k], 0);
-    return counts;
-  }, [mapData]);
-
-  // Clicking a marker adds/removes it from the traveller's visit list.
   // Places/activities/swapping categories → the places set; food → the food
   // set; stays → the single selected stay. Selections flow to the planner.
   const toggleMapItem = useCallback((key: string, item: MapPlace) => {
@@ -218,12 +278,51 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     }
   }, [selected, selectedFood]);
 
+  // The FULL marker set: verified discovery dataset + live GeoApify viewport
+  // POIs (viewport-only, so the traveller can browse the whole destination
+  // region by panning — spec §8/§30).
+  const allMapPlaces = useMemo(() => {
+    const byName = new Map<string, MapPlace>();
+    const push = (key: string, item: MapPlace) => {
+      if (!item.latitude || !item.longitude) return;
+      const k = `${(item.name || '').trim().toLowerCase()}@${Number(item.latitude).toFixed(4)},${Number(item.longitude).toFixed(4)}`;
+      if (!byName.has(k)) byName.set(k, { ...item, category: key });
+    };
+    for (const key of MAP_KEY_ORDER) {
+      for (const item of (mapData?.map_places as Record<string, MapPlace[]> | undefined)?.[key] ?? []) push(key, item);
+    }
+    if (!mapData && catalog) {
+      for (const it of catalog.must_visit) push('must_visit', it as unknown as MapPlace);
+      for (const it of catalog.activities) push('activities', it as unknown as MapPlace);
+      for (const it of catalog.food) push('food', it as unknown as MapPlace);
+      for (const it of catalog.stays) push('stays', it as unknown as MapPlace);
+    }
+    for (const vp of viewportPlaces) push(viewportBucket(vp), vpToMapPlace(vp));
+    const all: Array<{ key: string; item: MapPlace }> = [];
+    for (const [, item] of byName) {
+      all.push({ key: item.category || 'other', item });
+    }
+    return all;
+  }, [mapData, catalog, viewportPlaces]);
+
+  // Filter-chip counts over the FULL merged dataset (verified discovery data
+  // + live viewport POIs), so the chips reflect what the map actually shows.
+  const mapFilterCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const key of MAP_KEY_ORDER) counts[key] = 0;
+    for (const { key } of allMapPlaces) counts[key] = (counts[key] ?? 0) + 1;
+    counts['all'] = allMapPlaces.length;
+    return counts;
+  }, [allMapPlaces]);
+
   useEffect(() => {
     if (!mapRef.current || !layerRef.current) return;
     const layer = layerRef.current;
     layer.clearLayers();
+    const cluster = clusterRef.current;
+    if (cluster) cluster.clearLayers();
     const points: L.LatLng[] = [];
-    const visible = mapPlaces.filter(({ key }) => mapFilter === 'all' || key === mapFilter);
+    const visible = allMapPlaces.filter(({ key }) => mapFilter === 'all' || key === mapFilter);
     for (const { key, item } of visible) {
       const lat = Number(item.latitude);
       const lng = Number(item.longitude);
@@ -244,9 +343,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         fillColor: active ? color : `${color}cc`,
         fillOpacity: active ? 1 : 0.75,
       });
-      marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${active ? '<br/>✓ selected' : '<br/>tap to add'}`);
+      const oh = (item as MapPlace).opening_hours;
+      marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${oh ? `<br/>🕘 ${oh}` : ''}${active ? '<br/>✓ selected' : '<br/>tap to add'}`);
       marker.on('click', () => toggleMapItem(key, item));
-      marker.addTo(layer);
+      // Clustered markers keep large POI sets smooth (spec §30); the plain
+      // layer still draws when clustering is unavailable.
+      if (cluster) marker.addTo(cluster); else marker.addTo(layer);
     }
 
     if (points.length > 0) {
@@ -257,7 +359,40 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.25), { maxZoom: 15 });
       }
     }
-  }, [mapPlaces, mapFilter, selected, selectedFood, selectedStay, toggleMapItem]);
+  }, [allMapPlaces, mapFilter, selected, selectedFood, selectedStay, toggleMapItem]);
+
+  // Viewport-based loading (spec §30): debounced fetch of real POIs for the
+  // area actually on screen — every category, from the GeoApify proxy.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    const load = () => {
+      const b = map.getBounds();
+      if (!b) return;
+      const seq = ++vpSeq.current;
+      setVpLoading(true);
+      api.getViewportPlaces({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, 100)
+        .then((r) => {
+          if (vpSeq.current === seq) setViewportPlaces(r.places || []);
+        })
+        .catch(() => { if (vpSeq.current === seq) setViewportPlaces([]); })
+        .finally(() => {
+          if (vpSeq.current === seq) setVpLoading(false);
+        });
+    };
+    const debounced = () => {
+      if (vpTimer.current) clearTimeout(vpTimer.current);
+      vpTimer.current = setTimeout(load, 700);
+    };
+    map.on('moveend', debounced);
+    // Initial load for the first fitted view (the discovery catalog fit fires
+    // right after markers land).
+    vpTimer.current = setTimeout(load, 900);
+    return () => {
+      map.off('moveend', debounced);
+      if (vpTimer.current) clearTimeout(vpTimer.current);
+    };
+  }, [catalog]);
 
   useEffect(() => {
     let alive = true;
@@ -327,9 +462,14 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     const allItems = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
     // Map places can come from broader (non-recommended) categories too; look
     // them up across the full map dataset first, then the catalog cards.
-    const allMap: Array<[string, MapPlace]> = mapData
-      ? MAP_KEY_ORDER.flatMap((k) => ((mapData.map_places as Record<string, MapPlace[]>)[k] ?? []).map((i) => [k, i] as [string, MapPlace]))
-      : [];
+    const allMap: Array<[string, MapPlace]> = [
+      ...(mapData
+        ? MAP_KEY_ORDER.flatMap((k) => ((mapData.map_places as Record<string, MapPlace[]>)[k] ?? []).map((i) => [k, i] as [string, MapPlace]))
+        : []),
+      // Live viewport POIs are first-class too: a place added from the map's
+      // panned view keeps its real coordinates in the generated plan.
+      ...viewportPlaces.map((vp) => [viewportBucket(vp), vpToMapPlace(vp)] as [string, MapPlace]),
+    ];
     const byName = new Map<string, MapPlace>();
     for (const [, i] of allMap) if (!byName.has(i.name)) byName.set(i.name, i);
     const itemBySelection = (name: string): SelectedPlaceItem => {
@@ -497,15 +637,26 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
               <div ref={mapDiv} className="h-[440px] w-full z-0 relative" />
               <p className="flex flex-wrap items-center justify-center gap-4 px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] font-bold text-slate-500">
-                {(Object.entries(COLORS) as Array<[string, string]>)
-                  .filter(([k]) => MAP_KEY_ORDER.includes(k))
-                  .map(([k, c]) => (
-                    <span key={k} className="inline-flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
-                      {MAP_LAYERS[k]?.label ?? k}
-                    </span>
-                  ))}
+                {(Object.entries(COLORS) as Array<[string, string]>).map(([k, c]) => (
+                  <span key={k} className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
+                    {MAP_LAYERS[k]?.label ?? k}
+                  </span>
+                ))}
                 <span className="text-slate-400 font-medium">Tap a marker to add it to your trip</span>
+                <span className="inline-flex items-center gap-1 text-slate-400 font-medium">
+                  {vpLoading ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-travion-500 animate-pulse inline-block" />
+                      Loading places in view…
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                      {viewportPlaces.length} live places in view · pan to explore
+                    </>
+                  )}
+                </span>
               </p>
             </div>
           </div>

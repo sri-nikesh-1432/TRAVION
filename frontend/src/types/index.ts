@@ -367,6 +367,7 @@ export interface MapPlace {
   avg_cost_for_two?: number | null;
   cuisine?: string | null;
   tier?: string | null;
+  opening_hours?: string | null;
 }
 
 export interface MapPlacesPayload {

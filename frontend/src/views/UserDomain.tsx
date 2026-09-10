@@ -683,7 +683,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     </button>
                     {!planError.available && (
                       <button
-                        onClick={() => { setPlanError(null); loadTripWorkspace(activeTrip.id, true); }}
+                        onClick={() => { setPlanError(null); if (activeTrip) loadTripWorkspace(activeTrip.id, true); }}
                         className="flex-1 h-11 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm transition-colors"
                       >
                         Try planning again
