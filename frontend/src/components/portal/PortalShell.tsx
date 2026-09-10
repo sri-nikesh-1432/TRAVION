@@ -26,19 +26,21 @@ export const PortalShell: React.FC<PortalShellProps> = ({
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const isAdmin = theme === 'admin';
-  const brandBg = isAdmin ? 'bg-slate-900' : 'bg-indigo-950';
-  const brandText = isAdmin ? 'text-white' : 'text-white';
-  const accent = isAdmin ? 'bg-travion-500' : 'bg-indigo-600';
+  const brandBg = isAdmin
+    ? 'bg-gradient-to-b from-travion-500 via-travion-600 to-travion-800'
+    : 'bg-gradient-to-b from-travion-700 via-travion-800 to-travion-900';
+  const brandText = 'text-white';
+  const accent = 'bg-gradient-to-br from-amber-200 via-beige-300 to-cognac-400';
 
   const SidebarBody = (
     <div className={`h-full flex flex-col ${brandBg}`}>
       <div className="px-5 py-5 flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-2xl ${accent} text-white flex items-center justify-center`}>
+        <div className={`w-10 h-10 rounded-2xl ${accent} text-travion-900 flex items-center justify-center shadow-floating`}>
           {isAdmin ? <ShieldCheck className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
         </div>
         <div className="min-w-0">
           <p className={`text-sm font-black tracking-tight ${brandText} truncate`}>{title}</p>
-          <p className={`text-[10px] font-bold block leading-none mt-0.5 ${isAdmin ? 'text-travion-400' : 'text-indigo-400'}`}>{subtitle}</p>
+          <p className={`text-[10px] font-bold block leading-none mt-0.5 ${isAdmin ? 'text-travion-400' : 'text-travion-400'}`}>{subtitle}</p>
         </div>
       </div>
 
@@ -58,7 +60,7 @@ export const PortalShell: React.FC<PortalShellProps> = ({
               <span className={`${isActive ? 'text-white' : 'text-slate-500'}`}>{item.icon}</span>
               <span className="flex-1 text-left truncate">{item.label}</span>
               {item.badge != null && (
-                <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[9.5px] font-black flex items-center justify-center ${isActive ? 'bg-white text-slate-900' : 'bg-slate-600 text-white'}`}>
+                <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[9.5px] font-black flex items-center justify-center ${isActive ? 'bg-white text-travion-600' : 'bg-travion-500 text-white'}`}>
                   {item.badge}
                 </span>
               )}
@@ -87,7 +89,7 @@ export const PortalShell: React.FC<PortalShellProps> = ({
   const activeLabel = nav.find((n) => n.key === active)?.label || '';
 
   return (
-    <div className="min-h-screen bg-slate-100/80">
+    <div className="min-h-screen bg-cream-50">
       {/* Desktop sidebar */}
       <aside className="hidden lg:block fixed inset-y-0 left-0 w-60 z-30">{SidebarBody}</aside>
 
@@ -96,7 +98,7 @@ export const PortalShell: React.FC<PortalShellProps> = ({
         {mobileOpen && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" />
+              onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-travion-900/40 lg:hidden" />
             <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
               transition={{ type: 'tween', duration: 0.25 }}
               className="fixed inset-y-0 left-0 w-64 z-50 lg:hidden">{SidebarBody}</motion.div>

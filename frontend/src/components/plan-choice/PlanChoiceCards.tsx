@@ -134,11 +134,11 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                   <span>Base plan cost</span><span>{inr(plan.base_plan_cost)}</span>
                 </div>
                 {(bd.guide_fee || 0) > 0 && (
-                  <div className="flex justify-between text-travion-700 font-bold">
+                  <div className="flex justify-between rounded-lg bg-cognac-50 px-2 py-1 text-cognac-600 font-bold">
                     <span>Guide fee (12.5%)</span><span>{inr(bd.guide_fee || 0)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-travion-700 font-bold">
+                <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
                   <span>Platform fee (3%)</span><span>{inr(plan.platform_fee)}</span>
                 </div>
                 <div className="flex justify-between border-t border-slate-100 pt-1.5 font-extrabold text-slate-900">

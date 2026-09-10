@@ -64,7 +64,7 @@ function DockItem({
           initial={{ opacity: 0, y: 10, scale: 0.9 }}
           animate={{ opacity: 1, y: -44, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.9 }}
-          className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-xl bg-slate-900/90 backdrop-blur-md px-3 py-1.5 text-xs font-semibold text-white shadow-lg pointer-events-none z-50"
+          className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-xl bg-travion-800/90 backdrop-blur-md px-3 py-1.5 text-xs font-semibold text-white shadow-lg pointer-events-none z-50"
         >
           {item.label}
         </motion.div>

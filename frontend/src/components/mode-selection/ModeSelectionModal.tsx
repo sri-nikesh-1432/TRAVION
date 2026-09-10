@@ -47,7 +47,7 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -228,7 +228,7 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md"
+              className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-travion-800/75 backdrop-blur-md"
             >
               <motion.div
                 initial={{ scale: 0.95, y: 20 }}
@@ -237,14 +237,14 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
                 className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
               >
                 {/* PDF Header Bar */}
-                <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+                <div className="flex items-center justify-between px-6 py-4 bg-travion-600 text-white">
                   <div className="flex items-center gap-2">
                     <FileText className="w-5 h-5 text-travion-400" />
                     <span className="font-bold text-sm tracking-wide">Travion Terms & Safety Charter (PDF Document)</span>
                   </div>
                   <button
                     onClick={() => setShowPdfViewer(false)}
-                    className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-travion-700 transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -275,7 +275,7 @@ export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowPdfViewer(false)}
-                    className="px-5 py-2 rounded-xl bg-slate-900 text-white font-sans font-semibold text-xs hover:bg-slate-800 transition-colors"
+                    className="px-5 py-2 rounded-xl bg-travion-600 text-white font-sans font-semibold text-xs hover:bg-travion-700 transition-colors"
                   >
                     Close Document
                   </button>

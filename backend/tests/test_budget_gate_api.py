@@ -33,8 +33,17 @@ def _build_trip(budget_answer: str, extra_answers=None):
         "start_datetime": (now + timedelta(days=3)).isoformat(),
         "end_datetime": (now + timedelta(days=6)).isoformat(),
     }).json()
+    # Budget answers use the 3-question custom form. Amounts below the ₹1,000
+    # interview minimum clamp to ₹1,000 — the budget feasibility gate must
+    # still reject them at planning time (never a normal itinerary).
+    if budget_answer == "₹15,000 - ₹25,000":
+        budget = budget_answer
+    else:
+        amount = float(str(budget_answer).replace(",", ""))
+        lo = max(1000.0, amount)
+        budget = {"from": lo, "to": max(lo, amount)}
     answers = {
-        "budget": budget_answer,
+        "budget": budget,
         "party": "Solo",
         "experience": ["Nature & Wildlife"],
         "restrictions": ["Vegetarian"],

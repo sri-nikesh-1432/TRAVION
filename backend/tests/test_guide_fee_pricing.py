@@ -64,7 +64,7 @@ def _build_trip(mode: str = "GUIDE_MODE"):
     email, headers, _ = _new_user("USER")
     client.put("/api/v1/trips/profile/basic", headers=headers, json={
         "first_name": "Pricing", "last_name": "Tester", "preferred_language": "English",
-        "preferred_communication": "Voice", "phone": "+91 98765 43210",
+        "preferred_communication": "Voice", "phone": "+91 98765 43210", "home_city": "Chennai",
         "emergency_contact_name": "Pricing Tester", "emergency_contact_phone": "+91 98765 43210",
     })
     locs = client.get("/api/v1/locations/all").json()

@@ -168,7 +168,7 @@ export const JourneyTimeline: React.FC<JourneyTimelineProps> = ({
                 onClick={() => setActiveDay(d.day)}
                 className={`relative px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all shrink-0 border ${
                   activeDay === d.day
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    ? 'bg-travion-600 text-white border-travion-800 shadow-sm'
                     : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
                 }`}
               >

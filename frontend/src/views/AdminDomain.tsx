@@ -202,7 +202,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
           { key: 'name', label: 'Manager', render: (r) => <span className="font-extrabold text-slate-900">{r.name}</span> },
           { key: 'email', label: 'Email', render: (r) => <span className="text-slate-500">{r.email}</span> },
           { key: 'department', label: 'Department', render: (r) => <span className="text-slate-500">{r.department || 'Operations'}</span> },
-          { key: 'assignments', label: 'Assignments', render: (r) => <span className="font-bold text-indigo-600">{r.assignments}</span> },
+          { key: 'assignments', label: 'Assignments', render: (r) => <span className="font-bold text-travion-600">{r.assignments}</span> },
           { key: 'audit_actions', label: 'Audit actions', render: (r) => <span className="text-slate-500">{r.audit_actions}</span> },
           { key: 'created_at', label: 'Joined', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
         ]}
@@ -236,7 +236,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
             { key: 'mode', label: 'Mode', render: (r) => <ModePill mode={r.mode} /> },
             { key: 'budget', label: 'Budget', render: (r) => <span className="text-slate-600">{inr(r.budget)}</span> },
             { key: 'total_cost', label: 'Plan cost', render: (r) => <span className="font-bold text-slate-700">{inr(r.total_cost)}</span> },
-            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-indigo-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'details', label: '', render: (r) => <IconBtn onClick={() => setDetailTrip(r)} title="View lifecycle"><Eye className="w-4 h-4" /></IconBtn> },
           ]}
@@ -265,8 +265,8 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
             columns={[
               { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
               { key: 'destination', label: 'Destination', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-              { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-indigo-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
-              { key: 'match_score', label: 'Match', render: (r) => <span className="font-black text-indigo-600">{r.match_score}%</span> },
+              { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+              { key: 'match_score', label: 'Match', render: (r) => <span className="font-black text-travion-600">{r.match_score}%</span> },
               { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
               { key: 'requested_at', label: 'Requested', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDateTime(r.requested_at)}</span> },
             ]}
@@ -285,7 +285,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
           { key: 'route', label: 'Route', render: (r) => <span className="text-slate-600">{r.source} → {r.destination}</span> },
           { key: 'start_datetime', label: 'Started', render: (r) => <span className="text-slate-500 whitespace-nowrap">{fmtDateTime(r.start_datetime)}</span> },
           { key: 'mode', label: 'Mode', render: (r) => <ModePill mode={r.mode} /> },
-          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-indigo-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
           { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
           { key: 'details', label: '', render: (r) => <IconBtn onClick={() => setDetailTrip(r)} title="View"><Eye className="w-4 h-4" /></IconBtn> },
         ]}
@@ -318,7 +318,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
             { key: 'destination', label: 'Trip', render: (r) => <span className="text-slate-600">{r.destination}</span> },
             { key: 'amount', label: 'Total amount', render: (r) => <span className="font-bold text-slate-900">{inr(r.amount)}</span> },
             { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="text-emerald-600 font-bold">{inr(r.guide_fee)}</span> },
-            { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-indigo-600 font-bold">{inr(r.platform_fee)}</span> },
+            { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-travion-600 font-bold">{inr(r.platform_fee)}</span> },
             { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name || <span className="text-slate-300">—</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'created_at', label: 'Date', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
@@ -335,7 +335,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         columns={[
           { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
           { key: 'destination', label: 'Destination', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-indigo-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
           { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="font-bold text-emerald-600">{inr(r.guide_fee)}</span> },
           { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-slate-500">{inr(r.platform_fee)}</span> },
           { key: 'total_amount', label: 'Traveller paid', render: (r) => <span className="font-bold text-slate-700">{inr(r.total_amount)}</span> },
@@ -445,7 +445,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
           rows={filtered} empty="No reviews recorded"
           columns={[
             { key: 'user_name', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.user_name}</span> },
-            { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-bold text-indigo-700">{r.guide_name}</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-bold text-travion-700">{r.guide_name}</span> },
             { key: 'rating', label: 'Rating', render: (r) => (
               <span className="inline-flex items-center gap-0.5 text-amber-400">
                 {Array.from({ length: Math.min(r.rating, 5) }).map((_, i) => <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />)}
@@ -469,7 +469,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <div className="space-y-2">
           {filtered.length === 0 ? <EmptyState title="No audit entries" /> : filtered.map((log, i) => (
             <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="font-black text-indigo-700">[{log.action}]</span>
+              <span className="font-black text-travion-700">[{log.action}]</span>
               <span className="font-bold text-slate-800">{log.actor_email}</span>
               <span className="text-slate-400">({log.actor_role})</span>
               {log.target_id && <span className="font-mono text-[10px] text-slate-400">{shortId(log.target_id)}</span>}
@@ -484,7 +484,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
   /* shared health/split helpers */
   const HealthRow = ({ label, count, tone }: { label: string; count: number; tone: 'amber' | 'indigo' | 'rose' | 'emerald' }) => {
     const tones: Record<string, string> = {
-      amber: 'bg-amber-50 border-amber-100 text-amber-800', indigo: 'bg-indigo-50 border-indigo-100 text-indigo-800',
+      amber: 'bg-amber-50 border-amber-100 text-amber-800', indigo: 'bg-travion-50 border-travion-100 text-travion-800',
       rose: 'bg-rose-50 border-rose-100 text-rose-800', emerald: 'bg-emerald-50 border-emerald-100 text-emerald-800',
     };
     return (
@@ -495,7 +495,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     );
   };
   const SplitRow = ({ label, amount, tone, strong }: { label: string; amount: number; tone?: string; strong?: boolean }) => {
-    const tones: Record<string, string> = { indigo: 'text-indigo-700', emerald: 'text-emerald-700' };
+    const tones: Record<string, string> = { indigo: 'text-travion-700', emerald: 'text-emerald-700' };
     return (
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] font-bold text-slate-500">{label}</span>
@@ -518,7 +518,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       theme="admin"
     >
       {notice && (
-        <div className="mb-5 px-4 py-3 rounded-2xl bg-slate-900 text-white text-[12px] font-bold flex items-center gap-2">
+        <div className="mb-5 px-4 py-3 rounded-2xl bg-travion-600 text-white text-[12px] font-bold flex items-center gap-2">
           {notice}
           <button onClick={() => setNotice(null)} className="ml-auto text-slate-400 hover:text-white">Dismiss</button>
         </div>
@@ -542,7 +542,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       <Drawer open={!!detailTrip} onClose={() => setDetailTrip(null)} title="Trip lifecycle" wide>
         {detailTrip && (
           <>
-            <div className="rounded-2xl bg-slate-900 text-white p-5">
+            <div className="rounded-2xl bg-travion-600 text-white p-5">
               <p className="text-[10px] font-bold uppercase text-slate-400">{detailTrip.traveller}</p>
               <p className="text-lg font-black mt-0.5">{detailTrip.source} → {detailTrip.destination}</p>
               <p className="text-[11px] font-semibold text-slate-400 mt-0.5">{fmtDateTime(detailTrip.start_datetime)} – {fmtDateTime(detailTrip.end_datetime)}</p>
@@ -563,7 +563,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
               </div>
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
                 <p className="text-[10px] font-bold uppercase text-slate-400">Guide</p>
-                <p className="text-sm font-extrabold text-indigo-700">{detailTrip.guide_name || 'Not assigned'}</p>
+                <p className="text-sm font-extrabold text-travion-700">{detailTrip.guide_name || 'Not assigned'}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
                 <p className="text-[10px] font-bold uppercase text-slate-400">Trip ID</p>

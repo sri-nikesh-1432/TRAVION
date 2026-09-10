@@ -14,7 +14,6 @@ import {
 import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
 import { DiscoveryCard } from '../components/trip-discovery/DiscoveryCard';
-import { ModeSelectionModal } from '../components/mode-selection/ModeSelectionModal';
 import { BrandedLoader } from '../components/loading/BrandedLoader';
 import { SplitView } from '../components/live-map/SplitView';
 import { MagnificationDock, DockItemData } from '../components/dock/MagnificationDock';
@@ -82,8 +81,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [currentQuestion, setCurrentQuestion] = useState<any>(null);
   const [answersSoFar, setAnswersSoFar] = useState<Record<string, any>>({});
   
-  // Modals & Overlays
-  const [showModeModal, setShowModeModal] = useState(false);
+  // Modals & Overlays — Guide Mode is NEVER offered inside the user planning
+  // flow (product rule): users plan in Adventurous Mode; guides join later via
+  // manager assignment. The guide signup stays a separate landing-page flow.
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [checkoutData, setCheckoutData] = useState<any>(null);
@@ -278,7 +278,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 2. Answer question in Adaptive Interview
+  // 2. Answer question in Adaptive Interview (exactly 3 questions)
   const handleAnswerQuestion = async (answer: any) => {
     if (!activeTrip || !currentQuestion?.question_id) return;
     const updatedAnswers = {
@@ -290,25 +290,20 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     try {
       const nextQ = await api.getNextDiscoveryQuestion(activeTrip.id, updatedAnswers);
       if (nextQ.is_complete) {
-        // Interview complete! Move to Mode Selection
+        // Interview complete → straight to destination discovery (no mode step)
         setCurrentQuestion(null);
         setPlanError(null);
-        setShowModeModal(true);
+        setActiveTrip(prev => prev ? { ...prev, mode: 'ADVENTUROUS_MODE' } : null);
+        setCurrentView('discovery_select');
       } else {
         setCurrentQuestion(nextQ);
       }
-    } catch (err) {
-      console.error('Discovery question failed:', err);
+    } catch (err: any) {
+      // Validation errors (budget minimum, party mismatch) surface inline on
+      // the current question — never a dead end.
+      const detail = err?.message || 'Please check your answer and try again.';
+      setPlanError({ message: detail });
     }
-  };
-
-  // 3. Confirm Mode → destination discovery (user selects REAL places first)
-  const handleConfirmMode = (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') => {
-    if (!activeTrip) return;
-    setShowModeModal(false);
-    setPlanError(null);
-    setActiveTrip(prev => prev ? { ...prev, mode } : null);
-    setCurrentView('discovery_select');
   };
 
   // 3a. Selections made → generate the THREE in-budget plans around them
@@ -475,7 +470,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       }
     },
     {
-      icon: <MessageSquare className="w-5 h-5 text-indigo-600" />,
+      icon: <MessageSquare className="w-5 h-5 text-travion-600" />,
       label: "Trip AI & Guide Chat",
       onClick: () => setShowChatDrawer(true),
       badge: activeTrip?.mode === 'GUIDE_MODE' ? "Guide" : undefined
@@ -498,7 +493,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
+    <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
       
       {/* Top Header */}
       <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5">
@@ -522,27 +517,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
 
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentView('search')}
-              className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-colors ${
-                currentView === 'search' ? 'text-travion-600 bg-travion-50' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Plan Trip
-            </button>
-
-            {activeTrip && itinerary && (
-              <button
-                onClick={() => setCurrentView('workspace')}
-                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-colors ${
-                  currentView === 'workspace' ? 'text-travion-600 bg-travion-50' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Live Workspace
-              </button>
-            )}
-
-            {/* Profile Avatar / Logout */}
+            {/* Profile Avatar / Logout — the trip-planning CTA lives in the main
+                flow, not as a duplicate top-nav button (product rule #10) */}
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
               <span className="text-xs font-bold text-slate-700 hidden sm:inline">
                 {userProfile?.preferred_name || session.email.split('@')[0]}
@@ -707,7 +683,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     </button>
                     {!planError.available && (
                       <button
-                        onClick={() => { setPlanError(null); setShowModeModal(true); }}
+                        onClick={() => { setPlanError(null); loadTripWorkspace(activeTrip.id, true); }}
                         className="flex-1 h-11 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm transition-colors"
                       >
                         Try planning again
@@ -716,21 +692,24 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   </div>
                 </div>
               </div>
-            ) : !showModeModal && !isGeneratingPlan ? (
-              /* ── Resumed state: interview finished — continue to mode selection ── */
+            ) : !isGeneratingPlan ? (
+              /* ── Resumed state: interview finished — continue planning ── */
               <div className="max-w-md mx-auto rounded-3xl border border-slate-200 bg-white shadow-soft p-8 text-center">
                 <span className="mx-auto w-14 h-14 rounded-2xl bg-travion-100 text-travion-600 flex items-center justify-center mb-4">
                   <CheckCircle2 className="w-7 h-7" />
                 </span>
                 <h3 className="text-lg font-extrabold text-slate-900">Your travel style is captured</h3>
                 <p className="mt-2 text-[13px] font-medium text-slate-500 leading-relaxed">
-                  Ready to choose how you want this journey run.
+                  Ready to pick the places you want to experience.
                 </p>
                 <button
-                  onClick={() => setShowModeModal(true)}
+                  onClick={() => {
+                    setActiveTrip(prev => prev ? { ...prev, mode: 'ADVENTUROUS_MODE' } : null);
+                    setCurrentView('discovery_select');
+                  }}
                   className="mt-6 w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold transition-colors"
                 >
-                  Choose travel mode
+                  Continue to place discovery
                 </button>
                 <button
                   onClick={() => { setPlanError(null); setCurrentView('search'); }}
@@ -936,14 +915,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Mode Selection Modal */}
-      <ModeSelectionModal
-        isOpen={showModeModal}
-        onClose={() => setShowModeModal(false)}
-        onConfirm={handleConfirmMode}
-        destinationName={activeTrip?.destination_name || "Ooty"}
-      />
-
       {/* Branded Loading Transition */}
       <AnimatePresence>
         {isGeneratingPlan && (
@@ -957,7 +928,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       {/* Transparent Checkout & Payment Split Modal */}
       <AnimatePresence>
         {showCheckoutModal && checkoutData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

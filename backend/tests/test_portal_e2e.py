@@ -89,7 +89,7 @@ def _elevate(role: str, tag: str = "e2e"):
 def _basic_profile(headers):
     res = client.put("/api/v1/trips/profile/basic", headers=headers, json={
         "first_name": "Portal", "last_name": "Tester", "preferred_language": "English",
-        "preferred_communication": "Voice", "phone": "+91 98765 43210",
+        "preferred_communication": "Voice", "phone": "+91 98765 43210", "home_city": "Chennai",
         "emergency_contact_name": "Portal Tester", "emergency_contact_phone": "+91 98765 43210",
     })
     assert res.status_code == 200, res.text

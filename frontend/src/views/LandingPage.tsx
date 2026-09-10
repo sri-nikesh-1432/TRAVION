@@ -430,7 +430,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       </header>
 
       {/* ══════════════════ HERO ══════════════════ */}
-      <section id="top" className="relative min-h-[100svh] flex flex-col overflow-hidden bg-slate-950">
+      <section id="top" className="relative min-h-[100svh] flex flex-col overflow-hidden bg-travion-800">
         {/* Cinematic imagery */}
         <div className="absolute inset-0">
           <motion.div
@@ -440,8 +440,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
             className="absolute inset-0 bg-cover bg-center will-change-transform"
             style={{ backgroundImage: `url(${HERO_IMAGE})` }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/55 to-slate-950/20" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/40" />
+          <div className="absolute inset-0 bg-gradient-to-r from-travion-900/85 via-slate-950/55 to-travion-800/20" />
+          <div className="absolute inset-0 bg-gradient-to-t from-travion-900/90 via-transparent to-travion-800/40" />
         </div>
 
         <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[120px] pb-16 grid lg:grid-cols-[1.05fr_0.95fr] items-end gap-12">
@@ -613,7 +613,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                         <MapPin className="w-10 h-10 text-travion-500/60" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-travion-900/85 via-slate-950/25 to-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="px-2.5 py-1 rounded-full bg-white/15 backdrop-blur text-[10px] font-bold uppercase tracking-wider text-white border border-white/20">
@@ -905,7 +905,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                           transition={{ type: 'spring', stiffness: 300, damping: 18 }}
                           className={`relative flex items-center justify-center rounded-full border-2 shadow-soft transition-colors duration-300 ${
                             i === 0
-                              ? 'w-9 h-9 bg-slate-900 border-white text-white'
+                              ? 'w-9 h-9 bg-travion-600 border-white text-white'
                               : i === journeyStops.length - 1
                                 ? 'w-9 h-9 bg-emerald-500 border-white text-white'
                                 : active
@@ -973,7 +973,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                   </ol>
                   <button
                     onClick={() => openAuth(false)}
-                    className="mt-6 w-full h-11 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition-colors"
+                    className="mt-6 w-full h-11 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors"
                   >
                     Experience it live
                   </button>
@@ -985,7 +985,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       </section>
 
       {/* ══════════════════ GUIDE CTA ══════════════════ */}
-      <section id="guides" className="py-24 md:py-32 bg-slate-950 text-white">
+      <section id="guides" className="py-24 md:py-32 bg-travion-800 text-white">
         <div className="max-w-4xl mx-auto px-5 md:px-8 text-center">
           <Reveal>
             <Eyebrow light>For Local Guides</Eyebrow>
@@ -1318,7 +1318,7 @@ experiences you know best.
           <div className="mt-14 grid md:grid-cols-2 gap-6">
             {/* Guide mode */}
             <Reveal>
-              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-slate-900">
+              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-travion-600">
                 <div className="h-52 relative overflow-hidden">
                   <img
                     src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=1200&q=80"
@@ -1326,7 +1326,7 @@ experiences you know best.
                     loading="lazy"
                     className="absolute inset-0 w-full h-full object-cover opacity-80 transition-transform duration-[1.5s] group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-travion-900 to-transparent" />
                 </div>
                 <div className="p-7 md:p-9 bg-white">
                   <div className="flex items-center gap-3">
@@ -1346,7 +1346,7 @@ experiences you know best.
                   </ul>
                   <button
                     onClick={() => openAuth(false)}
-                    className="mt-8 w-full h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition-colors"
+                    className="mt-8 w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors"
                   >
                     Plan with a guide
                   </button>
@@ -1356,7 +1356,7 @@ experiences you know best.
 
             {/* Adventurous mode */}
             <Reveal delay={0.12}>
-              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-slate-900">
+              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-travion-600">
                 <div className="h-52 relative overflow-hidden">
                   <img
                     src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?auto=format&fit=crop&w=1200&q=80"
@@ -1364,7 +1364,7 @@ experiences you know best.
                     loading="lazy"
                     className="absolute inset-0 w-full h-full object-cover opacity-80 transition-transform duration-[1.5s] group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-travion-900 to-transparent" />
                 </div>
                 <div className="p-7 md:p-9 bg-white">
                   <div className="flex items-center gap-3">
@@ -1576,7 +1576,7 @@ experiences you know best.
                   ))}
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 px-5 py-4">
+                <div className="flex items-center justify-between rounded-2xl bg-travion-600 px-5 py-4">
                   <span className="text-[13px] font-bold text-slate-200">Amount payable to Travion</span>
                   <span className="text-lg font-extrabold text-white">Rs 5,500</span>
                 </div>
@@ -1648,8 +1648,8 @@ experiences you know best.
           loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-slate-950/55" />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/70 via-slate-950/30 to-slate-950/60" />
+        <div className="absolute inset-0 bg-travion-800/55" />
+        <div className="absolute inset-0 bg-gradient-to-r from-travion-900/70 via-slate-950/30 to-travion-800/60" />
         <div className="relative max-w-7xl mx-auto px-5 md:px-8">
           <Reveal>
             <div className="max-w-2xl">
@@ -1732,7 +1732,7 @@ experiences you know best.
           loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-slate-950/65" />
+        <div className="absolute inset-0 bg-travion-800/65" />
         <div className="relative max-w-4xl mx-auto px-5 md:px-8 text-center">
           <Reveal>
             <Eyebrow light>Begin</Eyebrow>
@@ -1829,7 +1829,7 @@ experiences you know best.
             className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto"
             onClick={(e) => e.target === e.currentTarget && setShowAuthModal(false)}
           >
-            <div className="fixed inset-0 bg-slate-950/55 backdrop-blur-md" />
+            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1838,14 +1838,14 @@ experiences you know best.
               className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl md:grid md:grid-cols-[0.9fr_1.1fr]"
             >
               {/* Brand panel */}
-              <div className="hidden md:flex flex-col justify-between relative overflow-hidden rounded-l-[28px] p-9 bg-slate-950">
+              <div className="hidden md:flex flex-col justify-between relative overflow-hidden rounded-l-[28px] p-9 bg-travion-800">
                 <img
                   src={HERO_IMAGE}
                   alt=""
                   aria-hidden="true"
                   className="absolute inset-0 w-full h-full object-cover opacity-40"
                 />
-                <div className="absolute inset-0 bg-gradient-to-br from-travion-900/80 via-slate-950/60 to-slate-950/80" />
+                <div className="absolute inset-0 bg-gradient-to-br from-travion-900/80 via-slate-950/60 to-travion-800/80" />
                 <div className="relative z-10 flex items-center gap-2.5">
                   <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-400 to-travion-600 flex items-center justify-center">
                     <Compass className="w-5 h-5 text-white" />
@@ -1894,12 +1894,12 @@ experiences you know best.
                   </button>
                 </div>
 
-                {/* Role cards (signup) */}
+                {/* Role cards (signup) — separate flows: travellers sign up
+                    here; guides use the dedicated Guide Registration page */}
                 {!isLoginMode && (
-                  <div className="grid grid-cols-2 gap-2.5 mt-6">
+                  <div className="grid grid-cols-1 gap-2.5 mt-6">
                     {([
                       { role: 'USER' as const, icon: <Compass className="w-4 h-4" />, title: 'Traveller', desc: 'Plan and explore trips' },
-                      { role: 'GUIDE' as const, icon: <Users className="w-4 h-4" />, title: 'Local guide', desc: 'Host verified journeys' }
                     ]).map((opt) => {
                       const active = authRole === opt.role;
                       return (
@@ -2092,9 +2092,7 @@ experiences you know best.
                       ? 'Processing...'
                       : isLoginMode
                         ? 'Sign in'
-                        : authRole === 'GUIDE'
-                          ? 'Create guide account'
-                          : 'Create traveller account'}
+                        : 'Create traveller account'}
                   </motion.button>
                 </form>
 
@@ -2125,7 +2123,7 @@ experiences you know best.
             className="fixed inset-0 z-[80] flex items-center justify-center p-4"
             onClick={(e) => e.target === e.currentTarget && setShowElevateModal(false)}
           >
-            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg" />
+            <div className="fixed inset-0 bg-travion-800/70 backdrop-blur-lg" />
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2134,7 +2132,7 @@ experiences you know best.
               className="relative w-full max-w-sm bg-white rounded-3xl p-7 shadow-2xl border border-slate-200"
             >
               <div className="flex items-center gap-3 mb-6">
-                <span className="w-10 h-10 rounded-2xl bg-slate-900 text-slate-300 flex items-center justify-center">
+                <span className="w-10 h-10 rounded-2xl bg-travion-600 text-slate-300 flex items-center justify-center">
                   <Key className="w-4.5 h-4.5" />
                 </span>
                 <div>
@@ -2180,7 +2178,7 @@ experiences you know best.
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition-colors disabled:opacity-45"
+                  className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors disabled:opacity-45"
                 >
                   {isSubmitting ? 'Verifying...' : 'Authenticate'}
                 </button>

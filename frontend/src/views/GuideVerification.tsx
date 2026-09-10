@@ -127,7 +127,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4 py-20">
+      <div className="min-h-screen bg-cream-50 flex items-center justify-center px-4 py-20">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -168,7 +168,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
   const StatusIcon = config.icon;
 
   return (
-    <div className="min-h-screen bg-white py-20 px-4">
+    <div className="min-h-screen bg-cream-50 py-20 px-4">
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <motion.div

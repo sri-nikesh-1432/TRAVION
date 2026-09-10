@@ -174,7 +174,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
   if (success) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4 py-20">
+      <div className="min-h-screen bg-cream-50 flex items-center justify-center px-4 py-20">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -270,9 +270,9 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
   }
 
   return (
-    <div className="min-h-screen bg-white pt-20 pb-24">
+    <div className="min-h-screen bg-cream-50 pt-20 pb-24">
       {/* Header */}
-      <div className="bg-slate-950 py-16">
+      <div className="bg-travion-800 py-16">
         <div className="max-w-4xl mx-auto px-5 text-center">
           <motion.div
             initial={{ opacity: 0, y: 12 }}

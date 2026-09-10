@@ -22,8 +22,13 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def offline_no_network(monkeypatch):
-    """Same offline baseline as the discovery suite: no Google key, no live
-    Overpass, no geocoding — the verified catalog + index do all the work."""
+    """Same offline baseline as the discovery suite: no GeoApify, no Google key,
+    no live Overpass, no geocoding — the verified catalog + index do all the work.
+    The shared discovery TTL cache is cleared per test: earlier suite files run
+    LIVE discovery for other destinations and would otherwise leak cached pools
+    into these offline assertions."""
+    monkeypatch.setattr(pd, "_cache", {})
+    monkeypatch.setattr(pd, "_geoapify_fetch", lambda categories, geo_filter, api_key: [])
     monkeypatch.setattr(pd, "_discover_osm", lambda dest, resolved, bounds=None: {
         "must_visit": [], "food": [], "activities": [], "stays": [],
     })

@@ -167,6 +167,10 @@ def update_basic_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Home City is MANDATORY — users cannot bypass it via direct API calls.
+    if not (req.home_city or "").strip():
+        raise HTTPException(status_code=400, detail="Please enter your home city to continue.")
+
     user.first_name = req.first_name
     user.last_name = req.last_name
     user.preferred_name = req.preferred_name or req.first_name
@@ -177,7 +181,7 @@ def update_basic_profile(
     user.additional_languages = req.additional_languages
     user.country = req.country
     # Phone is mandatory for travellers; verified by Pydantic before reaching here.
-    if not req.phone or len("".join(c for c in req.phone if c.isdigit())) < 10:
+    if not req.phone or len("".join(c for c in (req.phone or "") if c.isdigit())) < 10:
         raise HTTPException(status_code=400, detail="A valid phone number is mandatory to start planning trips.")
 
     user.home_city = req.home_city

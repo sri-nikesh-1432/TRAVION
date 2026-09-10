@@ -142,13 +142,14 @@ def test_full_user_trip_flow():
     token = signup_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Update Basic Profile
+    # Update Basic Profile (Home City is mandatory)
     prof_res = client.put("/api/v1/trips/profile/basic", headers=headers, json={
         "first_name": "Ananya",
         "last_name": "Sharma",
         "preferred_language": "English",
         "preferred_communication": "Voice",
         "phone": "+91 98765 43210",
+        "home_city": "Chennai",
         "emergency_contact_name": "Sunil Sharma",
         "emergency_contact_phone": "+91 98765 43210"
     })
@@ -161,6 +162,16 @@ def test_full_user_trip_flow():
         "preferred_language": "English"
     })
     assert no_phone.status_code == 400
+
+    # Home City is mandatory: blank/missing home_city is rejected
+    no_home_city = client.put("/api/v1/trips/profile/basic", headers=headers, json={
+        "first_name": "Ananya",
+        "last_name": "Sharma",
+        "preferred_language": "English",
+        "phone": "+91 98765 43210"
+    })
+    assert no_home_city.status_code == 400
+    assert "home city" in no_home_city.json()["detail"].lower()
 
     # Search Trip
     locs = client.get("/api/v1/locations/all").json()

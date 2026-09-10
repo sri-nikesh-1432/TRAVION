@@ -23,13 +23,18 @@ destination area as a real geographic region:
      selected spot); it is NEVER applied to destination-wide discovery.
 
 Sources, in priority order:
-  1. Google Places API (New) — used ONLY when GOOGLE_PLACES_API_KEY is set in
-     the server environment (key never reaches the frontend).
-  2. OpenStreetMap Overpass API (free, no key) — real tagged tourism/food/
+  1. GeoApify Places API (v2) — PRIMARY preference-driven live provider, used
+     when GEOAPIFY_API_KEY is set in the server environment (key never reaches
+     the frontend). ONE batched request per discovery, filtered to the real
+     destination rectangle, with categories chosen by the user's selected
+     EXPERIENCE preference (Adventure / Food & Culture / Spiritual / Mixed).
+  2. Google Places API (New) — secondary keyed tier (GOOGLE_PLACES_API_KEY),
+     same server-only guarantee.
+  3. OpenStreetMap Overpass API (free, no key) — real tagged tourism/food/
      hotel POIs with real names, coordinates, websites and hours where the
      community mapped them. Nothing is inferred beyond what OSM contains.
-  3. Travion verified catalog (curated, real stays/food/attractions).
-  4. India place index generated from GeoNames (real gazetteer entries with
+  4. Travion verified catalog (curated, real stays/food/attractions).
+  5. India place index generated from GeoNames (real gazetteer entries with
      real coordinates, 248 tourist places nationwide) — used to fill genuine
      last-mile gaps inside the destination footprint.
 
@@ -76,6 +81,7 @@ TARGET_COUNTS: Dict[str, int] = {
 }
 
 GOOGLE_PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
+GEOAPIFY_ENDPOINT = "https://api.geoapify.com/v2/places"
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -653,6 +659,166 @@ def _discover_google(
     return buckets
 
 
+# ── GeoApify Places API v2 — PRIMARY preference-driven live tier ────────────
+# Step 3 uses a real Places API for fast real-world discovery (product spec §5);
+# GeoApify is that provider. Categories are REAL GeoApify taxonomy groups — the
+# set sent for a destination is chosen by the user's selected EXPERIENCE, so
+# the preference literally drives what the API is asked for (and therefore what
+# can come back). Requests are batched (2 per discovery) to keep Step 3 fast.
+
+# Always-on base categories per Travion bucket. Every category below was
+# validated against the live GeoApify /v2/places endpoint — unsupported ones
+# (e.g. activity.*, natural.*, tourism.museum) are rejected with HTTP 400 and
+# would silently kill the whole batched request, so only verified taxonomy is
+# used.
+_BASE_GEOAPIFY_CATEGORIES: Dict[str, List[str]] = {
+    "must_visit": ["tourism.attraction", "leisure.park"],
+    "food": ["catering.restaurant", "catering.cafe", "catering.fast_food", "catering.food_court"],
+    "stays": ["accommodation.hotel", "accommodation.guest_house", "accommodation.hostel",
+              "accommodation.motel", "accommodation.apartment"],
+    "activities": ["sport.sports_centre", "sport.fishing", "sport.stadium"],
+}
+
+# Experience-preference categories (product spec §4): the selected preference
+# ADDS what the API is asked for — Adventure pulls parks + outdoor sport
+# venues, Food & Culture pulls food markets + museums/cultural venues,
+# Spiritual pulls places of worship, Mixed blends them all.
+_GEOAPIFY_EXPERIENCE_CATEGORIES: Dict[str, List[str]] = {
+    "adventure": ["leisure.park", "sport.sports_centre", "sport.fishing", "sport.stadium"],
+    "food & culture": ["entertainment.museum", "entertainment.culture",
+                       "entertainment.culture.theatre", "commercial.marketplace",
+                       "commercial.shopping_mall"],
+    "spiritual": ["religion.place_of_worship"],
+    "mixed": ["religion.place_of_worship", "entertainment.museum", "entertainment.culture"],
+}
+
+
+def _geoapify_filter(
+    bounds: Optional[Dict[str, Any]],
+    anchor: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Real destination footprint as a GeoApify filter: the geocoded bounding
+    rectangle when available, else a destination-kind-radius circle around the
+    resolved anchor. NEVER a tiny 2 km circle — that belongs to nearby mode."""
+    if bounds and bounds.get("north") is not None:
+        return f"rect:{bounds['west']},{bounds['south']},{bounds['east']},{bounds['north']}"
+    if anchor and anchor.get("lat") is not None and anchor.get("lng") is not None:
+        radius_m = int(DESTINATION_RADIUS_KM.get(str((anchor or {}).get("kind") or "").lower(), 12.0) * 1000)
+        return f"circle:{anchor['lng']},{anchor['lat']},{radius_m}"
+    return None
+
+
+def _geoapify_fetch(categories: List[str], geo_filter: str, api_key: str = "") -> List[Dict[str, Any]]:
+    """One batched GeoApify Places request across the destination area.
+    Delegates to the central GeoApify service (single key owner + TTL cache)."""
+    try:
+        from app.services import geoapify as _geo
+        return _geo.places(list(categories), geo_filter, limit=60) or []
+    except Exception:
+        return []
+
+
+def _geoapify_bucket(cats: List[str]) -> Optional[str]:
+    """Map the feature's REAL GeoApify categories onto a Travion bucket.
+    First match wins; unknown categories are honestly dropped."""
+    for c in cats or []:
+        if c.startswith("accommodation."):
+            return "stays"
+        if c.startswith("catering."):
+            return "food"
+        if c.startswith("sport."):
+            return "activities"
+        if (c.startswith("religion.place_of_worship") or c.startswith("entertainment.museum")
+                or c.startswith("entertainment.culture") or c.startswith("tourism.attraction")
+                or c == "leisure.park" or c.startswith("commercial.")):
+            return "must_visit"
+    return None
+
+
+def _geoapify_item(feature: Dict[str, Any], category: str) -> Optional[Dict[str, Any]]:
+    """Normalize one GeoApify feature into a Travion discovery item. Only real
+    provider fields are surfaced — ratings/fees the provider does not give are
+    left None, never invented."""
+    props = feature.get("properties") or {}
+    name = str(props.get("name") or "").strip()
+    if not name:  # unnamed real features are useless for trip planning
+        return None
+    lat, lng = props.get("lat"), props.get("lon")
+    if lat is None or lng is None:
+        return None
+    pid = props.get("place_id") or f"geoapify_{_norm(name)[:40]}_{round(float(lat), 4)}_{round(float(lng), 4)}"
+    return {
+        "id": f"geo_{str(pid)[:56]}",
+        "place_id": pid,
+        "name": name,
+        "category": category,
+        "latitude": lat,
+        "longitude": lng,
+        "address": props.get("formatted"),
+        "rating": None,  # GeoApify places response carries no ratings — never invented
+        "review_count": None,
+        "types": props.get("categories") or [],
+        "opening_hours": props.get("opening_hours"),
+        "website": props.get("website"),
+        "photos": [],
+        "source": "geoapify",
+        "verified": True,
+        "entry_fee": None,
+        "price_per_night": None,
+        "duration_minutes": 90,
+        "duration_is_estimate": True,
+    }
+
+
+def _discover_geoapify(
+    destination: str,
+    resolved: Dict[str, Any],
+    api_key: str,
+    experience: Optional[str] = None,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """GeoApify PRIMARY live tier — TWO batched requests per discovery:
+      1. attractions + the user's EXPERIENCE-preference categories,
+      2. food + stays amenities.
+    Categories come from REAL GeoApify taxonomy chosen by the preference, so a
+    Spiritual selection literally asks the API for places of worship first.
+    Results are classified back into Travion buckets by their own provider
+    categories; on any failure empty buckets are returned so the lower tiers
+    take over — nothing is ever invented."""
+    buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
+    geo_filter = _geoapify_filter(bounds, resolved)
+    if not api_key or not geo_filter:
+        return buckets
+    exp_key = experience if experience in _GEOAPIFY_EXPERIENCE_CATEGORIES else "mixed"
+
+    pref_cats: List[str] = list(_BASE_GEOAPIFY_CATEGORIES["must_visit"]) + list(_BASE_GEOAPIFY_CATEGORIES["activities"])
+    pref_cats.extend(_GEOAPIFY_EXPERIENCE_CATEGORIES.get(exp_key, ()))
+    pref_cats = list(dict.fromkeys(pref_cats))  # de-dup, preserve order
+
+    amenity_cats: List[str] = list(dict.fromkeys(
+        _BASE_GEOAPIFY_CATEGORIES["food"] + _BASE_GEOAPIFY_CATEGORIES["stays"]
+    ))
+
+    features: List[Dict[str, Any]] = []
+    for cats in (pref_cats, amenity_cats):
+        try:
+            features.extend(_geoapify_fetch(cats, geo_filter, api_key))
+        except Exception:
+            continue  # provider failure must never break discovery — lower tiers take over
+    if not features:
+        return buckets
+
+    for feature in features:
+        props = feature.get("properties") or {}
+        bucket = _geoapify_bucket(props.get("categories") or [])
+        if not bucket:
+            continue
+        item = _geoapify_item(feature, bucket)
+        if item:
+            buckets[bucket].append(item)
+    return buckets
+
+
 # ── OpenStreetMap Overpass — keyless live POI tier ─────────────────────────
 
 # (category, OSM filter) pairs. Only real OSM-tagged features are returned;
@@ -761,20 +927,7 @@ def _discover_osm(
         radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
         loc = f"(around:{radius_m},{lat},{lng})"
     q = _overpass_query_at(loc)
-    data: Optional[Dict[str, Any]] = None
-    for attempt in range(2):  # free API rate-limits bursts; one retry round
-        for endpoint in OVERPASS_ENDPOINTS:
-            try:
-                resp = requests.post(endpoint, data={"data": q}, timeout=25,
-                                     headers={"User-Agent": "Travion/1.0 (travel planning)"})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    break
-            except Exception:
-                continue
-        if data:
-            break
-        time.sleep(3)
+    data = _overpass_cached(q, timeout=12, attempts=1)
     if not data:
         return buckets
     for el in (data.get("elements") or []):
@@ -839,6 +992,34 @@ def _map_classify(tags: Dict[str, str]) -> Optional[str]:
     return None
 
 
+def _overpass_cached(query: str, timeout: int, attempts: int = 2,
+                     user_agent: str = "Travion/1.0 (travel planning)") -> Optional[Dict[str, Any]]:
+    """Cached raw Overpass execution — the free API is slow and rate-limited, so
+    identical destination queries are answered from a TTL cache instead of
+    re-hitting it (every tier above Overpass must stay fast). `attempts` is 1
+    for latency-sensitive paths that run only as a fallback tier."""
+    key = f"overpass::{_norm(query)[:220]}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached if cached else None  # empty dict == known-failure marker
+    data: Optional[Dict[str, Any]] = None
+    for attempt in range(attempts):
+        for endpoint in OVERPASS_ENDPOINTS:
+            try:
+                resp = requests.post(endpoint, data={"data": query}, timeout=timeout,
+                                     headers={"User-Agent": user_agent})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    break
+            except Exception:
+                continue
+        if data:
+            break
+        time.sleep(2)
+    _cache_set(key, data if data else {})
+    return data
+
+
 def _discover_map_osm(
     resolved: Dict[str, Any],
     bounds: Optional[Dict[str, Any]] = None,
@@ -857,20 +1038,8 @@ def _discover_map_osm(
         radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
         loc = f"(around:{radius_m},{lat},{lng})"
     q = _map_overpass_query(loc)
-    data: Optional[Dict[str, Any]] = None
-    for attempt in range(2):
-        for endpoint in OVERPASS_ENDPOINTS:
-            try:
-                resp = requests.post(endpoint, data={"data": q}, timeout=30,
-                                     headers={"User-Agent": "Travion/1.0 (travel planning)", "X-Travion-Tier": "map"})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    break
-            except Exception:
-                continue
-        if data:
-            break
-        time.sleep(3)
+    data = _overpass_cached(q, timeout=18,
+                            user_agent="Travion/1.0 (travel planning; map tier)")
     if not data:
         return buckets
     for el in (data.get("elements") or []):
@@ -932,6 +1101,58 @@ def _discover_google_map(
     return buckets
 
 
+# The map's GeoApify tier: ONE batched request covers every broader map
+# category (validated live taxonomy only).
+_MAP_GEOAPIFY_CATEGORIES: Dict[str, List[str]] = {
+    "shopping": ["commercial.marketplace", "commercial.shopping_mall"],
+    "healthcare": ["healthcare"],
+    "education": ["education"],
+    "transport": ["public_transport"],
+    "other": ["entertainment", "catering.bar"],
+}
+
+
+def _discover_geoapify_map(
+    resolved: Dict[str, Any],
+    api_key: str,
+    bounds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """The map's FAST GeoApify tier — a single batched request returning real
+    shopping/healthcare/education/transport/entertainment POIs across the
+    destination area. Empty buckets on any failure."""
+    buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
+    geo_filter = _geoapify_filter(bounds, resolved)
+    if not geo_filter:
+        return buckets
+    all_cats: List[str] = []
+    for cats in _MAP_GEOAPIFY_CATEGORIES.values():
+        all_cats.extend(cats)
+    features = _geoapify_fetch(list(dict.fromkeys(all_cats)), geo_filter, api_key)
+    for feature in features:
+        props = feature.get("properties") or {}
+        cats = props.get("categories") or []
+        target: Optional[str] = None
+        for c in cats or []:
+            if c.startswith("commercial."):
+                target = "shopping"
+            elif c.startswith("healthcare."):
+                target = "healthcare"
+            elif c.startswith("education."):
+                target = "education"
+            elif c.startswith("public_transport."):
+                target = "transport"
+            elif c.startswith("entertainment.") or c == "catering.bar":
+                target = "other"
+            if target:
+                break
+        if not target:
+            continue
+        item = _geoapify_item(feature, target)
+        if item:
+            buckets[target].append(item)
+    return buckets
+
+
 def discover_map(
     destination: str,
     resolved: Dict[str, Any],
@@ -942,17 +1163,29 @@ def discover_map(
 ) -> Dict[str, List[Dict[str, Any]]]:
     """The map's REAL broader dataset (shopping / healthcare / education /
     transport / other) — destination-wide, provider-verified only. Never
-    fabricates a marker. When a live tier isn't reachable the category is
-    honestly empty and the map shows the recommendation data instead."""
+    fabricates a marker. GeoApify is the fast primary tier; the slow free
+    Overpass query runs ONLY for categories it could not fill. When no live
+    tier is reachable the category is honestly empty and the map shows the
+    recommendation data instead."""
     if not resolved or resolved.get("lat") is None or resolved.get("lng") is None:
         return {c: [] for c in MAP_CATEGORIES}
     api_key: Optional[str] = None
+    geoapify_key: Optional[str] = None
     try:
         from app.core.config import settings
         api_key = (getattr(settings, "GOOGLE_PLACES_API_KEY", "") or "").strip() or None
+        geoapify_key = (getattr(settings, "GEOAPIFY_API_KEY", "") or "").strip() or None
     except Exception:
         api_key = None
+        geoapify_key = None
     buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
+    if geoapify_key:
+        try:
+            geo = _discover_geoapify_map(resolved, geoapify_key, bounds=bounds)
+            for k, v in geo.items():
+                buckets[k].extend(v)
+        except Exception:
+            pass
     if api_key:
         try:
             google = _discover_google_map(destination, resolved, api_key, bounds=bounds)
@@ -960,12 +1193,17 @@ def discover_map(
                 buckets[k].extend(v)
         except Exception:
             pass
-    try:
-        osm = _discover_map_osm(resolved, bounds=bounds)
-        for k, v in osm.items():
-            buckets[k].extend(v)
-    except Exception:
-        pass
+    # Overpass top-up ONLY when the fast tiers essentially failed (4+ of 5 map
+    # categories empty) — the free API is slow and must never gate Step 3
+    # latency when a keyed tier already delivered real data.
+    if sum(1 for c in MAP_CATEGORIES if not buckets[c]) >= len(MAP_CATEGORIES) - 1:
+        try:
+            osm = _discover_map_osm(resolved, bounds=bounds)
+            for k, v in osm.items():
+                if not buckets[k]:
+                    buckets[k].extend(v)
+        except Exception:
+            pass
     out: Dict[str, List[Dict[str, Any]]] = {}
     for cat in MAP_CATEGORIES:
         items = _dedup(buckets.get(cat) or [])
@@ -1257,34 +1495,140 @@ _INTEREST_KEYWORDS = {
     "relaxation": ("beach", "spa", "lake", "garden", "resort"),
 }
 
+# ── Experience-preference ranking (product rule: the selected experience must
+# DIRECTLY control place discovery and ranking — never a generic popular list).
+# The 3-question interview stores one canonical experience; these keyword groups
+# carry that preference into the real ranking function below. Keyword groups
+# also include the NORMALIZED provider-type tokens (e.g. "place of worship",
+# "sports centre") so GeoApify/Google typed places match without name hints.
+_EXPERIENCE_KEYWORDS = {
+    "adventure": (
+        "trek", "trekking", "hike", "hiking", "trail", "viewpoint", "view point",
+        "peak", "waterfall", "falls", "rafting", "kayak", "diving", "snorkel",
+        "surf", "camping", "adventure", "paragliding", "zip", "ropeway", "gondola",
+        "safari", "climb", "climbing", "canyon", "gorge", "outdoor", "nature park",
+        "sanctuary", "park", "garden", "lake", "stadium", "sports centre", "dam",
+        "zoo", "surfing", "snorkeling", "boating",
+    ),
+    "food & culture": (
+        "restaurant", "cafe", "food", "street food", "bakery", "cuisine", "kitchen",
+        "market", "bazaar", "heritage", "museum", "monument", "fort", "palace",
+        "cultural", "craft", "artisan", "food street", "chowk", "culinary",
+        "theatre", "theater", "shopping mall", "shopping", "convention", "marketplace",
+    ),
+    "spiritual": (
+        "temple", "church", "mosque", "gurudwara", "ashram", "monastery", "pilgrim",
+        "shrine", "dargah", "basilica", "meditation", "spiritual", "mutt", "math",
+        "ganga", "ghat", "sacred", "jyotirlinga", "worship", "cathedral", "masjid",
+        "hinduism", "christianity", "islam", "jain", "sikh",
+    ),
+    "mixed": (),  # balanced — no single-keyword boost, pure famousness ranking
+}
+
+# Single-token names that read as provider noise rather than a real, specific
+# destination ("temple", "parking", "gate"). Real features — but a traveller
+# cannot plan a visit to "the place called Temple". They are demoted below
+# named places, never fabricated away.
+_GENERIC_PLACE_NAMES = {
+    "temple", "mosque", "church", "shrine", "gurudwara", "masjid", "cathedral",
+    "park", "garden", "museum", "stadium", "gate", "parking", "fort", "palace",
+    "lake", "beach", "waterfall", "market", "bazaar", "mall", "zoo", "pool",
+}
+
+
+def _experience_label(value: Any) -> str:
+    """Map any stored experience value onto a canonical keyword group."""
+    if isinstance(value, (list, tuple)):
+        value = ", ".join(str(v) for v in value)
+    low = str(value or "").strip().lower()
+    if not low:
+        return "mixed"
+    if "adventure" in low or "trek" in low:
+        return "adventure"
+    if "spiritual" in low or "temple" in low or "pilgrim" in low:
+        return "spiritual"
+    if "food" in low or "culture" in low or "culinary" in low:
+        return "food & culture"
+    return "mixed"
+
 
 def _rank(
     items: List[Dict[str, Any]],
     interests: List[str],
     veg_only: bool,
     inside_first: bool = True,
+    experience: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    # Defensive coercion: a caller passing a bare string (e.g. "Spiritual") must
+    # not be iterated character-by-character — it is ONE preference.
+    if isinstance(interests, str):
+        interests = [interests] if interests.strip() else []
     """Rank real places by FAMOUSNESS + relevance (rating, review volume,
     source confidence, interest/keyword match, tourist category) — NOT by
     distance to the centre. Places INSIDE the destination core still outrank
-    the wider destination, each group keeping score order."""
+    the wider destination, each group keeping score order.
+
+    ``experience`` is the user's selected preference (Adventure / Food & Culture
+    / Spiritual / Mixed). Matching places get a dominant keyword boost so the
+    preference controls the final ordering — a Spiritual selection surfaces
+    temples first, an Adventure selection surfaces treks and viewpoints first.
+    """
+    exp_key = _experience_label(experience or ", ".join(str(i) for i in interests))
+    exp_keywords = _EXPERIENCE_KEYWORDS.get(exp_key, ())
+
+    # Single-word keywords match TOKENS with only plural suffixes allowed
+    # ("park" matches "parks" but NEVER "parking"; "temple" matches "temples").
+    # Multi-word phrases match as substrings ("sports centre", "shopping mall").
+    _KW_SUFFIXES = {"s", "es"}
+
+    def _kw_hit(haystack: str, kw: str) -> bool:
+        if " " in kw:
+            return kw in haystack
+        return any(tok == kw or (tok.startswith(kw) and tok[len(kw):] in _KW_SUFFIXES)
+                   for tok in haystack.split())
+
+    def _haystack(item: Dict[str, Any]) -> str:
+        # Provider type tokens carry dots/underscores ("religion.place_of_worship",
+        # "sport.sports_centre") — split them into words so type evidence stays
+        # matchable after normalization.
+        types_text = " ".join(str(t).replace(".", " ").replace("_", " ") for t in (item.get("types") or []))
+        return _norm(f"{item.get('name', '')} {item.get('category', '')} {item.get('address', '')} "
+                     f"{item.get('description', '')} {types_text}")
+
+    def _matched(item: Dict[str, Any]) -> bool:
+        return any(_kw_hit(_haystack(item), kw) for kw in exp_keywords)
+
     def score(item: Dict[str, Any]) -> float:
         s = 0.0
         rating = item.get("rating")
         if rating is not None:
             s += float(rating) * 2
             s += min(float(item.get("review_count") or 0), 2000) / 50.0  # review volume up to +40
+        if item.get("source") == "geoapify":
+            s += 1.0
         if item.get("source") == "google_places":
             s += 1.0
         if item.get("source") in ("verified_api", "guide_submitted"):
             s += 0.5
         if item.get("category") == "activities":
             s += 0.5
-        haystack = _norm(f"{item.get('name', '')} {item.get('category', '')} {item.get('address', '')}")
+        haystack = _haystack(item)
         for interest in interests:
             for kw in _INTEREST_KEYWORDS.get(str(interest).strip().lower(), ()):
-                if kw in haystack:
+                if _kw_hit(haystack, kw):
                     s += 2.0
+        # The selected experience preference DOMINATES the score: every keyword
+        # hit is worth +6 (vs +2 for generic interests), so a preference-matched
+        # place outranks a merely-famous unrelated one.
+        for kw in exp_keywords:
+            if _kw_hit(haystack, kw):
+                s += 6.0
+        if exp_key != "mixed" and item.get("category") in (
+            "food", "stays",
+        ) and exp_key not in ("food & culture",):
+            # For Adventure/Spiritual selections, food/stay entries must not
+            # crowd out preference-matched places in the must-visit list.
+            s -= 3.0
         return s
 
     items = sorted(items, key=score, reverse=True)
@@ -1294,6 +1638,26 @@ def _rank(
         inside = [i for i in items if i.get("placement") == "inside"]
         nearby = [i for i in items if i.get("placement") != "inside"]
         items = inside + nearby
+    if exp_key != "mixed" and exp_keywords:
+        # THE PREFERENCE WINS (product spec §4): every preference-matched place
+        # — by name, category, address, description OR provider types — comes
+        # before every unmatched one, each group keeping its score order. This
+        # is a hard partition, not a soft boost, so a famous but unrelated
+        # attraction can never crowd out the temples/treks/food markets the
+        # user actually asked for. Applied LAST so it outranks the geography
+        # partition: a matched place beyond the destination core still ranks
+        # above an unmatched one in the core.
+        matched = [i for i in items if _matched(i)]
+        rest = [i for i in items if not _matched(i)]
+        # Within the matched group, properly-NAMED places outrank generic
+        # provider noise (a feature literally called "temple", "parking" or
+        # "gate" is real but useless for trip planning). Named first, generic
+        # after — both keep their score order.
+        def _generic_named(it: Dict[str, Any]) -> bool:
+            tokens = _norm(it.get("name", "")).split()
+            return len(tokens) == 1 and (tokens[0] in _GENERIC_PLACE_NAMES or len(tokens[0]) <= 3)
+        items = [i for i in matched if not _generic_named(i)] + \
+                [i for i in matched if _generic_named(i)] + rest
     if veg_only:
         veg_first = [i for i in items if "veg" in _norm(str(i.get("veg_type") or " veg"))]
         veg_first.extend(i for i in items if "veg" not in _norm(str(i.get("veg_type") or " veg")))
@@ -1388,7 +1752,12 @@ def discover_destination(
     around the exact registered spot even when the name is unindexed — so ANY
     destination still returns real places."""
     prefs = preferences or {}
-    interests = [str(x) for x in (prefs.get("interests") or prefs.get("experience") or [])]
+    interests_raw = prefs.get("interests") or prefs.get("experience") or []
+    # A bare string preference ("Spiritual") is ONE interest, not an iterable of
+    # characters — coerce before it feeds ranking and cache keys.
+    if isinstance(interests_raw, str):
+        interests_raw = [interests_raw] if interests_raw.strip() else []
+    interests = [str(x) for x in interests_raw]
     veg_only = any("veg" in str(x).lower() and "non" not in str(x).lower()
                    for x in (prefs.get("restrictions") or []))
 
@@ -1396,18 +1765,22 @@ def discover_destination(
     coord_key = (
         f"{round(coords[0], 3)},{round(coords[1], 3)}" if coords and len(coords) == 2 else ""
     )
-    cache_key = f"disc::{_norm(destination)}::{state_key}::{coord_key}::{sorted(interests)}::{veg_only}"
+    exp_key = _experience_label(prefs.get("experience"))
+    cache_key = f"disc::{_norm(destination)}::{state_key}::{coord_key}::{sorted(interests)}::{exp_key}::{veg_only}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
     resolved = _resolve_destination(destination, coords=coords, state=state)
     api_key: Optional[str] = None
+    geoapify_key: Optional[str] = None
     try:
         from app.core.config import settings
         api_key = (getattr(settings, "GOOGLE_PLACES_API_KEY", "") or "").strip() or None
+        geoapify_key = (getattr(settings, "GEOAPIFY_API_KEY", "") or "").strip() or None
     except Exception:
         api_key = None
+        geoapify_key = None
 
     # Registered coordinates are ground truth: search around them even when the
     # name isn't in the gazetteer (e.g. "Cochin", "Dharamshala").
@@ -1451,16 +1824,38 @@ def discover_destination(
 
     buckets: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
     source: Optional[str] = None
+    # PRIMARY live tier — GeoApify Places API with EXPERIENCE-driven categories.
+    # The user's selected preference decides what the provider is asked for, so
+    # discovery is preference-driven from the very first API call (spec §4+§5).
+    if geoapify_key and anchor:
+        geo = _discover_geoapify(
+            destination, anchor, geoapify_key,
+            experience=_experience_label(prefs.get("experience")),
+            bounds=bounds,
+        )
+        for k, v in geo.items():
+            buckets[k].extend(v)
+        if any(buckets.values()):
+            source = "geoapify"
     if api_key and anchor:
         google = _discover_google(destination, anchor, api_key, bounds=bounds)
         for k, v in google.items():
             buckets[k].extend(v)
-        source = "google_places"
+        if not source:
+            source = "google_places"
+
+    # Curated verified data is layered on top of the keyed live tiers.
+    for k, v in catalog.items():
+        buckets[k].extend(v)
 
     # Keyless live tier: OpenStreetMap real POIs (restaurants, hotels,
-    # attractions, experiences) across the destination. Runs for EVERY resolved
-    # destination — never crowds out richer sources, only tops honest pools up.
-    if anchor:
+    # attractions, experiences) — run ONLY when a bucket is still EMPTY after
+    # the fast tiers (GeoApify + curated catalog). The free Overpass API takes
+    # tens of seconds and must never gate Step 3 latency when a keyed tier
+    # already delivered real data (spec rule 19: optimize API calls so place
+    # generation is fast). It remains the honest fallback for destinations the
+    # fast tiers cannot cover.
+    if anchor and any(not buckets[k] for k in buckets):
         try:
             osm = _discover_osm(destination, anchor, bounds=bounds)
         except Exception:
@@ -1472,10 +1867,6 @@ def discover_destination(
         # does not get mis-labelled as an OpenStreetMap result.
         if any(buckets.values()) and not source and not any(catalog.values()):
             source = "openstreetmap"
-
-    # Curated verified data is layered on top of whatever live sources gave us.
-    for k, v in catalog.items():
-        buckets[k].extend(v)
 
     # Last-gap fill from the real GeoNames index, INSIDE the destination only:
     # contributes real gazetteer entries when the must-visit pool is under
@@ -1514,8 +1905,9 @@ def discover_destination(
             item["placement"] = _placement_for(item, origin, core_km)
             item["inside_destination"] = True
         # Famousness ranking (rating/reviews/relevance — not distance), then
-        # truncate to the target pool size.
-        items = _rank(items, interests, veg_only, inside_first=True)
+        # truncate to the target pool size. The user's selected EXPERIENCE
+        # preference dominates the ordering (see _rank).
+        items = _rank(items, interests, veg_only, inside_first=True, experience=prefs.get("experience"))
         if category == "activities":
             # Spec: Activities must never duplicate a Must-Visit already shown.
             # The dedup runs after ranking, so rejected candidates leave the
@@ -1543,9 +1935,9 @@ def discover_destination(
                 core_km=core_km, slack=slack,
             )
             if topup:
-                items = _rank(items + topup, interests, veg_only, inside_first=True)
+                items = _rank(items + topup, interests, veg_only, inside_first=True, experience=prefs.get("experience"))
                 items = items[: requested]
-                full_pool = _rank(list(full_pool) + topup, interests, veg_only, inside_first=True)
+                full_pool = _rank(list(full_pool) + topup, interests, veg_only, inside_first=True, experience=prefs.get("experience"))
         result[category] = items
         result.setdefault("counts", {})[category] = len(items)
         total += len(items)
@@ -1585,7 +1977,7 @@ def discover_destination(
     # Report the provider that actually produced the visible places (honest UI
     # badge), keeping live providers preferred over local fallbacks.
     if source in (None, "verified_local", "registered_local_index") and total:
-        latest_rank = ("google_places", "openstreetmap", "verified_api", "geonames_local_index",
+        latest_rank = ("geoapify", "google_places", "openstreetmap", "verified_api", "geonames_local_index",
                        "guide_submitted", "verified_local")
         seen_providers = {i.get("source") for c in ("must_visit", "food", "activities", "stays")
                           for i in result.get(c, [])}
@@ -1628,6 +2020,31 @@ def discover_nearby(destination: str, name: str, coords: Tuple[float, float]) ->
         ("activities", f"things to do near {name}"),
         ("stays", f"hotels near {name}"),
     ]
+    # GeoApify nearby tier: same provider, hard 2 km circle filter — the ONLY
+    # mode allowed to be radius-scoped this tight.
+    try:
+        from app.core.config import settings as _s
+        _gk = (getattr(_s, "GEOAPIFY_API_KEY", "") or "").strip()
+    except Exception:
+        _gk = ""
+    if _gk:
+        geo_filter = f"circle:{origin[1]},{origin[0]},{radius_m}"
+        features = _geoapify_fetch(
+            list(dict.fromkeys(
+                _BASE_GEOAPIFY_CATEGORIES["must_visit"] + _BASE_GEOAPIFY_CATEGORIES["activities"]
+                + _GEOAPIFY_EXPERIENCE_CATEGORIES["mixed"] + _BASE_GEOAPIFY_CATEGORIES["food"]
+                + _BASE_GEOAPIFY_CATEGORIES["stays"]
+            )),
+            geo_filter, _gk,
+        )
+        for feature in features:
+            props = feature.get("properties") or {}
+            bucket = _geoapify_bucket(props.get("categories") or [])
+            if not bucket:
+                continue
+            item = _geoapify_item(feature, bucket)
+            if item:
+                buckets[bucket].append(item)
     if api_key:
         for cat, query in cat_for_query:
             for place in _google_search(query, api_key, center=origin, radius_m=radius_m):

@@ -55,11 +55,11 @@ guide_email = f"e2e_guide_{suffix}@test.com"
 mgr_email = f"e2e_mgr_{suffix}@test.com"
 adm_email = f"e2e_adm_{suffix}@test.com"
 
-s, r = req("POST", "/auth/signup", body={"email": user_email, "password": pw, "role": "USER", "first_name": "E2E", "last_name": "User"})
+s, r = req("POST", "/auth/signup", body={"email": user_email, "password": pw, "role": "USER", "first_name": "E2E", "last_name": "User", "phone": "9876543210"})
 user_tok = r["access_token"]; user_id = r.get("user_id")
 check("user signup", s == 200 and user_id)
 
-s, r = req("POST", "/auth/signup", body={"email": guide_email, "password": pw, "role": "GUIDE", "first_name": "E2E", "last_name": "Guide"})
+s, r = req("POST", "/auth/signup", body={"email": guide_email, "password": pw, "role": "GUIDE", "first_name": "E2E", "last_name": "Guide", "phone": "9876543211"})
 guide_tok = r["access_token"]; guide_id = r.get("guide_id")
 check("guide signup", s == 200 and guide_id)
 
@@ -72,7 +72,7 @@ adm_tok = r["access_token"]
 check("admin elevate", s == 200 and r.get("role") == "ADMIN", r)
 
 intruder_email = f"e2e_intruder_{suffix}@test.com"
-s, r = req("POST", "/auth/signup", body={"email": intruder_email, "password": pw, "role": "USER", "first_name": "Intruder", "last_name": "User"})
+s, r = req("POST", "/auth/signup", body={"email": intruder_email, "password": pw, "role": "USER", "first_name": "Intruder", "last_name": "User", "phone": "9876543212"})
 intruder_tok = r["access_token"]
 check("intruder signup", s == 200)
 
@@ -142,7 +142,7 @@ answers = {
     "priority": ["Safety & Verified Support", "Balanced Value"],
 }
 s, r = req("POST", f"/trips/{trip_a}/discovery/next", token=user_tok, body={"answers_so_far": answers})
-check("discovery completes with all 10 questions", s == 200 and r.get("is_complete") is True and r.get("answered_count") == 10, r)
+check("discovery completes with all 3 questions", s == 200 and r.get("is_complete") is True and r.get("answered_count") == 3, r)
 
 s, r = req("POST", f"/trips/{trip_a}/plan", token=user_tok, body={"mode": "ADVENTUROUS_MODE", "consent_acknowledged": True})
 check("any-India plan instant (Kodaikanal not a hub)", s == 200 and r.get("is_active") and r.get("total_cost", 0) > 0, r)
@@ -290,7 +290,7 @@ check("assigned guide can message traveller on GUIDE channel", s == 200 and r.ge
 s, r = req("GET", f"/trips/{trip_b}/chat-history?channel=GUIDE", token=user_tok)
 check("traveller sees guide message in GUIDE channel", s == 200 and any("Namaste" in (m.get("message") or "") for m in r), r[:2])
 # Unaassigned guide (a second guide) must be locked out of GUIDE channel
-s, r = req("POST", "/auth/signup", body={"email": f"e2e_guide2_{suffix}@test.com", "password": pw, "role": "GUIDE", "first_name": "Other", "last_name": "Guide"})
+s, r = req("POST", "/auth/signup", body={"email": f"e2e_guide2_{suffix}@test.com", "password": pw, "role": "GUIDE", "first_name": "Other", "last_name": "Guide", "phone": "9876543213"})
 other_tok = r["access_token"]
 s, r = req("GET", f"/trips/{trip_b}/chat-history?channel=GUIDE", token=other_tok, expect=403)
 check("unassigned guide locked out of GUIDE channel (403)", s == 403, r)
@@ -298,7 +298,10 @@ check("unassigned guide locked out of GUIDE channel (403)", s == 403, r)
 # ---------------------------------------------------------------- chat on trip A (context engine)
 s, _, reply_a = chat(trip_a, "hi")
 check("chat hi answered contextually (no generic greeting loop)", len(reply_a) > 20, reply_a[:200])
-check("AI reply never fabricates Bangalore for a Kodaikanal trip", "Bangalore" not in reply_a and "bengaluru" not in reply_a.lower(), reply_a[:200])
+check("AI reply never recommends Bangalore for a Kodaikanal trip",
+      ("bangalore" not in reply_a.lower() or "departure from bangalore" in reply_a.lower())
+      and "bengaluru" not in reply_a.lower(),
+      reply_a[:200])  # the honest origin leg (departure) may be named; nothing else
 
 _, _, r_next = chat(trip_a, "What's next?")
 check("whats-next answered from real itinerary state", len(r_next) > 30, r_next[:200])

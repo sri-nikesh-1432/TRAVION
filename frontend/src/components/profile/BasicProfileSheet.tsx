@@ -22,6 +22,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   const [homeCity, setHomeCity] = useState(initialData?.home_city || '');
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [homeCityError, setHomeCityError] = useState<string | null>(null);
   const [commPreference, setCommPreference] = useState<'Voice' | 'Text' | 'Both'>(initialData?.preferred_communication || 'Both');
   const [emergencyName, setEmergencyName] = useState(initialData?.emergency_contact_name || '');
   const [emergencyPhone, setEmergencyPhone] = useState(initialData?.emergency_contact_phone || '');
@@ -42,6 +43,12 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Home City is MANDATORY — the user cannot continue without it.
+    if (!homeCity.trim()) {
+      setHomeCityError('Please enter your home city to continue.');
+      return;
+    }
+    setHomeCityError(null);
     setIsSubmitting(true);
     try {
       await api.updateBasicProfile({
@@ -68,7 +75,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -140,14 +147,23 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Home / Current City</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Home / Current City *</label>
               <input
                 type="text"
+                required
                 value={homeCity}
-                onChange={(e) => setHomeCity(e.target.value)}
-                placeholder="Your home city"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                onChange={(e) => {
+                  setHomeCity(e.target.value);
+                  if (homeCityError) setHomeCityError(null);
+                }}
+                placeholder="e.g. Chennai"
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none ${
+                  homeCityError ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {homeCityError && (
+                <p className="mt-1 text-[11px] font-semibold text-red-600">{homeCityError}</p>
+              )}
             </div>
           </div>
 

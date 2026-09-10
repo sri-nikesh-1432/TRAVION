@@ -1,25 +1,53 @@
 @import "tailwindcss";
 
 @theme {
-  --color-travion-50: #f0f9ff;
-  --color-travion-100: #e0f2fe;
-  --color-travion-200: #bae6fd;
-  --color-travion-300: #7dd3fc;
-  --color-travion-400: #38bdf8;
-  --color-travion-500: #0ea5e9;
-  --color-travion-600: #0284c7;
-  --color-travion-700: #0369a1;
-  --color-travion-800: #075985;
-  --color-travion-900: #0c4a6e;
-  --shadow-soft: 0 4px 20px -2px rgba(14, 165, 233, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  --shadow-soft-lg: 0 10px 30px -4px rgba(14, 165, 233, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.05);
-  --shadow-floating: 0 20px 40px -8px rgba(2, 132, 199, 0.18);
+  /* Sky · Blue — primary */
+  --color-travion-50: #eef8ff;
+  --color-travion-100: #d9efff;
+  --color-travion-200: #b9e2fe;
+  --color-travion-300: #7ecbfc;
+  --color-travion-400: #3badf7;
+  --color-travion-500: #0f93e8;
+  --color-travion-600: #0273c6;
+  --color-travion-700: #025ba0;
+  --color-travion-800: #064d84;
+  --color-travion-900: #0b416d;
+
+  /* Cream · off-white surfaces */
+  --color-cream-50: #fdfbf5;
+  --color-cream-100: #faf6ec;
+  --color-cream-200: #f4eddd;
+  --color-cream-300: #ecdfc5;
+
+  /* Beige · warm neutral */
+  --color-beige-100: #f4ede0;
+  --color-beige-200: #eadfc9;
+  --color-beige-300: #ddd0ac;
+  --color-beige-400: #cdb78d;
+
+  /* Cognac · warm luxury accent */
+  --color-cognac-50: #fbf1ef;
+  --color-cognac-100: #f4e0db;
+  --color-cognac-200: #e8c3ba;
+  --color-cognac-300: #d69f92;
+  --color-cognac-400: #bf7a6a;
+  --color-cognac-500: #a2574f;
+  --color-cognac-600: #8a453d;
+  --color-cognac-700: #6e362f;
+
+  --shadow-soft: 0 4px 22px -2px rgba(2, 115, 198, 0.10), 0 2px 6px -1px rgba(111, 54, 47, 0.05);
+  --shadow-soft-lg: 0 12px 32px -6px rgba(2, 115, 198, 0.14), 0 4px 12px -2px rgba(111, 54, 47, 0.06);
+  --shadow-floating: 0 22px 44px -10px rgba(2, 91, 160, 0.22);
 }
 
 @layer base {
   body {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: #faf7f0;
+    background-image: radial-gradient(1200px 600px at 15% -10%, rgba(185, 226, 254, 0.35), transparent 60%),
+      radial-gradient(1000px 500px at 95% 0%, rgba(234, 223, 201, 0.45), transparent 55%),
+      linear-gradient(#faf7f0, #fdfbf5);
+    background-attachment: fixed;
+    color: #16233a;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow-x: hidden;
   }
@@ -31,14 +59,19 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f4eddd;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #cdb78d;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #a2574f;
+}
+
+::selection {
+  background: #b9e2fe;
+  color: #0b416d;
 }
 
 /* Leaflet map styles */

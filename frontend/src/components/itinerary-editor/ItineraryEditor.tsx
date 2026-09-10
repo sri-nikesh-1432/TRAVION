@@ -237,7 +237,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
 
       {/* Explore More drawer */}
       {showExplore && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowExplore(false)}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-travion-900/30 backdrop-blur-sm" onClick={() => setShowExplore(false)}>
           <div className="w-full max-w-md h-full bg-white shadow-floating overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-100 p-5 flex items-center justify-between z-10">
               <div>

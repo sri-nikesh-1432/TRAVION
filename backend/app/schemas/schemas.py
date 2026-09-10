@@ -87,6 +87,8 @@ class BasicProfileUpdate(BaseModel):
     preferred_language: str = "English"
     additional_languages: List[str] = []
     country: str = "India"
+    # Home City is MANDATORY (product rule) — validated again server-side in the
+    # route so direct API calls cannot bypass the requirement.
     home_city: Optional[str] = None
     phone: Optional[str] = None  # Mandatory per product policy; validated server-side
     preferred_communication: str = "Both"  # Voice, Text, Both
@@ -97,6 +99,13 @@ class BasicProfileUpdate(BaseModel):
     @classmethod
     def phone_must_be_valid(cls, v: Optional[str]) -> Optional[str]:
         return validate_phone(v)
+
+    @field_validator("home_city")
+    @classmethod
+    def home_city_must_not_be_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Please enter your home city to continue.")
+        return v
 
 class GuideRegistrationRequest(BaseModel):
     """Full guide registration payload from the guide registration page."""
@@ -207,11 +216,11 @@ class DiscoveryQuestionResponse(BaseModel):
     is_complete: bool
     question_id: Optional[str] = None
     question_text: Optional[str] = None
-    question_type: Optional[str] = None  # choice, multi_choice, budget, text
-    options: Optional[List[str]] = None
+    question_type: Optional[str] = None  # budget, party, experience (3-question interview)
+    options: Optional[List[Any]] = None  # experience carries {label, description} objects
     placeholder: Optional[str] = None
     answered_count: int = 0
-    total_estimated: int = 6
+    total_estimated: int = 3
 
 # --- Planning & Itinerary ---
 class PlanTripRequest(BaseModel):

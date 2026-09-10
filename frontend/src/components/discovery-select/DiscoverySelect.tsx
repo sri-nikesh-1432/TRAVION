@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info } from 'lucide-react';
+import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace } from '../../types';
+import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem } from '../../types';
 import { api } from '../../services/api';
 
 interface DiscoverySelectProps {
@@ -123,6 +123,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const [selectedStay, setSelectedStay] = useState<SelectedStay | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [mapFilter, setMapFilter] = useState('all');
+  const [autoSelected, setAutoSelected] = useState(false);
+  const [events, setEvents] = useState<TripEventItem[]>([]);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
@@ -260,16 +262,41 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   useEffect(() => {
     let alive = true;
     api.getDestinationCatalog(tripId)
-      .then((cat) => { if (alive) setCatalog(cat); })
+      .then((cat) => {
+        if (!alive) return;
+        setCatalog(cat);
+        // ── AUTO-SELECT recommended places ──
+        // The backend flags the strongest experience-matching places with
+        // `recommended: true`. They arrive PRE-SELECTED so Travion has already
+        // chosen the best matches for the trip — the traveller keeps full
+        // control and can unselect/remove any of them before planning.
+        if (!autoSelected) {
+          setAutoSelected(true);
+          const rec = [...(cat.must_visit ?? []), ...(cat.activities ?? [])]
+            .filter((p: CatalogPlace) => p.recommended && !p.already_in_plan)
+            .map((p: CatalogPlace) => p.name);
+          if (rec.length > 0) setSelected(new Set(rec));
+        }
+      })
       .catch(() => { if (alive) setLoadError('Could not load verified places for this destination.'); });
     return () => { alive = false; };
-  }, [tripId]);
+  }, [tripId, autoSelected]);
 
   useEffect(() => {
     let alive = true;
     api.getMapPlaces(tripId)
       .then((m) => { if (alive) setMapData(m); })
       .catch(() => { /* fall back to catalog markers */ });
+    return () => { alive = false; };
+  }, [tripId]);
+
+  // Date-relevant live events. The backend returns an honest empty list when no
+  // provider is configured — the section then stays hidden (never fake data).
+  useEffect(() => {
+    let alive = true;
+    api.getTripEvents(tripId)
+      .then((r) => { if (alive) setEvents(r.events || []); })
+      .catch(() => { if (alive) setEvents([]); });
     return () => { alive = false; };
   }, [tripId]);
 
@@ -316,6 +343,30 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       const hit = (catalog?.food ?? []).find((f) => f.name === name);
       return hit ? toFoodItem(hit) : { name, source: 'selected' };
     });
+    // Persist the final selection server-side (single source of truth) so the
+    // generated plans reproduce exactly what the traveller confirmed here.
+    api.syncTripSelections(tripId, [
+      ...placeItems.map((p) => ({
+        provider_place_id: p.id || `sel:${p.name}`,
+        name: p.name,
+        category: 'must_visit',
+        latitude: p.latitude ?? undefined,
+        longitude: p.longitude ?? undefined,
+        distance_km: p.distance_km ?? undefined,
+        rating: p.rating ?? undefined,
+        selection_source: 'user',
+      })),
+      ...foodItems.map((f) => ({
+        provider_place_id: f.id || `sel:${f.name}`,
+        name: f.name,
+        category: 'food',
+        latitude: f.latitude ?? undefined,
+        longitude: f.longitude ?? undefined,
+        distance_km: f.distance_km ?? undefined,
+        rating: f.rating ?? undefined,
+        selection_source: 'user',
+      })),
+    ], true).catch(() => { /* non-fatal — selections also ride the plan request */ });
     onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null);
   };
 
@@ -323,9 +374,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="text-center mb-6">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 3 · Destination discovery</span>
-        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Choose what you want to experience</h2>
+        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Your recommended places</h2>
         <p className="mt-1.5 text-[13px] font-medium text-slate-500">
-          All places here are real and verified — your picks are locked into your plans, never replaced.
+          Travion pre-selected the best matches for your travel style — all real and verified.
+          Unselect or add freely; only your final picks shape the itinerary.
         </p>
       </div>
 
@@ -412,7 +464,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 type="button"
                 onClick={() => setMapFilter('all')}
                 className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all ${
-                  mapFilter === 'all' ? 'text-white bg-slate-900 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
+                  mapFilter === 'all' ? 'text-white bg-travion-600 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
                 }`}
               >
                 <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
@@ -577,6 +629,70 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           </div>
           )}
 
+          {/* Live events around the travel dates — only real provider-backed
+              listings; the section disappears entirely when there are none. */}
+          {events.length > 0 && (
+          <div className="mb-8">
+            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+              <CalendarDays className="w-4 h-4 text-travion-600" /> Live during your dates
+              <span className="text-slate-300">·</span>
+              <span className="text-[11px] font-bold text-slate-400 normal-case">tap to add to your trip</span>
+            </h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {events.map((ev) => {
+                const active = selected.has(ev.name);
+                return (
+                  <div
+                    key={ev.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggle(selected, setSelected, ev.name)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggle(selected, setSelected, ev.name); }}
+                    className={`text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                      active
+                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                        : 'bg-white border-slate-200 hover:border-travion-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{ev.name}</p>
+                        {ev.venue && (
+                          <p className="mt-0.5 text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" /> {ev.venue}
+                          </p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                          {ev.date && <span className="text-travion-600">{ev.date}{ev.time ? ` · ${ev.time}` : ''}</span>}
+                          {ev.price != null && <span>· ₹{ev.price}</span>}
+                          {ev.booking_url && (
+                            <a
+                              href={ev.booking_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-travion-600 hover:underline"
+                            >
+                              Book <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
+                        active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
+                      }`}>
+                        {active && (
+                          <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          )}
+
           {/* Food — hidden entirely when the source has none (never invented) */}
           {catalog.food.length > 0 && (
           <div className="mb-8">
@@ -643,7 +759,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 <p className="text-[13.5px] font-extrabold text-slate-900">Continue without a stay</p>
                 <p className="mt-1 text-[11px] font-medium text-slate-500">Plans will be day-trip style — great for low budgets.</p>
                 <span className={`mt-2 inline-flex w-4 h-4 rounded-full border items-center justify-center ${
-                  selectedStay === null ? 'bg-slate-700 border-slate-700' : 'border-slate-300'
+                  selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-slate-300'
                 }`}>
                   {selectedStay === null && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                 </span>
@@ -665,8 +781,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     })}
                     className={`text-left p-4 rounded-2xl border transition-all ${
                       active
-                        ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-100'
-                        : 'bg-white border-slate-200 hover:border-indigo-200'
+                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                        : 'bg-white border-slate-200 hover:border-travion-200'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -687,7 +803,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         )}
                       </div>
                       <span className={`mt-0.5 inline-flex w-5 h-5 shrink-0 rounded-full border items-center justify-center ${
-                        active ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
+                        active ? 'bg-travion-500 border-travion-600' : 'border-slate-300 bg-white'
                       }`}>
                         {active && <span className="w-2 h-2 rounded-full bg-white" />}
                       </span>

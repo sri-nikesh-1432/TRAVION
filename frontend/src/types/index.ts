@@ -194,6 +194,23 @@ export interface BudgetRecovery {
   alternatives: { heading: string; text: string }[];
 }
 
+/* Date-relevant live event (concerts, festivals, food events…) surfaced in
+   Step 3. Only real provider-backed listings ever reach the client. */
+export interface TripEventItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  venue?: string | null;
+  date?: string | null;
+  time?: string | null;
+  price?: number | null;
+  booking_url?: string | null;
+  category?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source?: string;
+}
+
 export interface CatalogPlace {
   id?: string | null;
   name: string;
@@ -214,6 +231,8 @@ export interface CatalogPlace {
   source: string;
   verified: boolean;
   already_in_plan: boolean;
+  /** True → experience-matched place the UI auto-selects (server-decided). */
+  recommended?: boolean;
 }
 
 export interface CatalogStay {

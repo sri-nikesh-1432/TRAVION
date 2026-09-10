@@ -25,8 +25,9 @@ import app.services.places_discovery as pd
 
 @pytest.fixture(autouse=True)
 def offline_no_network(monkeypatch):
-    """No Google key, no live Overpass, no geocoding — the geonames index +
-    verified catalog (real local data) do all the work, deterministically."""
+    """No GeoApify, no Google key, no live Overpass, no geocoding — the geonames
+    index + verified catalog (real local data) do all the work, deterministically."""
+    monkeypatch.setattr(pd, "_geoapify_fetch", lambda categories, geo_filter, api_key: [])
     monkeypatch.setattr(pd, "_discover_osm", lambda dest, resolved, bounds=None: {
         "must_visit": [], "food": [], "activities": [], "stays": [],
     })
@@ -369,20 +370,69 @@ def test_port_blair_pool_honest_but_extended():
         assert meta["status"] == "success"
 
 
-def test_destination_catalog_now_always_runs_live_osm(monkeypatch):
-    """The OpenStreetMap keyless tier now runs for EVERY resolved destination
-    (not just thin-catalog ones). This is the mechanism that guarantees full
-    real pools (10 restaurants / 10 stays) in production."""
+def test_overpass_runs_when_fast_tiers_leave_buckets_empty(monkeypatch):
+    """The OpenStreetMap keyless tier is the honest FALLBACK for destinations
+    the fast tiers (GeoApify / Google / curated catalog) cannot cover — when a
+    bucket is still empty it MUST run so real pools stay fillable."""
     called = {"osm": False}
     def spy_osm(dest, resolved, bounds=None):
         called["osm"] = True
         return {"must_visit": [], "food": [], "activities": [], "stays": []}
     monkeypatch.setattr(pd, "_discover_osm", spy_osm)
+    monkeypatch.setattr(pd, "_geoapify_fetch", lambda categories, geo_filter, api_key: [])
     monkeypatch.setattr(pd, "_discover_map_osm", lambda r, bounds=None: {c: [] for c in pd.MAP_CATEGORIES})
     monkeypatch.setattr(pd, "_geocode_destination", lambda d, state=None: None)
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEOAPIFY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "GOOGLE_PLACES_API_KEY", "")
+    pd._cache.clear()
+    # An unindexed destination (registered coords only, no curated catalog) is
+    # exactly the case the OSM fallback exists for.
+    pd.discover_destination("Unindexed Hill Village", coords=(32.2190, 76.3234), state="Himachal Pradesh")
+    assert called["osm"], "OSM must run when the fast tiers leave buckets empty"
+
+
+def test_overpass_skipped_when_fast_tiers_fill_buckets(monkeypatch):
+    """Latency rule (spec: optimize API calls so place generation is fast): when
+    GeoApify already fills every bucket, the slow free Overpass tier is skipped
+    entirely."""
+    called = {"osm": False}
+    def spy_osm(dest, resolved, bounds=None):
+        called["osm"] = True
+        return {"must_visit": [], "food": [], "activities": [], "stays": []}
+    monkeypatch.setattr(pd, "_discover_osm", spy_osm)
+
+    def filling_fetch(categories, geo_filter, api_key):
+        # One real-shaped feature per bucket per call — enough to fill the pools.
+        c = set(categories.split(","))
+        if "accommodation.hotel" in c:
+            cat, cats, lat, lng = "stays", ["accommodation", "accommodation.hotel"], 11.4120, 76.7005
+        elif "catering.restaurant" in c:
+            cat, cats, lat, lng = "food", ["catering", "catering.restaurant"], 11.4130, 76.7010
+        elif "sport.sports_centre" in c:
+            cat, cats, lat, lng = "activities", ["sport", "sport.sports_centre"], 11.4150, 76.7030
+        else:
+            cat, cats, lat, lng = "must_visit", ["tourism", "tourism.attraction"], 11.4160, 76.7040
+        return [{
+            "type": "Feature",
+            "properties": {
+                "name": f"GeoApify {cat.title()} Place",
+                "categories": cats,
+                "formatted": f"GeoApify {cat.title()} Place, Ooty, Tamil Nadu, India",
+                "place_id": f"gp_fill_{cat}",
+                "lat": lat, "lon": lng,
+            },
+        }]
+
+    monkeypatch.setattr(pd, "_geoapify_fetch", filling_fetch)
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda r, bounds=None: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(pd, "_geocode_destination", lambda d, state=None: None)
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEOAPIFY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "GOOGLE_PLACES_API_KEY", "")
     pd._cache.clear()
     pd.discover_destination("Ooty")
-    assert called["osm"], "OSM should always run for every resolved destination"
+    assert not called["osm"], "Overpass must be skipped when fast tiers already filled every bucket"
 
 
 def test_topup_entries_are_real_verified_provenance():

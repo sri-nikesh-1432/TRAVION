@@ -349,7 +349,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
       {/* Add Place search drawer */}
       <AnimatePresence>
         {showSearch && (
-          <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowSearch(false)}>
+          <div className="fixed inset-0 z-50 flex justify-end bg-travion-900/30 backdrop-blur-sm" onClick={() => setShowSearch(false)}>
             <motion.div
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'tween', duration: 0.2 }}
@@ -449,7 +449,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
       {/* Optimize My Day proposal modal */}
       <AnimatePresence>
         {proposal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setProposal(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm" onClick={() => setProposal(null)}>
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
               className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-floating"

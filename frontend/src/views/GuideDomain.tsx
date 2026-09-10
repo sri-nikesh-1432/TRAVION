@@ -137,7 +137,7 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
+    <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
       
       {/* Top Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between">
@@ -178,7 +178,7 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
               disabled={isUpdatingStatus}
               onClick={() => handleStatusToggle('DUTY_OFF')}
               className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 ${
-                status === 'DUTY_OFF' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                status === 'DUTY_OFF' ? 'bg-travion-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-slate-400" />

@@ -13,6 +13,7 @@ so the user can always see what changed. In GUIDE_MODE the assigned guide is
 synchronized with a chat system message so the guide always sees the latest
 plan.
 """
+import requests
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -218,14 +219,40 @@ def _own_trip(trip_id: str, current: dict, db: Session) -> Trip:
 
 
 def _itinerary_response(itin: Itinerary) -> ItineraryResponse:
+    breakdown = effective_breakdown(itin)
+    days = itin.days_data
+    # REAL ROUTE OVERLAY (best-effort, additive): real GeoApify road legs per
+    # day so every edit response reflects the ACTUAL journey — the recalc-in-
+    # one-place guarantee (routes, distances, travel time; spec §28). Stored
+    # costs are untouched; the overlay only adds route facts.
+    try:
+        from app.services import geoapify as geo
+        if geo.has_key():
+            total_route_km = 0.0
+            for d in days or []:
+                stops = [s for s in (d.get("stops") or []) if s.get("lat") is not None and s.get("lng") is not None]
+                if len(stops) < 2:
+                    d["routes"] = []
+                    continue
+                matrix = geo.route_matrix([(float(s["lat"]), float(s["lng"])) for s in stops], mode="drive")
+                legs = geo.route_legs(stops, mode="drive", matrix=matrix)
+                d["routes"] = legs
+                d["route_distance_km"] = round(sum(float(l.get("distance_km") or 0) for l in legs), 2)
+                d["route_duration_min"] = round(sum(float(l.get("duration_min") or 0) for l in legs), 1)
+                total_route_km += float(d.get("route_distance_km") or 0)
+            breakdown = dict(breakdown)
+            breakdown["route_distance_km"] = round(total_route_km, 2)
+            breakdown["route_source"] = "geoapify"
+    except Exception:
+        pass
     return ItineraryResponse(
         id=itin.id,
         trip_id=itin.trip_id,
         version=itin.version,
         is_active=itin.is_active,
         total_cost=itin.total_cost,
-        cost_breakdown=effective_breakdown(itin),
-        days=itin.days_data,
+        cost_breakdown=breakdown,
+        days=days,
         created_at=itin.created_at,
     )
 
@@ -449,6 +476,50 @@ def destination_catalog(
     foods = discovery.get("food") or []
     activities = discovery.get("activities") or []
 
+    # ── AUTO-SELECT: preference-matched recommended places ──────────────────
+    # The strongest experience-matching places are flagged `recommended` so the
+    # client marks them pre-selected. The user keeps full control — anything can
+    # be unselected/removed before the itinerary is generated (product rule #7).
+    from app.services.places_discovery import _experience_label, _EXPERIENCE_KEYWORDS
+    from app.services.place_selections import selections_payload as _sel_payload
+
+    experience = _experience_label((profile or {}).get("experience"))
+    exp_keywords = _EXPERIENCE_KEYWORDS.get(experience, ())
+
+    def _norm_text(x: Any) -> str:
+        return " ".join(str(x or "").lower().split())
+
+    def _is_recommended(a: Dict[str, Any], rank_position: int) -> bool:
+        if experience == "mixed" or not exp_keywords:
+            # Mixed: the top-ranked places ARE the recommendation.
+            return rank_position < 4
+        # Same evidence the discovery ranker uses: name, category, address,
+        # description AND the provider's own type tokens (e.g. a GeoApify
+        # "religion.place_of_worship" type must count as a Spiritual match).
+        text = _norm_text(
+            f"{a.get('name', '')} {a.get('category', '')} {a.get('address', '')} "
+            f"{a.get('description', '')} {' '.join(str(t) for t in (a.get('types') or []))}"
+        )
+        matched = any(kw in text for kw in exp_keywords)
+        # Strong preference match OR simply among the top-ranked few.
+        return matched or rank_position < 2
+
+    recommended_names: List[str] = []
+    for idx, a in enumerate(attractions):
+        if _is_recommended(a, idx) and len(recommended_names) < 4:
+            recommended_names.append(str(a.get("name", "")))
+    for idx, a in enumerate(activities):
+        if _is_recommended(a, idx) and len(recommended_names) < 6:
+            recommended_names.append(str(a.get("name", "")))
+
+    # Places the traveller already selected/persisted must stay excluded from
+    # the recommendation set (they are restored separately by the client).
+    already_picked = {
+        str(s.get("name", "")).strip().lower()
+        for s in _sel_payload(db, trip.id).get("selections", [])
+    }
+    recommended_names = [n for n in recommended_names if n.strip().lower() not in already_picked]
+
     def _attr(a: Dict[str, Any]) -> Dict[str, Any]:
         _inside = a.get("inside_destination")
         if _inside is None:
@@ -473,6 +544,8 @@ def destination_catalog(
             "source": a.get("source", "verified_api"),
             "verified": a.get("verified", True),
             "already_in_plan": _in_plan(days, a.get("name", "")),
+            # True → the client auto-selects this place (experience preference).
+            "recommended": str(a.get("name", "")) in recommended_names,
         }
 
     def _stay(s: Dict[str, Any]) -> Dict[str, Any]:
@@ -651,6 +724,113 @@ def delete_trip_selection(
         raise HTTPException(status_code=404, detail="No active selection for that place.")
     db.commit()
     return {"removed": True, "provider_place_id": provider_place_id}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0b2. Date-relevant live events — honest, source-backed only.
+# No paid event API key is configured today, so the endpoint ALWAYS returns an
+# honest empty list (never fabricated events). When an EVENTS_API_KEY is set,
+# the real provider is queried, filtered by destination + travel dates and the
+# user's experience preference. Selected events ride to the planner as normal
+# place selections, so they flow into the generated itinerary.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_EVENTS_CATEGORY_KEYWORDS = {
+    "adventure": ("adventure", "trek", "outdoor", "marathon", "race", "camping", "sport"),
+    "food & culture": ("food", "restaurant", "cuisine", "festival", "market", "culture", "heritage", "walk"),
+    "spiritual": ("spiritual", "temple", "festival", "pilgrim", "meditation", "yoga", "cultural"),
+    "mixed": (),
+}
+
+
+@router.get("/{trip_id}/events")
+def trip_events(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Live events near the destination during the trip dates.
+
+    Response contract:
+      events: [] when no provider is configured (the UI hides the section —
+      never fake listings) or when nothing real matches destination + dates.
+      provider: 'none' today; the real provider slug once an API key is set.
+    """
+    trip = _own_trip(trip_id, current, db)
+
+    def _event(item: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": str(item.get("id") or item.get("name") or ""),
+            "name": str(item.get("name") or ""),
+            "description": item.get("description"),
+            "venue": item.get("venue"),
+            "date": item.get("date"),
+            "time": item.get("time"),
+            "price": item.get("price"),
+            "booking_url": item.get("booking_url") or item.get("url"),
+            "category": item.get("category") or "event",
+            "latitude": item.get("latitude"),
+            "longitude": item.get("longitude"),
+            "source": item.get("source") or "events_api",
+        }
+
+    try:
+        from app.core.config import settings
+        api_key = (getattr(settings, "EVENTS_API_KEY", "") or "").strip()
+    except Exception:
+        api_key = ""
+
+    if not api_key:
+        return {"destination": trip.destination_name, "provider": "none", "events": []}
+
+    profile = trip.profile.questions_answers if trip.profile else {}
+    from app.services.places_discovery import _experience_label
+    experience = _experience_label((profile or {}).get("experience"))
+    keywords = _EVENTS_CATEGORY_KEYWORDS.get(experience, ())
+
+    start_dt = str(trip.start_datetime or "")[:10]
+    end_dt = str(trip.end_datetime or "")[:10]
+    try:
+        resp = requests.get(
+            "https://api.predicthq.com/v1/events",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params={
+                "q": trip.destination_name,
+                "active.gte": start_dt or None,
+                "active.lte": end_dt or None,
+                "limit": 20,
+            },
+            timeout=8,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception:
+        # Provider unreachable — stay honest, show nothing rather than invent.
+        return {"destination": trip.destination_name, "provider": "events_api", "events": []}
+
+    events: List[Dict[str, Any]] = []
+    for raw in (payload.get("results") or []):
+        title = str(raw.get("title") or "").strip()
+        if not title:
+            continue
+        text = title.lower()
+        if keywords and not any(kw in text for kw in keywords):
+            continue  # keep only experience-relevant listings
+        events.append(_event({
+            "id": raw.get("id"),
+            "name": title,
+            "description": raw.get("description"),
+            "venue": ((raw.get("entities") or [{}])[0].get("name") if raw.get("entities") else None),
+            "date": (raw.get("start") or "")[:10] or None,
+            "time": (raw.get("start") or "")[11:16] or None,
+            "category": raw.get("category"),
+            "booking_url": None,
+            "source": "predict_hq",
+        }))
+        if len(events) >= 12:
+            break
+
+    return {"destination": trip.destination_name, "provider": "events_api", "events": events}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

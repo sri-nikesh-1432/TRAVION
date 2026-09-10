@@ -52,7 +52,7 @@ export const LiveNavigationMode: React.FC<LiveNavigationModeProps> = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col justify-between p-4 md:p-6 bg-slate-950/90 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex flex-col justify-between p-4 md:p-6 bg-travion-800/90 backdrop-blur-md"
     >
       {/* Top Banner: Next Turn Instruction */}
       <div className="w-full max-w-xl mx-auto bg-travion-600 text-white rounded-3xl p-5 shadow-2xl flex items-center justify-between">
@@ -90,7 +90,7 @@ export const LiveNavigationMode: React.FC<LiveNavigationModeProps> = ({
 
       {/* Center Simulated Live Road Simulation */}
       <div className="flex-1 flex items-center justify-center my-6">
-        <div className="relative w-full max-w-md h-72 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden">
+        <div className="relative w-full max-w-md h-72 rounded-3xl bg-travion-600 border border-travion-500 flex items-center justify-center overflow-hidden">
           {/* Animated Road Perspective Lines */}
           <motion.div
             animate={{ y: [0, 40] }}

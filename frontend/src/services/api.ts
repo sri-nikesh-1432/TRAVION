@@ -3,7 +3,7 @@ import {
   GuideCandidate, ReviewItem, ChatMessageItem, ReplanningLogItem,
   UserProfile, GuideProfile, PlanOption, ItineraryChange,
   ItineraryChangeResponse, ExplorePlace, DestinationCatalog, MapPlacesPayload,
-  SelectedPlaceItem, SelectedFoodItem, SelectedStay,
+  SelectedPlaceItem, SelectedFoodItem, SelectedStay, TripEventItem,
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
 } from '../types';
 
@@ -173,14 +173,14 @@ export const api = {
   updateBasicProfile: (data: Partial<UserProfile>) =>
     request<{ message: string; user_id: string }>('/trips/profile/basic', { method: 'PUT', body: JSON.stringify(data) }),
 
-  // Discovery
+  // Discovery — the 3-question interview (budget / party / experience)
   getNextDiscoveryQuestion: (tripId: string, answersSoFar: Record<string, any>) =>
     request<{
       is_complete: boolean;
       question_id?: string;
       question_text?: string;
-      question_type?: 'choice' | 'multi_choice' | 'budget' | 'text';
-      options?: string[];
+      question_type?: 'budget' | 'party' | 'experience' | 'choice' | 'multi_choice' | 'text';
+      options?: any[];
       placeholder?: string;
       answered_count: number;
       total_estimated: number;
@@ -198,6 +198,19 @@ export const api = {
   // broader provider-verified map categories) — click-to-select markers.
   getMapPlaces: (tripId: string) =>
     request<MapPlacesPayload>(`/trips/${tripId}/map-places`),
+
+  // Persist the traveller's final place picks (single source of truth shared by
+  // the planner, guide views and regeneration). replace=true mirrors the UI set.
+  syncTripSelections: (tripId: string, items: Array<Record<string, any>>, replace = false) =>
+    request<{ total: number }>(`/trips/${tripId}/selections/sync`, {
+      method: 'POST',
+      body: JSON.stringify({ items, replace }),
+    }),
+
+  // Date-relevant live events for the destination + travel dates. An empty list
+  // means no provider is configured / nothing real matched — never fake data.
+  getTripEvents: (tripId: string) =>
+    request<{ destination: string; provider: string; events: TripEventItem[] }>(`/trips/${tripId}/events`),
 
   // Multi-plan: exactly 3 budget-clamped options built around the user's selections
   planMulti: (

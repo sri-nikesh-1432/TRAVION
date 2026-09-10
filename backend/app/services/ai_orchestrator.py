@@ -67,7 +67,15 @@ def _parse_days(start_date: str, end_date: str) -> int:
 
 
 def _party(profile: Dict[str, Any]) -> str:
-    return profile.get("party") or profile.get("party_type") or "Solo"
+    """Normalize the stored party answer into a readable group label.
+    The 3-question interview stores {'group','total','adults','children'};
+    older trips stored a plain string. Pricing/planning always gets a string."""
+    raw = profile.get("party") or profile.get("party_type") or "Solo"
+    if isinstance(raw, dict):
+        raw = raw.get("group") or f"{raw.get('total') or 1} travellers"
+    if isinstance(raw, (list, tuple)):
+        raw = ", ".join(str(v) for v in raw)
+    return str(raw) or "Solo"
 
 
 def _pick_transport(src: str, dest: str, profile: Dict[str, Any], budget: float) -> Dict[str, Any]:

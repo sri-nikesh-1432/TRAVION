@@ -268,6 +268,34 @@ def get_trip_itinerary(
         raise HTTPException(status_code=404, detail="Itinerary not generated yet")
 
     breakdown = effective_breakdown(itinerary)
+    days = itinerary.days_data
+
+    # REAL ROUTE OVERLAY (additive, never persisted): each day's ordered stops
+    # get real GeoApify road legs (distance + duration + source). One Route
+    # Matrix call per day; straight-line only as the clearly-flagged last
+    # resort. The stored cost breakdown is untouched — the overlay gives the
+    # map and the expense panel the actual journey geometry (spec §13+§26).
+    try:
+        from app.services import geoapify as geo
+        if geo.has_key():
+            total_route_km = 0.0
+            for d in days:
+                stops = [s for s in (d.get("stops") or []) if s.get("lat") is not None and s.get("lng") is not None]
+                if len(stops) < 2:
+                    d["routes"] = []
+                    continue
+                pts = [(float(s["lat"]), float(s["lng"])) for s in stops]
+                matrix = geo.route_matrix(pts, mode="drive")
+                legs = geo.route_legs(stops, mode="drive", matrix=matrix)
+                d["routes"] = legs
+                d["route_distance_km"] = round(sum(float(l.get("distance_km") or 0) for l in legs), 2)
+                d["route_duration_min"] = round(sum(float(l.get("duration_min") or 0) for l in legs), 1)
+                total_route_km += float(d.get("route_distance_km") or 0)
+            breakdown = dict(breakdown)
+            breakdown["route_distance_km"] = round(total_route_km, 2)
+            breakdown["route_source"] = "geoapify"
+    except Exception:
+        pass  # route overlay is best-effort; the itinerary stands alone
 
     return ItineraryResponse(
         id=itinerary.id,
@@ -276,6 +304,6 @@ def get_trip_itinerary(
         is_active=itinerary.is_active,
         total_cost=itinerary.total_cost,
         cost_breakdown=breakdown,
-        days=itinerary.days_data,
+        days=days,
         created_at=itinerary.created_at
     )

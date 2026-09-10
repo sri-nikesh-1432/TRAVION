@@ -30,8 +30,14 @@ class Settings(BaseModel):
     # External APIs
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
+    # Live events provider (PredictHQ or compatible). Optional — when unset the
+    # events endpoint honestly returns an empty list instead of inventing data.
+    EVENTS_API_KEY: str = os.getenv("EVENTS_API_KEY", "")
     # Server-side ONLY — never exposed to the frontend (no VITE_ key).
     GOOGLE_PLACES_API_KEY: str = os.getenv("GOOGLE_PLACES_API_KEY", "")
+    # GeoApify Places API — PRIMARY real-place discovery provider (Step 3).
+    # Server-side ONLY — never exposed to the frontend.
+    GEOAPIFY_API_KEY: str = os.getenv("GEOAPIFY_API_KEY", "")
     RAZORPAY_KEY_ID: str = os.getenv("RAZORPAY_KEY_ID", "rzp_test_travion_live")
     RAZORPAY_KEY_SECRET: str = os.getenv("RAZORPAY_KEY_SECRET", "travion_sec_verified_razorpay")
 

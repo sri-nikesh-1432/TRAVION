@@ -204,7 +204,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
           <div class="w-11 h-11 rounded-full bg-travion-500 border-2 border-white shadow-floating flex items-center justify-center text-white">
             ${iconSvgString('navigation', { size: 20, stroke: '#ffffff', strokeWidth: 2.2 })}
           </div>
-          <div class="absolute -bottom-1 px-1.5 py-0.5 bg-slate-900 text-[9px] font-bold text-white rounded-full">
+          <div class="absolute -bottom-1 px-1.5 py-0.5 bg-travion-600 text-[9px] font-bold text-white rounded-full">
             YOU
           </div>
         </div>

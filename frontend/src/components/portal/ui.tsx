@@ -8,7 +8,7 @@ export function KpiCard({ label, value, sub, tone = 'default' }: {
 }) {
   const tones: Record<string, string> = {
     default: 'text-slate-900',
-    indigo: 'text-indigo-600',
+    indigo: 'text-travion-600',
     emerald: 'text-emerald-600',
     amber: 'text-amber-600',
     rose: 'text-rose-600',
@@ -33,7 +33,7 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETED: 'bg-sky-100 text-sky-800',
   GUIDE_ASSIGNED: 'bg-sky-100 text-sky-800',
   PAID: 'bg-sky-100 text-sky-800',
-  PLANNED: 'bg-indigo-100 text-indigo-800',
+  PLANNED: 'bg-travion-100 text-travion-800',
   REQUESTED: 'bg-amber-100 text-amber-800',
   PENDING: 'bg-amber-100 text-amber-800',
   ACCEPTED: 'bg-amber-100 text-amber-800',
@@ -58,7 +58,7 @@ export function ModePill({ mode }: { mode?: string | null }) {
   if (!mode) return null;
   const guide = mode === 'GUIDE_MODE';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap ${guide ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap ${guide ? 'bg-travion-100 text-travion-700' : 'bg-slate-100 text-slate-600'}`}>
       {guide ? 'Guide' : 'Adventurous'}
     </span>
   );
@@ -108,7 +108,7 @@ export function SearchBox({ value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'Search…'}
-        className="w-full sm:w-64 pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+        className="w-full sm:w-64 pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300"
       />
     </div>
   );
@@ -119,7 +119,7 @@ export function IconBtn({ children, onClick, title, tone = 'indigo' }: {
   children: React.ReactNode; onClick?: () => void; title?: string; tone?: 'indigo' | 'emerald' | 'rose' | 'slate';
 }) {
   const tones: Record<string, string> = {
-    indigo: 'text-indigo-600 hover:bg-indigo-50',
+    indigo: 'text-travion-600 hover:bg-travion-50',
     emerald: 'text-emerald-600 hover:bg-emerald-50',
     rose: 'text-rose-600 hover:bg-rose-50',
     slate: 'text-slate-500 hover:bg-slate-100',
@@ -269,7 +269,7 @@ export function ResponsiveTable({ loading, error, onRetry, columns, rows, empty 
       <div className="p-8 text-center">
         <p className="text-xs font-bold text-rose-600">{error}</p>
         {onRetry && (
-          <button onClick={onRetry} className="mt-3 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold">
+          <button onClick={onRetry} className="mt-3 px-4 py-2 rounded-xl bg-travion-600 text-white text-xs font-bold">
             Retry
           </button>
         )}
@@ -314,7 +314,7 @@ export function Drawer({ open, onClose, title, children, wide = false }: {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-travion-900/30 backdrop-blur-sm"
           />
           <motion.aside
             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
@@ -347,14 +347,14 @@ export function ConfirmDialog({ open, onCancel, onConfirm, title, body, confirmL
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onCancel}
-            className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-travion-900/40 backdrop-blur-sm"
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
             className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md p-6 bg-white rounded-3xl shadow-floating border border-slate-100"
           >
             <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${danger ? 'bg-rose-100 text-rose-600' : 'bg-indigo-100 text-indigo-600'}`}>
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${danger ? 'bg-rose-100 text-rose-600' : 'bg-travion-100 text-travion-600'}`}>
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
@@ -368,7 +368,7 @@ export function ConfirmDialog({ open, onCancel, onConfirm, title, body, confirmL
               </button>
               <button
                 onClick={onConfirm}
-                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm ${danger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm ${danger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-travion-500 hover:bg-travion-600'}`}
               >
                 {confirmLabel}
               </button>

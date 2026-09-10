@@ -60,9 +60,9 @@ export const GuideSignIn: React.FC<GuideSignInProps> = ({ onSignInSuccess, onSwi
   };
 
   return (
-    <div className="min-h-screen bg-white pt-20 pb-24">
+    <div className="min-h-screen bg-cream-50 pt-20 pb-24">
       {/* Header */}
-      <div className="bg-slate-950 py-16">
+      <div className="bg-travion-800 py-16">
         <div className="max-w-4xl mx-auto px-5 text-center">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
