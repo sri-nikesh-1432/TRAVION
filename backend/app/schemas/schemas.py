@@ -100,6 +100,24 @@ class BasicProfileUpdate(BaseModel):
     def phone_must_be_valid(cls, v: Optional[str]) -> Optional[str]:
         return validate_phone(v)
 
+    @field_validator("emergency_contact_phone")
+    @classmethod
+    def emergency_phone_must_be_valid(cls, v: Optional[str]) -> Optional[str]:
+        # Product rule: the emergency contact must be a valid 10-digit Indian
+        # mobile number — API calls cannot bypass what the form enforces.
+        if v is None:
+            return v
+        digits = "".join(c for c in v if c.isdigit())
+        if digits == "":
+            return v
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        if len(digits) != 10 or not digits.startswith(("6", "7", "8", "9")):
+            raise ValueError("Emergency contact must be a valid 10-digit Indian mobile number (starting 6-9).")
+        return v
+
     @field_validator("home_city")
     @classmethod
     def home_city_must_not_be_blank(cls, v: Optional[str]) -> Optional[str]:

@@ -25,7 +25,10 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   const [homeCityError, setHomeCityError] = useState<string | null>(null);
   const [commPreference, setCommPreference] = useState<'Voice' | 'Text' | 'Both'>(initialData?.preferred_communication || 'Both');
   const [emergencyName, setEmergencyName] = useState(initialData?.emergency_contact_name || '');
-  const [emergencyPhone, setEmergencyPhone] = useState(initialData?.emergency_contact_phone || '');
+  const [emergencyPhone, setEmergencyPhone] = useState(
+    (initialData?.emergency_contact_phone || '').replace(/\D/g, '').slice(0, 10)
+  );
+  const [emergencyPhoneError, setEmergencyPhoneError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const phoneDigits = phone.replace(/\D/g, '');
@@ -40,6 +43,20 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
       setPhoneError(null);
     }
   };
+
+  // Emergency contact must be a valid 10-digit Indian mobile number — letters
+  // and special characters are blocked at the input itself (spec: numbers only).
+  const handleEmergencyPhoneChange = (value: string) => {
+    const digits = value.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').slice(0, 10);
+    setEmergencyPhone(digits);
+    if (digits.length > 0 && (digits.length < 10 || !/^[6-9]/.test(digits))) {
+      setEmergencyPhoneError('Enter a valid 10-digit Indian mobile number (starting 6-9).');
+    } else {
+      setEmergencyPhoneError(null);
+    }
+  };
+  const emergencyPhoneValid = emergencyPhone.length === 0 ||
+    (emergencyPhone.length === 10 && /^[6-9]/.test(emergencyPhone));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,17 +241,23 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
               />
               <input
                 type="tel"
+                inputMode="numeric"
                 value={emergencyPhone}
-                onChange={(e) => setEmergencyPhone(e.target.value)}
-                placeholder="Phone (e.g. +91 98765 43210)"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:border-travion-500 focus:outline-none bg-white"
+                onChange={(e) => handleEmergencyPhoneChange(e.target.value)}
+                placeholder="10-digit mobile (e.g. 9876543210)"
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold focus:border-travion-500 focus:outline-none bg-white ${
+                  emergencyPhoneError ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
             </div>
+            {emergencyPhoneError && (
+              <p className="mt-1 text-[11px] font-semibold text-red-600">{emergencyPhoneError}</p>
+            )}
           </div>
 
           <button
             type="submit"
-            disabled={isSubmitting || !firstName || !lastName || !phoneValid}
+            disabled={isSubmitting || !firstName || !lastName || !phoneValid || !!emergencyPhoneError}
             className="w-full py-3 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm shadow-md hover:shadow-soft flex items-center justify-center gap-2 transition-all disabled:opacity-50"
           >
             <span>Save & Continue</span>
