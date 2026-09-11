@@ -25,7 +25,7 @@ from app.models.entities import (
     PlanChangeLog,
 )
 from app.schemas.schemas import (
-    PlanMultiRequest, ChoosePlanRequest, ItineraryChangeRequest,
+    PlanMultiRequest, ChoosePlanRequest, ExperienceModeRequest, ItineraryChangeRequest,
     ItineraryChangeResponse, ExplorePlaceItem, ItineraryResponse,
     PlaceSearchItem, PlanChangeResponse, OptimizeDayRequest,
     OptimizeDayResponse, ConfirmPlanResponse, SelectionPayload,
@@ -1269,6 +1269,101 @@ def choose_plan(
     db.commit()
     db.refresh(itin)
     return _itinerary_response(itin)
+
+
+@router.post("/{trip_id}/experience-mode")
+def set_experience_mode(
+    trip_id: str,
+    req: ExperienceModeRequest,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    """Record the traveller's trip-EXPERIENCE choice (Guide vs Adventurous) on
+    the final pre-payment screen.
+
+    Order of operations on the client: Step 3 discovery → three plan cards →
+    drag & drop itinerary editor → THIS mode choice → payment. By this point
+    the user has already edited the plan, so the ACTIVE itinerary is the
+    FINAL user-edited version and must NEVER be regenerated — switching modes
+    only reprices it with the authoritative fee rules (12.5% guide fee in
+    GUIDE_MODE, none in ADVENTUROUS_MODE; 3% platform fee in both).
+
+    Guide fee is always computed server-side from the CURRENT plan — never
+    trusted from the client and never frozen from an earlier version.
+    """
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    if not itin:
+        raise HTTPException(status_code=400, detail="Choose a plan before selecting the trip experience.")
+    if not trip.profile:
+        raise HTTPException(status_code=400, detail="Trip profile missing.")
+
+    profile = dict(trip.profile.questions_answers or {})
+    _party = profile.get("party") or (trip.profile.party_type if trip.profile else None)
+
+    # ── Mode persistence: the single source of truth for pricing ────────────
+    previous_mode = trip.mode
+    trip.mode = req.mode
+
+    # ── Authoritative reprice of the user's FINAL edited itinerary ─────────
+    _assigned_guide = (
+        trip.guide_assignment.guide
+        if trip.guide_assignment and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")
+        else None
+    )
+    result = reprice_breakdown(
+        itin.cost_breakdown or {},
+        mode=req.mode,
+        days=max(1, len(itin.days_data or [])),
+        destination=trip.destination_name or "",
+        party_type=_party,
+        guide=_assigned_guide,
+    )
+    itin.cost_breakdown = result
+    itin.total_cost = float(result["final_total"])
+    trip.total_cost = itin.total_cost
+
+    # ── Guide-assignment lifecycle follows the mode ──────────────────────────
+    if req.mode == "GUIDE_MODE":
+        # Flag for assignment WITHOUT claiming a guide exists (§21: never fake
+        # assignment). Payment success is what starts the matching pipeline.
+        trip.status = "REQUESTED"
+        if not db.query(GuideAssignment).filter(GuideAssignment.trip_id == trip.id).first():
+            db.add(GuideAssignment(trip_id=trip.id, status="REQUESTED"))
+    else:
+        trip.status = "PLANNED"
+        # Switching to Adventurous cancels a dangling unassigned request so no
+        # orphan "REQUESTED" assignment survives a mode change.
+        dangling = db.query(GuideAssignment).filter(
+            GuideAssignment.trip_id == trip.id,
+            GuideAssignment.status == "REQUESTED",
+            GuideAssignment.guide_id.is_(None),
+        ).first()
+        if dangling:
+            db.delete(dangling)
+
+    _log_change(
+        db, trip, itin.version, "experience_mode",
+        (f"Experience switched to Guide Mode — 12.5% guide fee applied, total ₹{round(itin.total_cost):,}"
+         if req.mode == "GUIDE_MODE"
+         else f"Experience switched to Adventurous Mode — no guide fee, total ₹{round(itin.total_cost):,}"),
+    )
+    if previous_mode and previous_mode != req.mode:
+        _log_change(db, trip, itin.version, "experience_mode_switch",
+                    f"Changed trip experience from {previous_mode} to {req.mode}")
+
+    db.commit()
+    db.refresh(itin)
+    return {
+        "mode": req.mode,
+        "total_cost": itin.total_cost,
+        "guide_fee": float(result.get("guide_fee", 0) or 0),
+        "platform_fee": float(result.get("platform_fee", 0) or 0),
+        "amount_payable": float(result.get("final_total", 0) or 0),
+        "status": trip.status,
+    }
 
 
 # ── 3. Apply a user change (drag & drop / remove / add / move) ──────────────

@@ -377,6 +377,13 @@ class PlanOptionResponse(BaseModel):
 class ChoosePlanRequest(BaseModel):
     plan_type: str = Field(..., pattern="^(VALUE|RECOMMENDED|PREMIUM)$")
 
+class ExperienceModeRequest(BaseModel):
+    """The traveller's trip-EXPERIENCE choice (Guide vs Adventurous), made on
+    the final pre-payment screen. Switching reprices the active itinerary —
+    the 12.5% guide fee appears only in GUIDE_MODE — while every itinerary
+    edit the traveller made stays untouched."""
+    mode: str = Field(..., pattern="^(GUIDE_MODE|ADVENTUROUS_MODE)$")
+
 class ItineraryChangeRequest(BaseModel):
     kind: str = Field(..., pattern="^(remove|move_time|move_day|reorder|add)$")
     stop_id: Optional[str] = None

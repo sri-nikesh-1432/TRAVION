@@ -30,6 +30,62 @@ import { PlannerWorkspace } from '../components/planner/PlannerWorkspace';
 import { ModeSelectionScreen, TripMode } from '../components/mode-selection/ModeSelectionModal';
 import { resolveBudgetMax } from '../utils/budget';
 
+/* ─── Booking flow stepper: the visible before/after-Step-3 split ───────────
+   Everything left of the divider is "choose WHAT" (budget, style, discovery);
+   everything right of it is "choose HOW" (plan, experience, pay). The divider
+   makes the Step 3 boundary explicit in every booking view. */
+const BOOKING_STEPS = [
+  { key: 'search', label: 'Budget' },
+  { key: 'discovery', label: 'Travel Style' },
+  { key: 'discovery_select', label: 'Discover' },
+  { key: 'plan_choice', label: 'Plan' },
+  { key: 'planner', label: 'Edit' },
+  { key: 'mode_select', label: 'Experience' },
+] as const;
+
+const FlowStepper: React.FC<{ current: string }> = ({ current }) => {
+  const activeIdx = BOOKING_STEPS.findIndex(s => s.key === current);
+  // Payment is the terminal step; the planner's checkout modal covers it.
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2" aria-label="Booking progress">
+      {BOOKING_STEPS.map((s, i) => {
+        const done = activeIdx >= 0 && i < activeIdx;
+        const active = i === activeIdx;
+        const afterSplit = i >= 3; // Plan / Edit / Experience — after the Step 3 split
+        return (
+          <React.Fragment key={s.key}>
+            {i === 3 && (
+              <span className="mx-1 hidden sm:flex items-center" aria-hidden>
+                <span className="w-4 h-px bg-slate-300" />
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                <span className="w-4 h-px bg-slate-300" />
+              </span>
+            )}
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-[10.5px] sm:text-[11px] font-black border transition-colors ${
+                active
+                  ? 'bg-travion-600 border-travion-600 text-white shadow-soft'
+                  : done
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'bg-white border-slate-200 text-slate-400'
+              }`}
+            >
+              {done ? (
+                <CheckCircle2 className="w-3 h-3" />
+              ) : (
+                <span className={`w-3.5 h-3.5 rounded-full text-[8px] font-black flex items-center justify-center ${active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-400'}`}>{i + 1}</span>
+              )}
+              {s.label}
+              {i === 2 && <span className="hidden md:inline font-bold opacity-60">· Step 3</span>}
+              {afterSplit && i !== 2 && <span className="hidden md:inline font-bold opacity-40">· after Step 3</span>}
+            </span>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+};
+
 declare global {
   interface Window {
     Razorpay?: any;
@@ -323,19 +379,20 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3a. Selections made → "How would you like to experience your trip?"
-  // The user's selections are HELD — nothing is lost. Only AFTER the traveller
-  // picks Guide or Adventurous does planning begin (spec §1/§6/§17).
+  // 3a. Selections made → generate the three plan cards. Plans are built
+  // NEUTRALLY (base trip cost, no guide fee): the trip-EXPERIENCE choice
+  // (Guide vs Adventurous) happens AFTER the traveller has picked and edited a
+  // plan — the final pre-payment step — and reprices the itinerary then.
   const handleGeneratePlans = (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean) => {
     setPendingSelection({ places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
     setSelectedPlaces(places);
     setSelectedFood(foods);
-    setPlanError(null);
-    setCurrentView('mode_select');
+    void generatePlans('ADVENTUROUS_MODE', { places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
   };
 
-  // Shared plan generation for both modes.
-  const generatePlansForMode = async (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', sel: NonNullable<typeof pendingSelection>) => {
+  // Shared plan generation. Mode is only an interim pricing input here — the
+  // authoritative experience choice is made (and repriced) later.
+  const generatePlans = async (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', sel: NonNullable<typeof pendingSelection>) => {
     if (!activeTrip) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
@@ -350,6 +407,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       });
       setPlanOptions(plans);
       setIsGeneratingPlan(false);
+      setCurrentView('plan_choice');
       return plans;
     } catch (err) {
       console.error("Plan generation failed:", err);
@@ -360,39 +418,34 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3b. Mode chosen on the "How would you like to experience your trip?" screen.
-  // GUIDE MODE → the three plan cards (Budget / Recommended / Premium).
-  // ADVENTUROUS MODE → NO plan cards, NO guide fee — straight to the itinerary
-  // editor with the RECOMMENDED plan activated (spec §26/§28).
+  // Final pre-payment step: the traveller picks HOW to experience the trip.
+  // The itinerary is already chosen AND edited — the backend reprices THAT
+  // final version (12.5% guide fee in Guide Mode, none in Adventurous) and
+  // never regenerates it. Checkout opens only after the mode is recorded.
   const handleModeSelect = async (mode: TripMode) => {
-    if (!activeTrip || !pendingSelection || isGeneratingPlan) return;
-    setActiveTrip(prev => prev ? { ...prev, mode } : null);
-    if (mode === 'GUIDE_MODE') {
-      const plans = await generatePlansForMode(mode, pendingSelection);
-      if (plans) setCurrentView('plan_choice');
-    } else {
-      const plans = await generatePlansForMode(mode, pendingSelection);
-      if (!plans) return;
-      // Activate the recommended plan directly — the adventurous traveller
-      // goes straight into the drag-and-drop itinerary editor.
-      const recommended = plans.find(p => p.type === 'RECOMMENDED') || plans[0];
-      setIsChoosingPlan(true);
-      try {
-        const itn = await api.choosePlan(activeTrip.id, recommended.type);
-        setItinerary(itn);
-        setActiveTrip(prev => prev ? { ...prev, total_cost: itn.total_cost, status: 'PLANNED' } : null);
-        setCurrentView('planner');
-      } catch (err) {
-        console.error("Choosing plan failed:", err);
-        setPlanError(getPlanErrorMessage(err));
-        setCurrentView('plan_choice');
-      } finally {
-        setIsChoosingPlan(false);
-      }
+    if (!activeTrip || isGeneratingPlan) return;
+    setIsGeneratingPlan(true);
+    setPlanError(null);
+    try {
+      const res = await api.setExperienceMode(activeTrip.id, mode);
+      setActiveTrip(prev => prev ? { ...prev, mode, total_cost: res.total_cost, status: res.status as any } : null);
+      // Pull the repriced itinerary so every later surface (review, checkout)
+      // shows exactly what the backend stored.
+      const itn = await api.getItinerary(activeTrip.id);
+      setItinerary(itn);
+      setIsGeneratingPlan(false);
+      setCurrentView('planner');
+      // Straight into checkout with the authoritative numbers.
+      await handlePlannerProceedToPayment();
+    } catch (err) {
+      console.error("Setting experience mode failed:", err);
+      setIsGeneratingPlan(false);
+      setPlanError(getPlanErrorMessage(err));
     }
   };
 
-  // 3b. User picked one of the three plans → activate it & open the Step 5 planner
+  // User picked one of the three plans → activate it & open the editor.
+  // NO payment happens here: editing comes first, the experience choice after.
   const handleChoosePlan = async (planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') => {
     if (!activeTrip) return;
     setIsChoosingPlan(true);
@@ -403,10 +456,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       setActiveTrip(prev => prev ? {
         ...prev,
         total_cost: itn.total_cost,
-        status: prev.mode === 'GUIDE_MODE' ? 'REQUESTED' : 'PLANNED'
+        status: 'PLANNED'
       } : null);
       setIsChoosingPlan(false);
-      // Step 5: edit & finalize the plan BEFORE any payment (server-gated).
+      // Next: edit & finalize the plan BEFORE choosing the trip experience.
       setCurrentView('planner');
     } catch (err) {
       console.error("Choosing plan failed:", err);
@@ -728,6 +781,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         {/* VIEW 2: Adaptive AI Discovery Interview */}
         {currentView === 'discovery' && (
           <div className="pt-8">
+            <FlowStepper current="discovery" />
             <div className="text-center mb-6">
               <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 2 · Adaptive Discovery</span>
               <h2 className="text-2xl font-bold text-slate-900 mt-1">Understanding Your Travel Style</h2>
@@ -898,6 +952,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               </div>
             )}
 
+            <FlowStepper current="discovery_select" />
             <DiscoverySelect
               tripId={activeTrip.id}
               destinationName={activeTrip.destination_name}
@@ -908,37 +963,51 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
         )}
 
-        {/* VIEW 2a-2: "How would you like to experience your trip?" — shown ONLY
-            after Step 3 selection is complete. Guide Mode = human + AI travel
-            (12.5% guide fee); Adventurous = independent + AI travel (no guide
-            fee, no plan cards, no guide chat). A trip EXPERIENCE choice — not a
-            registration mode. */}
-        {currentView === 'mode_select' && activeTrip && pendingSelection && (
-          <ModeSelectionScreen
+        {/* VIEW 2a-2: "How would you like to experience your trip?" — the FINAL
+            pre-payment step, AFTER the plan is chosen and edited. Guide Mode =
+            human + AI travel (12.5% guide fee); Adventurous = independent + AI
+            travel (no guide fee). A trip EXPERIENCE choice — not a registration
+            mode. Selecting reprices the FINAL edited itinerary server-side. */}
+        {currentView === 'mode_select' && activeTrip && (
+          <>
+            <FlowStepper current="mode_select" />
+            <ModeSelectionScreen
             destinationName={activeTrip.destination_name}
-            placeCount={pendingSelection.places.length}
-            activityCount={pendingSelection.placeItems.filter(p => String(p.source || '').includes('act') || false).length}
-            foodCount={pendingSelection.foods.length}
-            hasStay={pendingSelection.stayRequired && !!pendingSelection.stay}
-            onBack={() => setCurrentView('discovery_select')}
+            placeCount={pendingSelection?.places.length ?? 0}
+            activityCount={pendingSelection?.placeItems.filter(p => String(p.source || '').includes('act') || false).length ?? 0}
+            foodCount={pendingSelection?.foods.length ?? 0}
+            hasStay={!!(pendingSelection?.stayRequired && pendingSelection?.stay)}
+            totalCost={activeTrip.total_cost}
+            onBack={() => setCurrentView('planner')}
             onSelect={(mode) => void handleModeSelect(mode)}
             busy={isGeneratingPlan || isChoosingPlan}
-          />
+            />
+          </>
         )}
 
-        {/* VIEW 2b: Three-plan choice (Budget / Recommended / Premium) — GUIDE MODE ONLY */}
-        {currentView === 'plan_choice' && activeTrip && (            <PlanChoiceCards
+        {/* VIEW 2b: Three-plan choice (Budget / Recommended / Premium) — built
+            neutrally from the user's selections; the experience choice comes
+            after editing. */}
+        {currentView === 'plan_choice' && activeTrip && (
+          <>
+            <FlowStepper current="plan_choice" />
+            <PlanChoiceCards
               plans={planOptions}
               destinationName={activeTrip.destination_name}
               onSelect={handleChoosePlan}
-              onBack={() => { setPlanOptions([]); setCurrentView('mode_select'); }}
+              onBack={() => { setPlanOptions([]); setCurrentView('discovery_select'); }}
               busy={isChoosingPlan}
             />
+          </>
         )}
 
-        {/* VIEW 2c: Step 5 Interactive Trip Planner — finalize before payment */}
+        {/* VIEW 2c: Step 5 Interactive Trip Planner — finalize BEFORE the experience
+            choice. The plan is the traveller's source of truth; only after it is
+            edited do they pick Guide vs Adventurous (final pre-payment step). */}
         {currentView === 'planner' && itinerary && activeTrip && (
-          <PlannerWorkspace
+          <>
+            <FlowStepper current="planner" />
+            <PlannerWorkspace
             tripId={activeTrip.id}
             itinerary={itinerary}
             budgetMax={resolveBudgetMax(
@@ -947,7 +1016,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               itinerary.total_cost,
             )}
             onItineraryChange={handleItineraryChange}
-            onBackToPlans={() => setCurrentView(activeTrip.mode === 'GUIDE_MODE' ? 'plan_choice' : 'mode_select')}
+            onBackToPlans={() => setCurrentView('plan_choice')}
+            onProceedToExperience={() => setCurrentView('mode_select')}
             onProceedToPayment={() => void handlePlannerProceedToPayment()}
             feePreview={pricingSummary ? {
               guide_fee: pricingSummary.guide_fee,
@@ -964,6 +1034,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               children: Number(answersSoFar?.party?.children) || undefined,
             }}
           />
+          </>
         )}
 
         {/* VIEW 3: Live Trip Workspace (Desktop Split View + Map + Magnification Dock) */}

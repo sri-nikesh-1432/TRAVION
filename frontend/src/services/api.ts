@@ -256,6 +256,15 @@ export const api = {
   choosePlan: (tripId: string, planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') =>
     request<TripItinerary>(`/trips/${tripId}/choose-plan`, { method: 'POST', body: JSON.stringify({ plan_type: planType }) }),
 
+  // Record the trip-EXPERIENCE choice (Guide vs Adventurous) on the final
+  // pre-payment screen. The backend reprices the user's FINAL edited
+  // itinerary with the authoritative fee rules — no regeneration, edits kept.
+  setExperienceMode: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') =>
+    request<{ mode: string; total_cost: number; guide_fee: number; platform_fee: number; amount_payable: number; status: string }>(
+      `/trips/${tripId}/experience-mode`,
+      { method: 'POST', body: JSON.stringify({ mode }) }
+    ),
+
   // User-controlled itinerary editing with automatic recalculation
   editItinerary: (tripId: string, change: ItineraryChange) =>
     request<ItineraryChangeResponse>(`/trips/${tripId}/itinerary`, { method: 'PATCH', body: JSON.stringify(change) }),

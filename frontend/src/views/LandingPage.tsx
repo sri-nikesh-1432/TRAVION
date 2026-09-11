@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion, useInView } from 'framer-motion';
 import {
   ArrowRight, ArrowUpRight, BadgeCheck, BedDouble, Bell, BookOpen, BrainCircuit,
   Check, CheckCircle2, ChevronDown, Clock, CloudRain, Compass,
@@ -20,6 +20,89 @@ interface LandingPageProps {
 }
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+/* ─── Hero extras: rotating words, count-up, aurora ─── */
+const ROTATING_WORDS = ['Your way.', 'With a guide.', 'On a whim.', 'For the views.', 'Your pace.'] as const;
+
+const RotatingWord: React.FC = () => {
+  const reduce = useReducedMotion();
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (reduce) return;
+    const t = setInterval(() => setI((v) => (v + 1) % ROTATING_WORDS.length), 2600);
+    return () => clearInterval(t);
+  }, [reduce]);
+  return (
+    <span className="relative inline-block align-baseline min-w-[5.2ch]">
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={ROTATING_WORDS[i]}
+          initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, y: -18, filter: 'blur(6px)' }}
+          transition={{ duration: 0.45, ease: EASE }}
+          className="inline-block text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white"
+        >
+          {ROTATING_WORDS[i]}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+};
+
+const CountUp: React.FC<{ to: number; suffix?: string; duration?: number }> = ({ to, suffix = '', duration = 1600 }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-40px' });
+  const reduce = useReducedMotion();
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    if (reduce) { setVal(to); return; }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      setVal(Math.round(to * (1 - Math.pow(1 - p, 3)))); // ease-out cubic
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [inView, to, duration, reduce]);
+  return <span ref={ref}>{val.toLocaleString('en-IN')}{suffix}</span>;
+};
+
+const MARQUEE_ITEMS = [
+  'Verified real places only', 'Live destination maps', 'Drag & drop itinerary',
+  '12.5% guide fee — shown upfront', '3% platform fee — no surprises',
+  'Voice navigation', 'Trip AI with memory', 'Offline trip packages',
+  'Manager-verified guides', 'Razorpay secure payments',
+] as const;
+
+const MarqueeRibbon: React.FC = () => {
+  const reduce = useReducedMotion();
+  const row = [...MARQUEE_ITEMS, ...MARQUEE_ITEMS];
+  return (
+    <div className="relative overflow-hidden border-y border-white/10 bg-travion-900/60 backdrop-blur">
+      <div
+        className="flex w-max items-center gap-8 py-3"
+        style={reduce ? undefined : { animation: 'travion-marquee 36s linear infinite' }}
+      >
+        {row.map((item, i) => (
+          <span key={`${item}-${i}`} className="inline-flex items-center gap-2 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">
+            <Sparkles className="w-3 h-3 text-sky-300" />
+            {item}
+          </span>
+        ))}
+      </div>
+      <style>{`
+        @keyframes travion-marquee {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 /* ─── Destinations for discovery section ─── */
 const FEATURED_DESTINATIONS = [
@@ -442,6 +525,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
           />
           <div className="absolute inset-0 bg-gradient-to-r from-travion-900/85 via-slate-950/55 to-travion-800/20" />
           <div className="absolute inset-0 bg-gradient-to-t from-travion-900/90 via-transparent to-travion-800/40" />
+          {/* Aurora glows — slow drifting color fields behind the copy */}
+          {!reduceMotion && (
+            <>
+              <motion.div
+                aria-hidden
+                animate={{ x: [0, 40, -20, 0], y: [0, -30, 20, 0], opacity: [0.5, 0.75, 0.5] }}
+                transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute -top-24 -left-24 w-[480px] h-[480px] rounded-full blur-[110px]"
+                style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.35), transparent 65%)' }}
+              />
+              <motion.div
+                aria-hidden
+                animate={{ x: [0, -50, 30, 0], y: [0, 25, -25, 0], opacity: [0.4, 0.65, 0.4] }}
+                transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute bottom-0 right-[-120px] w-[520px] h-[520px] rounded-full blur-[120px]"
+                style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.28), transparent 65%)' }}
+              />
+              <motion.div
+                aria-hidden
+                animate={{ x: [0, 30, -30, 0], scale: [1, 1.15, 1] }}
+                transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute top-1/3 left-1/2 w-[420px] h-[420px] rounded-full blur-[130px]"
+                style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.22), transparent 65%)' }}
+              />
+            </>
+          )}
         </div>
 
         <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[120px] pb-16 grid lg:grid-cols-[1.05fr_0.95fr] items-end gap-12">
@@ -459,7 +568,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
             >
               Plan your trip.
               <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white">Your way.</span>
+              <RotatingWord />
             </motion.h1>
 
             <motion.p
@@ -524,15 +633,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl"
             >
               {[
-                { icon: <MapPin className="w-4 h-4" />, label: 'Real places', value: 'Verified data only' },
-                { icon: <ShieldCheck className="w-4 h-4" />, label: 'Guide Mode', value: 'Verified local guides' },
-                { icon: <Navigation className="w-4 h-4" />, label: 'Voice nav', value: 'Live, turn-by-turn' },
-                { icon: <Wallet className="w-4 h-4" />, label: 'Transparent', value: 'Every fee itemized' },
+                { icon: <MapPin className="w-4 h-4" />, value: 5000, suffix: '+', label: 'Real places on live maps' },
+                { icon: <ShieldCheck className="w-4 h-4" />, value: 100, suffix: '%', label: 'Verified guides only' },
+                { icon: <Navigation className="w-4 h-4" />, value: 3, suffix: ' steps', label: 'To your final plan' },
+                { icon: <Wallet className="w-4 h-4" />, value: 0, suffix: '', label: 'Hidden fees. Ever.' },
               ].map((t) => (
                 <div key={t.label} className="rounded-2xl bg-white/10 border border-white/15 backdrop-blur px-3.5 py-3">
                   <span className="text-sky-300">{t.icon}</span>
-                  <p className="mt-1 text-[12.5px] font-extrabold text-white leading-tight">{t.label}</p>
-                  <p className="text-[10.5px] font-semibold text-white/60">{t.value}</p>
+                  <p className="mt-1 text-lg font-black text-white leading-tight">
+                    <CountUp to={t.value} suffix={t.suffix} />
+                  </p>
+                  <p className="text-[10.5px] font-semibold text-white/60">{t.label}</p>
                 </div>
               ))}
             </motion.div>
@@ -567,6 +678,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
           <ChevronDown className="w-4 h-4" />
         </motion.a>
       </section>
+
+      {/* ══════════════════ MARQUEE RIBBON ══════════════════ */}
+      <MarqueeRibbon />
 
       {/* ══════════════════ DESTINATION DISCOVERY ══════════════════ */}
       <section id="discover" className="relative py-24 md:py-32 bg-sky-50/60">
@@ -1342,6 +1456,31 @@ experiences you know best.
             <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
               Choose how you want the journey run.
             </h2>
+            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
+              After your plan is built and edited your way — right before payment — you pick the
+              experience: a verified local guide, or full independence with AI by your side.
+            </p>
+            {/* Step split: choose WHAT first, then choose HOW */}
+            <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2">
+              {['Budget', 'Travel style', 'Discover places', 'Plan', 'Edit', 'Choose experience', 'Pay'].map((s, i) => (
+                <React.Fragment key={s}>
+                  {i === 3 && (
+                    <span className="mx-1 hidden sm:inline-flex items-center" aria-hidden>
+                      <span className="w-4 h-px bg-slate-300" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-travion-400" />
+                      <span className="w-4 h-px bg-slate-300" />
+                    </span>
+                  )}
+                  <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-black border ${
+                    i < 3 ? 'bg-white border-slate-200 text-slate-500'
+                      : i === 5 ? 'bg-travion-600 border-travion-600 text-white shadow-soft'
+                      : 'bg-white border-slate-200 text-slate-500'
+                  }`}>
+                    {i === 5 ? '★ ' : ''}{s}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
           </Reveal>
 
           <div className="mt-14 grid md:grid-cols-2 gap-6">

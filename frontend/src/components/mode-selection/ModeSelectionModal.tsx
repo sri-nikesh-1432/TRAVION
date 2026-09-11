@@ -13,6 +13,8 @@ interface ModeSelectionScreenProps {
   activityCount: number;
   foodCount: number;
   hasStay: boolean;
+  /** The FINAL edited plan's cost — repriced server-side once a mode is picked. */
+  totalCost?: number;
   onBack: () => void;
   onSelect: (mode: TripMode) => void;
   busy?: boolean;
@@ -33,7 +35,7 @@ interface Feature {
  *   Adventurous Mode = Independent + AI assisted travel (no guide fee)
  */
 export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
-  destinationName, placeCount, activityCount, foodCount, hasStay, onBack, onSelect, busy,
+  destinationName, placeCount, activityCount, foodCount, hasStay, totalCost, onBack, onSelect, busy,
 }) => {
   const [hovered, setHovered] = useState<TripMode | null>(null);
 
@@ -119,14 +121,35 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
+      {/* Step split — where the traveller is in the booking journey */}
+      <div className="flex items-center justify-center gap-2 mb-6" aria-label="Booking progress">
+        {[
+          { label: 'Plan', done: true },
+          { label: 'Edit', done: true },
+          { label: 'Experience', done: false },
+          { label: 'Pay', done: false },
+        ].map((s, i, arr) => (
+          <React.Fragment key={s.label}>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black ${
+              s.done ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-travion-50 text-travion-700 border border-travion-200'
+            }`}>
+              {s.done ? <Check className="w-3 h-3" /> : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+              {s.label}
+            </span>
+            {i < arr.length - 1 && <span className="w-5 h-px bg-slate-200" />}
+          </React.Fragment>
+        ))}
+      </div>
+
       <div className="text-center mb-4">
-        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Your places are selected</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Final step before payment</span>
         <h2 className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">
           How would you like to experience your trip?
         </h2>
         <p className="mt-2 text-[14px] font-medium text-slate-500 max-w-2xl mx-auto">
-          Your places are selected. Now choose how you want to experience your journey
-          {destinationName ? <> in <span className="font-bold text-slate-700">{destinationName}</span></> : null}.
+          Your plan is ready
+          {typeof totalCost === 'number' && totalCost > 0 ? <span className="font-bold text-slate-700"> (base cost ₹{Math.round(totalCost).toLocaleString('en-IN')})</span> : null}
+          {destinationName ? <> in <span className="font-bold text-slate-700">{destinationName}</span></> : null}. Pick your experience — fees update instantly, your itinerary stays exactly as you built it.
         </p>
         {(placeCount > 0 || foodCount > 0 || hasStay) && (
           <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2">
@@ -169,7 +192,7 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           footer={
             <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-cognac-600">
               <ShieldCheck className="w-3.5 h-3.5" />
-              Human + AI assisted travel · guide fee applies at checkout
+              Human + AI travel · 12.5% guide fee added to this plan at checkout
             </span>
           }
           accentBorder="border-travion-400"
@@ -188,7 +211,7 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           footer={
             <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-amber-700">
               <Check className="w-3.5 h-3.5" />
-              Independent + AI assisted travel · no guide fee
+              Independent + AI travel · no guide fee — only the 3% platform fee
             </span>
           }
           accentBorder="border-amber-400"
@@ -202,7 +225,7 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           onClick={onBack}
           className="text-[13px] font-bold text-slate-500 hover:text-slate-700 transition-colors"
         >
-          Back to my selected places
+          Back to my plan
         </button>
       </div>
     </div>

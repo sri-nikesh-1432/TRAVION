@@ -19,6 +19,8 @@ interface PlannerWorkspaceProps {
   budgetMax: number;
   onItineraryChange: (itinerary: TripItinerary, warnings: string[]) => void;
   onBackToPlans: () => void;
+  /** Open the final pre-payment experience choice (Guide vs Adventurous). */
+  onProceedToExperience: () => void;
   onProceedToPayment: () => void;
   /** Guide Mode pricing (fees from the backend pricing engine) — shown on the review screen. */
   feePreview?: { guide_fee: number; platform_fee: number; amount_payable: number } | null;
@@ -43,7 +45,7 @@ const changeTypeLabel: Record<string, string> = {
 };
 
 export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
-  tripId, itinerary, budgetMax, onItineraryChange, onBackToPlans, onProceedToPayment,
+  tripId, itinerary, budgetMax, onItineraryChange, onBackToPlans, onProceedToExperience, onProceedToPayment,
   feePreview, tripInfo,
 }) => {
   const [changes, setChanges] = useState<PlanChangeItem[]>([]);
@@ -178,7 +180,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
       const res = await api.confirmTrip(tripId);
       setConfirmResult(res);
       if (res.valid) {
-        onProceedToPayment();
+        onProceedToExperience();
       }
     } catch (err: any) {
       setLocalWarnings([err?.message || 'Plan validation failed. Please try again.']);
@@ -200,7 +202,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
             <p className="text-[10px] font-black uppercase tracking-widest text-travion-200">Step 5 · Interactive Trip Planner</p>
             <h2 className="text-lg font-black tracking-tight text-white">Perfect your day-by-day plan before you pay</h2>
             <p className="text-[12px] font-medium text-slate-200/90 mt-0.5">
-              Drag stops between days, add real places, optimize routing — every change is versioned and synced to your guide.
+              Drag stops between days, add real places, optimize routing — every change is versioned. Next: choose how to experience this trip.
             </p>
           </div>
         </div>
@@ -225,7 +227,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
             className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white text-[13px] font-black shadow-md transition-all disabled:opacity-60"
           >
             {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Confirm &amp; Pay
+            Choose Trip Experience
           </button>
         </div>
       </div>
@@ -659,11 +661,11 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => { setShowReview(false); onProceedToPayment(); }}
+                  onClick={() => { setShowReview(false); onProceedToExperience(); }}
                   className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2"
                 >
                   <Wallet className="w-4 h-4" />
-                  Continue to Confirm &amp; Pay
+                  Continue: Choose Trip Experience
                 </button>
               </div>
             </motion.div>
