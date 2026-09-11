@@ -1,291 +1,210 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Compass, Mountain, CheckCircle2, ShieldCheck, X, FileText, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import {
+  Compass, Mountain, Check, ArrowRight, ShieldCheck, Bot, MapPinned,
+  MessageSquareText, Volume2, Languages, UserCheck, Footprints, Siren, Sparkles,
+} from 'lucide-react';
 
-interface ModeSelectionModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') => void;
+export type TripMode = 'GUIDE_MODE' | 'ADVENTUROUS_MODE';
+
+interface ModeSelectionScreenProps {
   destinationName: string;
+  placeCount: number;
+  activityCount: number;
+  foodCount: number;
+  hasStay: boolean;
+  onBack: () => void;
+  onSelect: (mode: TripMode) => void;
+  busy?: boolean;
 }
 
-export const ModeSelectionModal: React.FC<ModeSelectionModalProps> = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  destinationName
+interface Feature {
+  icon: React.ReactNode;
+  text: string;
+}
+
+/**
+ * "How would you like to experience your trip?" — the full-width mode
+ * selection shown ONLY after Step 3 destination discovery is complete and the
+ * user has finished selecting places, activities, restaurants and stays.
+ *
+ * This is a TRIP EXPERIENCE choice, not a registration mode:
+ *   Guide Mode       = Human + AI assisted travel (12.5% guide fee applies)
+ *   Adventurous Mode = Independent + AI assisted travel (no guide fee)
+ */
+export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
+  destinationName, placeCount, activityCount, foodCount, hasStay, onBack, onSelect, busy,
 }) => {
-  const [selectedMode, setSelectedMode] = useState<'GUIDE_MODE' | 'ADVENTUROUS_MODE' | null>(null);
-  const [hasAcknowledged, setHasAcknowledged] = useState(false);
-  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const [hovered, setHovered] = useState<TripMode | null>(null);
 
-  if (!isOpen) return null;
-
-  const guideFeatures = [
-    "Verified local human guide, language & destination matched",
-    "Door-to-door itinerary — verified where published, clear estimates everywhere else",
-    "Curated local food tastings & guide-submitted hidden spots",
-    "Live turn-by-turn navigation & live traveller avatar",
-    "Direct in-app guide chat (unlocked on assignment)",
-    "Trip-scoped AI assistant & full offline package",
-    "Real dynamic replanning with explanation"
+  const guideFeatures: Feature[] = [
+    { icon: <UserCheck className="w-4 h-4" />, text: 'Verified local guide' },
+    { icon: <Languages className="w-4 h-4" />, text: 'Destination & language matching' },
+    { icon: <ShieldCheck className="w-4 h-4" />, text: 'Human assistance during the trip' },
+    { icon: <MessageSquareText className="w-4 h-4" />, text: 'Guide chat once your guide is assigned' },
+    { icon: <Sparkles className="w-4 h-4" />, text: 'Personalized local recommendations' },
+    { icon: <MapPinned className="w-4 h-4" />, text: 'Trip-based guide assignment' },
   ];
 
-  const adventurousFeatures = [
-    "Self-guided autonomous exploration (no human guide assigned)",
-    "Transport plans — verified schedules where published, honest estimates elsewhere",
-    "Stay, food & attraction plans built to your preferences",
-    "Voice turn-by-turn navigation & offline trip package",
-    "Dedicated 24/7 tourist emergency helpline & police hotline",
-    "Trip-scoped AI assistant & dynamic replanning engine"
+  const adventurousFeatures: Feature[] = [
+    { icon: <Footprints className="w-4 h-4" />, text: 'No guide required — explore independently' },
+    { icon: <Bot className="w-4 h-4" />, text: 'AI trip assistant' },
+    { icon: <MapPinned className="w-4 h-4" />, text: 'Live navigation' },
+    { icon: <Volume2 className="w-4 h-4" />, text: 'Voice navigation' },
+    { icon: <MessageSquareText className="w-4 h-4" />, text: 'Trip-specific chatbot' },
+    { icon: <Siren className="w-4 h-4" />, text: 'Emergency information' },
   ];
 
-  const handleContinue = () => {
-    if (selectedMode && hasAcknowledged) {
-      onConfirm(selectedMode);
-    }
+  const ModeCard: React.FC<{
+    mode: TripMode;
+    icon: React.ReactNode;
+    iconClass: string;
+    emoji: string;
+    title: string;
+    subtitle: string;
+    description: string;
+    features: Feature[];
+    footer: React.ReactNode;
+    accentBorder: string;
+    accentRing: string;
+  }> = ({ mode, icon, iconClass, emoji, title, subtitle, description, features, footer, accentBorder, accentRing }) => {
+    const active = hovered === mode;
+    return (
+      <motion.button
+        type="button"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        whileHover={{ y: -4 }}
+        onMouseEnter={() => setHovered(mode)}
+        onMouseLeave={() => setHovered(null)}
+        onClick={() => !busy && onSelect(mode)}
+        disabled={busy}
+        className={`relative text-left p-6 md:p-7 rounded-3xl border-2 bg-white shadow-soft transition-all flex flex-col ${
+          active ? `${accentBorder} ${accentRing}` : 'border-slate-200 hover:border-slate-300'
+        } ${busy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+      >
+        <div className="flex items-start justify-between">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${iconClass}`}>
+            {icon}
+          </div>
+          <span className="text-2xl" aria-hidden>{emoji}</span>
+        </div>
+        <h3 className="mt-4 text-xl font-black text-slate-900 tracking-tight">{title}</h3>
+        <p className="mt-0.5 text-[13px] font-bold text-travion-700">{subtitle}</p>
+        <p className="mt-3 text-[12.5px] font-medium text-slate-600 leading-relaxed">{description}</p>
+
+        <ul className="mt-4 space-y-2 flex-1">
+          {features.map((f, i) => (
+            <li key={i} className="flex items-center gap-2.5 text-[12.5px] font-semibold text-slate-700">
+              <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                {f.icon}
+              </span>
+              {f.text}
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-5 pt-4 border-t border-slate-100">{footer}</div>
+
+        <span className={`mt-4 inline-flex items-center justify-center gap-2 w-full h-11 rounded-2xl text-[13px] font-black transition-colors ${
+          active ? 'bg-travion-600 text-white' : 'bg-slate-100 text-slate-700'
+        }`}>
+          {mode === 'GUIDE_MODE' ? 'Choose Guide Mode' : 'Choose Adventurous Mode'}
+          <ArrowRight className="w-4 h-4" />
+        </span>
+      </motion.button>
+    );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="relative w-full max-w-3xl bg-white rounded-3xl shadow-floating border border-travion-100 p-6 md:p-8 overflow-hidden my-8"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Travel Mode Selection</span>
-            <h2 className="text-2xl font-bold text-slate-900">Choose Your Travel Experience for {destinationName}</h2>
+    <div className="max-w-5xl mx-auto px-4 py-10">
+      <div className="text-center mb-4">
+        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Your places are selected</span>
+        <h2 className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">
+          How would you like to experience your trip?
+        </h2>
+        <p className="mt-2 text-[14px] font-medium text-slate-500 max-w-2xl mx-auto">
+          Your places are selected. Now choose how you want to experience your journey
+          {destinationName ? <> in <span className="font-bold text-slate-700">{destinationName}</span></> : null}.
+        </p>
+        {(placeCount > 0 || foodCount > 0 || hasStay) && (
+          <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2">
+            {placeCount > 0 && (
+              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-[11px] font-bold text-emerald-700">
+                {placeCount} place{placeCount === 1 ? '' : 's'}
+              </span>
+            )}
+            {activityCount > 0 && (
+              <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-[11px] font-bold text-sky-700">
+                {activityCount} activit{activityCount === 1 ? 'y' : 'ies'}
+              </span>
+            )}
+            {foodCount > 0 && (
+              <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-100 text-[11px] font-bold text-amber-700">
+                {foodCount} food stop{foodCount === 1 ? '' : 's'}
+              </span>
+            )}
+            {hasStay && (
+              <span className="px-3 py-1 rounded-full bg-violet-50 border border-violet-100 text-[11px] font-bold text-violet-700">
+                Stay selected
+              </span>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        )}
+      </div>
 
-        {/* Two Large Side-by-Side Mode Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 my-6">
-          
-          {/* 1. Guide Mode Card */}
-          <div
-            onClick={() => {
-              setSelectedMode('GUIDE_MODE');
-              setHasAcknowledged(false);
-            }}
-            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between ${
-              selectedMode === 'GUIDE_MODE'
-                ? 'border-travion-500 bg-travion-50/50 shadow-soft ring-2 ring-travion-200'
-                : 'border-slate-200 hover:border-travion-300 hover:shadow-sm bg-white'
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-xl bg-travion-100 text-travion-600 flex items-center justify-center">
-                  <Compass className="w-6 h-6" />
-                </div>
-                {selectedMode === 'GUIDE_MODE' && (
-                  <CheckCircle2 className="w-6 h-6 text-travion-600" />
-                )}
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1">Guide Mode</h3>
-              <p className="text-xs text-slate-500 mb-4">
-                Full accompaniment with an operations-vetted regional local guide.
-              </p>
-              <ul className="space-y-2">
-                {guideFeatures.slice(0, 5).map((f, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs font-semibold text-travion-700">
-              <span>Verified Guide Network</span>
-              <span>Dynamic guide fee</span>
-            </div>
-          </div>
+      {/* The two cards must read as two trip EXPERIENCE paths — never two
+          registration types. Guide = human + AI; Adventurous = independent + AI. */}
+      <div className="grid md:grid-cols-2 gap-5 mt-8">
+        <ModeCard
+          mode="GUIDE_MODE"
+          icon={<Compass className="w-7 h-7" />}
+          iconClass="bg-travion-100 text-travion-700"
+          emoji="🧑‍💼"
+          title="Guide Mode"
+          subtitle="Travel with a verified local guide"
+          description="Get personalized support from a verified local guide who can accompany you during your trip — help with local experiences, navigation, recommendations and on-trip assistance."
+          features={guideFeatures}
+          footer={
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-cognac-600">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Human + AI assisted travel · guide fee applies at checkout
+            </span>
+          }
+          accentBorder="border-travion-400"
+          accentRing="ring-4 ring-travion-100"
+        />
 
-          {/* 2. Adventurous Mode Card */}
-          <div
-            onClick={() => {
-              setSelectedMode('ADVENTUROUS_MODE');
-              setHasAcknowledged(false);
-            }}
-            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between ${
-              selectedMode === 'ADVENTUROUS_MODE'
-                ? 'border-travion-500 bg-travion-50/50 shadow-soft ring-2 ring-travion-200'
-                : 'border-slate-200 hover:border-travion-300 hover:shadow-sm bg-white'
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
-                  <Mountain className="w-6 h-6" />
-                </div>
-                {selectedMode === 'ADVENTUROUS_MODE' && (
-                  <CheckCircle2 className="w-6 h-6 text-travion-600" />
-                )}
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1">Adventurous Mode</h3>
-              <p className="text-xs text-slate-500 mb-4">
-                Self-guided independent travel backed by AI navigation & emergency assurance.
-              </p>
-              <ul className="space-y-2">
-                {adventurousFeatures.slice(0, 5).map((f, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span>Self-Navigated AI Trip</span>
-              <span>₹0 guide fee</span>
-            </div>
-          </div>
+        <ModeCard
+          mode="ADVENTUROUS_MODE"
+          icon={<Mountain className="w-7 h-7" />}
+          iconClass="bg-amber-100 text-amber-700"
+          emoji="🧭"
+          title="Adventurous Mode"
+          subtitle="Explore independently, with Travion by your side"
+          description="Travel independently while Travion helps you with your itinerary, navigation, trip AI, safety information and real-time travel assistance."
+          features={adventurousFeatures}
+          footer={
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-amber-700">
+              <Check className="w-3.5 h-3.5" />
+              Independent + AI assisted travel · no guide fee
+            </span>
+          }
+          accentBorder="border-amber-400"
+          accentRing="ring-4 ring-amber-100"
+        />
+      </div>
 
-        </div>
-
-        {/* Acknowledgement and Consent Callout */}
-        <AnimatePresence>
-          {selectedMode && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="rounded-2xl bg-slate-50 border border-slate-200 p-4 mb-6"
-            >
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-travion-600 shrink-0 mt-0.5" />
-                <div className="w-full">
-                  <div className="font-semibold text-slate-800 text-sm mb-1">
-                    {selectedMode === 'GUIDE_MODE' ? 'Guide Mode Acknowledgement' : 'Adventurous Mode Terms & Emergency Briefing'}
-                  </div>
-                  <p className="text-xs text-slate-600 mb-3">
-                    {selectedMode === 'GUIDE_MODE'
-                      ? 'In Guide Mode, a verified regional local guide will be matched by Operations Manager. Location sharing is scoped solely to this trip for navigation and safety coordination.'
-                      : 'In Adventurous Mode, you are travelling independently without human guide accompaniment. Verified transport schedules and emergency hotlines are provided in your itinerary.'}
-                  </p>
-                  
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={hasAcknowledged}
-                        onChange={(e) => setHasAcknowledged(e.target.checked)}
-                        className="w-4 h-4 text-travion-600 rounded border-slate-300 focus:ring-travion-500"
-                      />
-                      <span>I understand and accept the trip terms, safety guidelines and permissions.</span>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowPdfViewer(true)}
-                      className="text-xs font-bold text-travion-600 hover:text-travion-700 flex items-center gap-1 hover:underline"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>View Terms & Conditions</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Action Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!selectedMode || !hasAcknowledged}
-            onClick={handleContinue}
-            className="px-6 py-2.5 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm shadow-md hover:shadow-soft transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <span>Proceed to Itinerary</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* PDF-Style Terms & Conditions Modal Viewer */}
-        <AnimatePresence>
-          {showPdfViewer && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-travion-800/75 backdrop-blur-md"
-            >
-              <motion.div
-                initial={{ scale: 0.95, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.95, y: 20 }}
-                className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
-              >
-                {/* PDF Header Bar */}
-                <div className="flex items-center justify-between px-6 py-4 bg-travion-600 text-white">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-travion-400" />
-                    <span className="font-bold text-sm tracking-wide">Travion Terms & Safety Charter (PDF Document)</span>
-                  </div>
-                  <button
-                    onClick={() => setShowPdfViewer(false)}
-                    className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-travion-700 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* PDF Content Area */}
-                <div className="p-6 md:p-8 overflow-y-auto space-y-4 text-xs text-slate-700 leading-relaxed font-serif">
-                  <div className="border-b pb-3 mb-4 text-center font-sans">
-                    <h4 className="text-base font-bold text-slate-900">TRAVION TRAVEL ORCHESTRATION PLATFORM</h4>
-                    <p className="text-[11px] text-slate-500">Document ID: TC-TRV-2026-V1 · Verified Safety Protocol</p>
-                  </div>
-
-                  <h5 className="font-sans font-bold text-slate-900 text-sm">1. Scope of Orchestration</h5>
-                  <p>Travion provides software orchestration connecting travellers with verified transport schedules, accommodation providers, dining spots, and independent local guides. Travion operates as a technology coordinator.</p>
-
-                  <h5 className="font-sans font-bold text-slate-900 text-sm">2. Guide Mode & Safety Supervision</h5>
-                  <p>Guides assigned through Travion are vetted by regional operations managers for destination expertise, language fluency, and local safety protocols. Location sharing is strictly trip-scoped and terminates upon trip completion.</p>
-
-                  <h5 className="font-sans font-bold text-slate-900 text-sm">3. Adventurous Mode Autonomous Waiver</h5>
-                  <p>Travellers selecting Adventurous Mode acknowledge self-directed navigation. Travion furnishes verified timetables, offline route metadata, and 24/7 medical and police hotlines.</p>
-
-                  <h5 className="font-sans font-bold text-slate-900 text-sm">4. Transparent Payment Settlement</h5>
-                  <p>All fees are segregated at checkout. Guide fees are held in operational escrow until tour fulfillment and disbursed directly to the verified guide upon trip completion.</p>
-                </div>
-
-                {/* PDF Footer */}
-                <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowPdfViewer(false)}
-                    className="px-5 py-2 rounded-xl bg-travion-600 text-white font-sans font-semibold text-xs hover:bg-travion-700 transition-colors"
-                  >
-                    Close Document
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-      </motion.div>
+      <div className="mt-8 text-center">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-[13px] font-bold text-slate-500 hover:text-slate-700 transition-colors"
+        >
+          Back to my selected places
+        </button>
+      </div>
     </div>
   );
 };

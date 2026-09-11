@@ -475,6 +475,10 @@ def destination_catalog(
     stays = discovery.get("stays") or []
     foods = discovery.get("food") or []
     activities = discovery.get("activities") or []
+    # Best tourist spots — the famousness-ranked attraction list that is
+    # DISTINCT from the preference-matched Must Visit section (spec §4: Must
+    # Visit = AI-recommended; Tourist Spots = best attractions of the
+    # destination). Must Visit names are excluded server-side already.
 
     # ── AUTO-SELECT: preference-matched recommended places ──────────────────
     # The strongest experience-matching places are flagged `recommended` so the
@@ -624,7 +628,7 @@ def destination_catalog(
         "core_radius_km": discovery.get("core_radius_km"),
         "destination_radius_km": discovery.get("destination_radius_km"),
         "catalog_meta": discovery.get("catalog_meta"),
-        "counts": {"attractions": len(attractions), "stays": len(stays_serialized), "food": len(foods_serialized), "activities": len(activities)},
+        "counts": {"attractions": len(attractions), "tourist_spots": len(discovery.get("tourist_spots") or []), "stays": len(stays_serialized), "food": len(foods_serialized), "activities": len(activities)},
         # Server-side single source of truth: the selections the traveller made
         # on earlier visits, so the UI can restore the "selected for my trip"
         # panel exactly (no fake counts, no lost picks on refresh).
@@ -638,6 +642,7 @@ def destination_catalog(
             for s in (selections_payload(db, trip.id)["selections"])
         ],
         "must_visit": [_attr(a) for a in attractions],
+        "tourist_spots": [_attr(a) for a in (discovery.get("tourist_spots") or [])],
         "stays": stays_serialized,
         "food": foods_serialized,
         "activities": [_attr(a) for a in activities],

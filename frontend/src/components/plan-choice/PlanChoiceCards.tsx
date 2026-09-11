@@ -74,7 +74,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
 
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  {plan.label.split('·')[1]?.trim() || plan.type}
+                  {plan.label.replace(/^plan\s*[abc]\s*·\s*/i, '').trim() || plan.type}
                 </span>
                 <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
                   isSelected ? 'bg-travion-600 border-travion-600 text-white' : 'border-slate-300'

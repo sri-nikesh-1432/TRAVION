@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Sparkles, Plus, Clock, MapPin, Route, ShieldCheck, CheckCircle2,
-  AlertTriangle, X, History, ArrowLeft, Loader2, Compass,
+  AlertTriangle, X, History, ArrowLeft, Loader2, Compass, CalendarDays,
+  Users, BedDouble, Utensils, Wallet, FileText, Eye,
 } from 'lucide-react';
 import {
   TripItinerary, ItineraryDay, ItineraryStop,
@@ -19,6 +20,17 @@ interface PlannerWorkspaceProps {
   onItineraryChange: (itinerary: TripItinerary, warnings: string[]) => void;
   onBackToPlans: () => void;
   onProceedToPayment: () => void;
+  /** Guide Mode pricing (fees from the backend pricing engine) — shown on the review screen. */
+  feePreview?: { guide_fee: number; platform_fee: number; amount_payable: number } | null;
+  tripInfo?: {
+    destination: string;
+    start: string;
+    end: string;
+    travellers?: number;
+    adults?: number;
+    children?: number;
+    mode?: 'GUIDE_MODE' | 'ADVENTUROUS_MODE';
+  } | null;
 }
 
 const inr = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -32,8 +44,13 @@ const changeTypeLabel: Record<string, string> = {
 
 export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
   tripId, itinerary, budgetMax, onItineraryChange, onBackToPlans, onProceedToPayment,
+  feePreview, tripInfo,
 }) => {
   const [changes, setChanges] = useState<PlanChangeItem[]>([]);
+  // "Review Your Trip" — the dedicated pre-payment summary the traveller can
+  // open any time after editing (spec §16). The editor stays the primary view;
+  // the review overlays it so the final plan is never regenerated underneath.
+  const [showReview, setShowReview] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlaceSearchItem[] | null>(null);
@@ -195,12 +212,20 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
           </span>
           <button
             type="button"
+            onClick={() => setShowReview(true)}
+            className="inline-flex items-center gap-2 px-4 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-[13px] font-black transition-all"
+          >
+            <Eye className="w-4 h-4" />
+            Review Your Trip
+          </button>
+          <button
+            type="button"
             onClick={handleConfirm}
             disabled={confirming || busy}
             className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white text-[13px] font-black shadow-md transition-all disabled:opacity-60"
           >
             {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Confirm &amp; Proceed to Payment
+            Confirm &amp; Pay
           </button>
         </div>
       </div>
@@ -488,6 +513,157 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                   className="flex-1 h-11 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-[13px] font-extrabold disabled:opacity-50"
                 >
                   {optimizing ? 'Applying…' : 'Apply New Route'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── "Review Your Trip" — the pre-payment summary (spec §16) ──
+          Trip details · selected places · activities · food · stay · the
+          COMPLETE edited day-by-day plan · full budget breakdown with the
+          12.5% guide fee and 3% platform fee shown separately. */}
+      <AnimatePresence>
+        {showReview && (
+          <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 bg-travion-900/50 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              className="w-full max-w-3xl bg-white rounded-3xl shadow-floating border border-slate-200 my-6 overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur z-10">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-travion-100 text-travion-700 flex items-center justify-center">
+                    <FileText className="w-4.5 h-4.5" />
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900">Review Your Trip</h3>
+                    <p className="text-[11px] font-semibold text-slate-400">Your edited plan — the final source of truth</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowReview(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close review">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-6 max-h-[75vh] overflow-y-auto">
+                {/* Trip details */}
+                <section>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Trip details</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Destination</p>
+                      <p className="text-[12.5px] font-extrabold text-slate-800">{tripInfo?.destination || '—'}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Travel dates</p>
+                      <p className="text-[12.5px] font-extrabold text-slate-800 flex items-center gap-1">
+                        <CalendarDays className="w-3 h-3 text-travion-600" />
+                        {tripInfo?.start ? new Date(tripInfo.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+                        {tripInfo?.end ? ` – ${new Date(tripInfo.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Travellers</p>
+                      <p className="text-[12.5px] font-extrabold text-slate-800 flex items-center gap-1">
+                        <Users className="w-3 h-3 text-travion-600" />
+                        {tripInfo?.travellers != null ? `${tripInfo.travellers}${tripInfo.children ? ` (${tripInfo.adults ?? tripInfo.travellers - tripInfo.children}A · ${tripInfo.children}C)` : ''}` : '—'}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Day-by-day FINAL edited plan */}
+                <section>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Day-by-day plan — your final edited itinerary</h4>
+                  <div className="space-y-3">
+                    {daysWithStops.map((day) => (
+                      <div key={day.day} className="rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-travion-600 text-white text-[10px] font-black flex items-center justify-center">{day.day}</span>
+                          <span className="text-[12px] font-extrabold text-slate-700">Day {day.day}</span>
+                        </div>
+                        <ul className="divide-y divide-slate-50">
+                          {(day.stops || []).map((s) => (
+                            <li key={s.id} className="px-3.5 py-2 flex items-start gap-2.5 text-[12.5px]">
+                              <span className="text-[11px] font-black text-slate-500 w-16 shrink-0 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />{s.time}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="font-extrabold text-slate-800">{s.title}</span>
+                                <span className="ml-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{s.category.replace('_', ' ')}</span>
+                                {s.location_name && s.location_name !== s.title && (
+                                  <span className="block text-[11px] font-medium text-slate-400">{s.location_name}</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                          {(day.stops || []).length === 0 && (
+                            <li className="px-3.5 py-2 text-[11.5px] font-semibold text-slate-400">No stops scheduled</li>
+                          )}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Complete budget breakdown — every line visible, fees NEVER hidden */}
+                <section>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Budget breakdown</h4>
+                  <div className="rounded-2xl border border-slate-200 px-4 py-3 space-y-1.5 text-[12.5px] font-semibold text-slate-700">
+                    {(() => {
+                      const bd = (itinerary.cost_breakdown || {}) as Record<string, any>;
+                      const rows: Array<[string, number, boolean?]> = [
+                        ['Trip cost', Number(bd.transport || 0)],
+                        ['Stay', Number(bd.stay || 0)],
+                        ['Activities', Number(bd.activities || 0)],
+                        ['Food', Number(bd.food || 0)],
+                      ];
+                      const base = Number(itinerary.total_cost) || rows.reduce((s, r) => s + r[1], 0);
+                      const guideFee = Number(feePreview?.guide_fee ?? 0);
+                      const platformFee = Number(feePreview?.platform_fee ?? 0);
+                      return (
+                        <>
+                          {rows.filter(r => r[1] > 0).map(([label, value]) => (
+                            <div key={label} className="flex justify-between">
+                              <span>{label}</span><span>{inr(value)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between border-t border-slate-100 pt-1.5 font-extrabold text-slate-900">
+                            <span>Base trip cost</span><span>{inr(base)}</span>
+                          </div>
+                          {tripInfo?.mode === 'GUIDE_MODE' && (
+                            <div className="flex justify-between rounded-lg bg-cognac-50 px-2 py-1 text-cognac-700 font-bold">
+                              <span>Guide fee (12.5%)</span><span>{inr(guideFee)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
+                            <span>Platform fee (3%)</span><span>{inr(platformFee)}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-100 pt-1.5 text-[14px] font-black text-slate-900">
+                            <span>Final payable</span>
+                            <span>{inr(feePreview?.amount_payable ?? base + guideFee + platformFee)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  {tripInfo?.mode !== 'GUIDE_MODE' && (
+                    <p className="mt-1.5 text-[11px] font-semibold text-slate-400">
+                      Adventurous Mode — no guide fee. You pay only the 3% platform fee; travel spend is settled locally.
+                    </p>
+                  )}
+                </section>
+
+                <button
+                  type="button"
+                  onClick={() => { setShowReview(false); onProceedToPayment(); }}
+                  className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Continue to Confirm &amp; Pay
                 </button>
               </div>
             </motion.div>

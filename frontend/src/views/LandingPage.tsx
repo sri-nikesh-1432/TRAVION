@@ -468,10 +468,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               transition={{ duration: 0.9, delay: 0.6, ease: EASE }}
               className="mt-6 max-w-xl text-white/75 text-base md:text-lg leading-relaxed font-medium"
             >
-              Tell Travion where you want to go and how you like to travel. We'll build a
-              personalized itinerary around your choices — restaurants, stays, places to explore,
-              and a verified guide if you want one.
+              Explore the destination on a live map, pick the exact places, activities, food and
+              stays you want, edit your day-by-day plan — and choose a verified local guide or
+              travel independently with AI by your side.
             </motion.p>
+
+            {/* Flow pills — the product story in one glance: user chooses WHAT
+                (Step 3), user chooses HOW (mode), Travion organizes. */}
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, delay: 0.68, ease: EASE }}
+              className="mt-5 flex flex-wrap items-center gap-2"
+            >
+              {[
+                'Explore the map',
+                'Choose your places',
+                'Pick your experience',
+                'Edit your plan',
+                'Pay transparently',
+              ].map((step, i) => (
+                <span key={step} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 backdrop-blur px-3 py-1.5 text-[11px] font-bold text-white/85">
+                  <span className="w-4 h-4 rounded-full bg-sky-400/90 text-travion-900 text-[9px] font-black flex items-center justify-center">{i + 1}</span>
+                  {step}
+                </span>
+              ))
+              }
+            </motion.div>
 
             <motion.div
               initial={{ opacity: 0, y: 18 }}
@@ -498,13 +521,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 1, delay: 1 }}
-              className="mt-10 flex flex-wrap gap-x-6 gap-y-2 text-[12px] font-semibold text-white/60"
+              className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl"
             >
-              {['Verified grounding data', 'Secure payments', 'Works offline', 'Trip-scoped AI memory'].map((t) => (
-                <span key={t} className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
-                  {t}
-                </span>
+              {[
+                { icon: <MapPin className="w-4 h-4" />, label: 'Real places', value: 'Verified data only' },
+                { icon: <ShieldCheck className="w-4 h-4" />, label: 'Guide Mode', value: 'Verified local guides' },
+                { icon: <Navigation className="w-4 h-4" />, label: 'Voice nav', value: 'Live, turn-by-turn' },
+                { icon: <Wallet className="w-4 h-4" />, label: 'Transparent', value: 'Every fee itemized' },
+              ].map((t) => (
+                <div key={t.label} className="rounded-2xl bg-white/10 border border-white/15 backdrop-blur px-3.5 py-3">
+                  <span className="text-sky-300">{t.icon}</span>
+                  <p className="mt-1 text-[12.5px] font-extrabold text-white leading-tight">{t.label}</p>
+                  <p className="text-[10.5px] font-semibold text-white/60">{t.value}</p>
+                </div>
               ))}
             </motion.div>
           </div>

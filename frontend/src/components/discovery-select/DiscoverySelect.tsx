@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink, X, Clock, ClipboardList, Camera } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem, GeoViewportPlace } from '../../types';
+import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, CatalogActivity, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem, GeoViewportPlace } from '../../types';
 import { api } from '../../services/api';
 
 interface DiscoverySelectProps {
@@ -167,6 +167,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // pan/zoom, clustered so large POI sets stay smooth.
   const [viewportPlaces, setViewportPlaces] = useState<GeoViewportPlace[]>([]);
   const [vpLoading, setVpLoading] = useState(false);
+  // Map pin popup: click a pin → place card with details + Add to Plan
+  // (spec §2 — every map place is clickable and adds to the plan from a
+  // proper popup, not a silent toggle).
+  const [popupPlace, setPopupPlace] = useState<{ key: string; item: MapPlace } | null>(null);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
@@ -344,8 +348,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         fillOpacity: active ? 1 : 0.75,
       });
       const oh = (item as MapPlace).opening_hours;
-      marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${oh ? `<br/>🕘 ${oh}` : ''}${active ? '<br/>✓ selected' : '<br/>tap to add'}`);
-      marker.on('click', () => toggleMapItem(key, item));
+      marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${active ? '<br/>✓ selected' : ''}`);
+      // Click a pin → proper place popup with details + explicit Add to Plan
+      // (spec §2 — never a silent toggle).
+      marker.on('click', () => setPopupPlace({ key, item }));
       // Clustered markers keep large POI sets smooth (spec §30); the plain
       // layer still draws when clustering is unavailable.
       if (cluster) marker.addTo(cluster); else marker.addTo(layer);
@@ -407,9 +413,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         // control and can unselect/remove any of them before planning.
         if (!autoSelected) {
           setAutoSelected(true);
-          const rec = [...(cat.must_visit ?? []), ...(cat.activities ?? [])]
-            .filter((p: CatalogPlace) => p.recommended && !p.already_in_plan)
-            .map((p: CatalogPlace) => p.name);
+          const rec = [
+            ...(cat.must_visit ?? []),
+            ...((cat.activities ?? []) as unknown as Array<CatalogPlace & { recommended?: boolean }>),
+          ]
+            .filter((p) => p.recommended && !p.already_in_plan)
+            .map((p) => p.name);
           if (rec.length > 0) setSelected(new Set(rec));
         }
       })
@@ -437,7 +446,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
   const totalSelected = selected.size + selectedFood.size;
   const places = useMemo(() => insideFirst(catalog?.must_visit ?? []), [catalog]);
-  const activities = useMemo(() => insideFirst(catalog?.activities ?? []), [catalog]);
+  const activities = useMemo(() => insideFirst(catalog?.activities ?? []) as CatalogActivity[], [catalog]);
+  // Best Tourist Spots — the famousness-ranked attractions, DISTINCT from the
+  // preference-matched Must Visit list (spec §4: two different sections).
+  const touristSpots = useMemo(() => insideFirst(catalog?.tourist_spots ?? []), [catalog]);
 
   const visiblePlaces = showAll ? places : places.slice(0, 6);
 
@@ -450,7 +462,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const budgetPanel = catalog?.budget;
 
   const selectedEntryFees = useMemo(() => {
-    const all = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
+    const all = (catalog?.must_visit ?? []).concat((catalog?.tourist_spots ?? []) as CatalogPlace[]);
     return Array.from(selected)
       .map((name) => all.find((p) => p.name === name))
       .reduce((sum, p) => sum + (p ? (p.entry_fee ?? 0) : 0), 0);
@@ -459,7 +471,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const selectedStayCost = selectedStay?.price_per_night ?? 0;
 
   const handleConfirm = () => {
-    const allItems = (catalog?.must_visit ?? []).concat(catalog?.activities ?? []);
+    const allItems = (catalog?.must_visit ?? []).concat((catalog?.tourist_spots ?? []) as CatalogPlace[]);
     // Map places can come from broader (non-recommended) categories too; look
     // them up across the full map dataset first, then the catalog cards.
     const allMap: Array<[string, MapPlace]> = [
@@ -514,10 +526,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="text-center mb-6">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 3 · Destination discovery</span>
-        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Your recommended places</h2>
+        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Explore {destinationName}</h2>
         <p className="mt-1.5 text-[13px] font-medium text-slate-500">
-          Travion pre-selected the best matches for your travel style — all real and verified.
-          Unselect or add freely; only your final picks shape the itinerary.
+          Browse the destination map, tap any pin for details, and build your own plan.
+          Travion pre-selects the best matches for your travel style — unselect or add freely;
+          only your final picks shape the itinerary.
         </p>
       </div>
 
@@ -661,6 +674,68 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             </div>
           </div>
 
+          {/* My Plan — the user's live selection. Every Add to Plan lands
+              here instantly (spec §14: selected places must be visible). */}
+          <div className="mb-8 rounded-3xl border border-travion-100 bg-travion-50/40 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-600">
+                <ClipboardList className="w-4 h-4 text-travion-600" /> My Plan
+              </h3>
+              <span className="text-[11px] font-bold text-slate-500">
+                {totalSelected > 0
+                  ? `${selected.size} place${selected.size === 1 ? '' : 's'} · ${selectedFood.size} food stop${selectedFood.size === 1 ? '' : 's'}${selectedStay ? ' · stay selected' : ''}`
+                  : 'Nothing selected yet — tap pins or cards to add'}
+              </span>
+            </div>
+            {totalSelected === 0 && !selectedStay ? (
+              <p className="text-[12px] font-medium text-slate-400">
+                Places, activities and food stops you add will appear here before your itinerary is organized.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(selected).map((name) => (
+                  <span key={`mp_${name}`} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-travion-200 text-[11px] font-bold text-slate-700">
+                    {name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${name} from plan`}
+                      onClick={() => toggle(selected, setSelected, name)}
+                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {Array.from(selectedFood).map((name) => (
+                  <span key={`mpf_${name}`} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-orange-200 text-[11px] font-bold text-slate-700">
+                    {name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${name} from plan`}
+                      onClick={() => toggle(selectedFood, setSelectedFood, name)}
+                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {selectedStay && (
+                  <span className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-violet-200 text-[11px] font-bold text-slate-700">
+                    {selectedStay.name}
+                    <button
+                      type="button"
+                      aria-label="Remove stay"
+                      onClick={() => setSelectedStay(null)}
+                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
           <div className="mb-8">
             <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
@@ -731,22 +806,25 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             )}
           </div>
 
-          {/* Activities — real things to do (hidden entirely when none verified) */}
-          {activities.length > 0 && (
+          {/* Best Tourist Spots — the destination's most famous attractions,
+              ranked by popularity rather than preference. DISTINCT from Must
+              Visit (which is AI-preference-matched). Every item is a PLACE
+              inside the destination — never a nearby town (spec §4). */}
+          {touristSpots.length > 0 && (
           <div className="mb-8">
             <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <Compass className="w-4 h-4 text-travion-600" /> Activities
+              <Camera className="w-4 h-4 text-travion-600" /> Best tourist spots
               <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-emerald-600 normal-case">✓ verified real experiences</span>
+              <span className="text-[11px] font-bold text-emerald-600 normal-case">most popular attractions in {destinationName}</span>
             </h3>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activities.map((place: CatalogPlace) => {
-                const active = selected.has(place.name);
+              {touristSpots.map((spot: CatalogPlace) => {
+                const active = selected.has(spot.name);
                 return (
                   <button
-                    key={`act_${place.id ?? place.name}`}
+                    key={`spot_${spot.id ?? spot.name}`}
                     type="button"
-                    onClick={() => toggle(selected, setSelected, place.name)}
+                    onClick={() => toggle(selected, setSelected, spot.name)}
                     className={`text-left p-4 rounded-2xl border transition-all ${
                       active
                         ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
@@ -755,14 +833,14 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{place.name}</p>
-                        {place.description && (
-                          <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{place.description}</p>
+                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{spot.name}</p>
+                        {spot.description && (
+                          <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{spot.description}</p>
                         )}
                         <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                          <span className="text-travion-600">{placementLabel(place.placement, place.distance_km)}</span>
-                          {place.duration_minutes != null && <span>· ~{place.duration_minutes} min</span>}
-                          {place.rating != null && <span>· ★ {Number(place.rating).toFixed(1)}</span>}
+                          <span className="text-travion-600">{placementLabel(spot.placement, spot.distance_km)}</span>
+                          {(spot.entry_fee ?? 0) > 0 ? <span>· ₹{spot.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
+                          {spot.rating != null && <span>· ★ {Number(spot.rating).toFixed(1)}</span>}
                         </div>
                       </div>
                       <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
@@ -770,6 +848,69 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       }`}>
                         {active && (
                           <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          )}
+
+          {/* Activities to do — THINGS THE USER CAN DO, never place names
+              (spec §5). Each card shows the ACTION, the real LOCATION where it
+              happens, and the recommended time of day. */}
+          {activities.length > 0 && (
+          <div className="mb-8">
+            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+              <Compass className="w-4 h-4 text-travion-600" /> Activities to do
+              <span className="text-slate-300">·</span>
+              <span className="text-[11px] font-bold text-emerald-600 normal-case">real experiences at real places</span>
+            </h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activities.map((activity: CatalogActivity) => {
+                const active = selected.has(activity.name);
+                return (
+                  <button
+                    key={`act_${activity.id ?? activity.name}`}
+                    type="button"
+                    onClick={() => toggle(selected, setSelected, activity.name)}
+                    className={`text-left p-4 rounded-2xl border transition-all ${
+                      active
+                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                        : 'bg-white border-slate-200 hover:border-travion-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{activity.action}</p>
+                        {activity.description && (
+                          <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{activity.description}</p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-slate-400">
+                          <span className="inline-flex items-center gap-1 text-travion-700">
+                            <MapPin className="w-3 h-3" /> {activity.location_name}
+                          </span>
+                          {activity.time_of_day && (
+                            <span className="inline-flex items-center gap-1 text-amber-600">
+                              <Clock className="w-3 h-3" /> {activity.time_of_day}
+                            </span>
+                          )}
+                          {activity.duration_minutes != null && <span>· ~{activity.duration_minutes} min</span>}
+                          {activity.rating != null && <span>· ★ {Number(activity.rating).toFixed(1)}</span>}
+                        </div>
+                      </div>
+                      <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide transition-colors ${
+                        active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700'
+                      }`}>
+                        {active ? (
+                          <>
+                            <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                            Added
+                          </>
+                        ) : (
+                          '+ Add Activity'
                         )}
                       </span>
                     </div>
@@ -1003,11 +1144,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
                 >
                   {budgetTier?.impossible ? 'Budget too low for plans'
-                    : busy ? 'Generating your plans…' : totalSelected > 0
-                      ? `Generate 3 plans with ${totalSelected} ${totalSelected === 1 ? 'pick' : 'picks'}${selectedStay ? ' & stay' : ''}`
-                      : selectedStay
-                        ? 'Generate 3 plans with stay'
-                        : 'Generate 3 plans'}
+                    : busy ? 'Generating your plans…' : 'Continue to Trip Planning'}
                   {!busy && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
                 </button>
               )}
@@ -1024,6 +1161,93 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           </div>
         </>
       )}
+
+      {/* ── Map pin popup: place details + explicit Add to Plan (spec §2) ── */}
+      <AnimatePresence>
+        {popupPlace && (() => {
+          const p = popupPlace.item;
+          const kind = MAP_LAYERS[popupPlace.key]?.kind ?? 'place';
+          const active = kind === 'food'
+            ? selectedFood.has(p.name)
+            : kind === 'stay'
+              ? selectedStay?.name === p.name
+              : selected.has(p.name);
+          const add = () => toggleMapItem(popupPlace.key, p);
+          return (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-travion-900/40 backdrop-blur-sm"
+              onClick={() => setPopupPlace(null)}
+            >
+              <motion.div
+                initial={{ y: 24, opacity: 0, scale: 0.98 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 24, opacity: 0, scale: 0.98 }}
+                className="w-full max-w-md bg-white rounded-3xl shadow-floating border border-slate-200 overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between p-5 pb-3">
+                  <div className="min-w-0">
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wider text-white"
+                      style={{ backgroundColor: COLORS[popupPlace.key] ?? '#64748b' }}
+                    >
+                      {MAP_LAYERS[popupPlace.key]?.label ?? popupPlace.key}
+                    </span>
+                    <h3 className="mt-1.5 text-lg font-extrabold text-slate-900 leading-snug">{p.name}</h3>
+                    {(p as MapPlace).address && (
+                      <p className="mt-0.5 text-[11.5px] font-medium text-slate-500 line-clamp-2">{(p as MapPlace).address}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPopupPlace(null)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 shrink-0"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="px-5 pb-5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                    {(p as MapPlace).rating != null && <span>★ {Number((p as MapPlace).rating).toFixed(1)}</span>}
+                    {(p as MapPlace).opening_hours && <span>🕘 {(p as MapPlace).opening_hours}</span>}
+                    {p.distance_km != null && <span>{p.distance_km} km from centre</span>}
+                    <span className="text-travion-600">{placementLabel(p.placement, p.distance_km)}</span>
+                  </div>
+                  {kind === 'stay' ? (
+                    <button
+                      type="button"
+                      onClick={() => { add(); setPopupPlace(null); }}
+                      className={`mt-4 w-full h-11 rounded-2xl text-[13px] font-extrabold transition-colors ${
+                        active
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-travion-600 hover:bg-travion-700 text-white'
+                      }`}
+                    >
+                      {active ? '✓ Selected as your stay' : 'Use as my stay'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={add}
+                      className={`mt-4 w-full h-11 rounded-2xl text-[13px] font-extrabold transition-colors ${
+                        active
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-travion-600 hover:bg-travion-700 text-white'
+                      }`}
+                    >
+                      {active ? '✓ In My Plan — tap to remove' : '+ Add to Plan'}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 };

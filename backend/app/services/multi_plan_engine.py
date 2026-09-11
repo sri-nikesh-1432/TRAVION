@@ -104,7 +104,7 @@ def _stay_tier_label(stay: Optional[Dict[str, Any]], fallback: str) -> str:
 def _variant_params(variant: str, profile_stay_pref: str) -> Dict[str, Any]:
     if variant == "VALUE":
         return {
-            "label": "PLAN A · VALUE",
+            "label": "Budget",
             "tagline": "Maximum experience with minimum unnecessary spending.",
             "stay_tiers": ["3 Star", "Homestay", "Budget Guesthouse", "2 Star"],
             "stay_fallback_scale": 0.7,
@@ -117,7 +117,7 @@ def _variant_params(variant: str, profile_stay_pref: str) -> Dict[str, Any]:
         }
     if variant == "PREMIUM":
         return {
-            "label": "PLAN C · PREMIUM",
+            "label": "Premium",
             "tagline": "Maximum comfort while staying inside your budget.",
             "stay_tiers": ["5 Star", "4 Star"],
             "stay_fallback_scale": 1.4,
@@ -129,7 +129,7 @@ def _variant_params(variant: str, profile_stay_pref: str) -> Dict[str, Any]:
             "badge": "✨ Premium experiences",
         }
     return {
-        "label": "PLAN B · RECOMMENDED",
+        "label": "Recommended",
         "tagline": "Best balance of comfort, experiences and budget.",
         "stay_tiers": ["4 Star", "Homestay", "3 Star"],
         "stay_fallback_scale": 1.0,

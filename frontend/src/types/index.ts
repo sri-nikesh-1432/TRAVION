@@ -251,6 +251,38 @@ export interface CatalogPlace {
   recommended?: boolean;
 }
 
+/**
+ * A structured ACTIVITY — something the user can DO at a real place, never a
+ * bare place name. The backend pairs a verified location with an action verb,
+ * so every activity carries its own real location (spec: ACTIVITY ≠ PLACE).
+ */
+export interface CatalogActivity {
+  id?: string | null;
+  /** The action verb phrase, e.g. "Watch Sunset". */
+  action: string;
+  /** Display title: "<Action> — <Location>". */
+  name: string;
+  description?: string | null;
+  /** Where the activity happens — a REAL place inside the destination. */
+  location_name: string;
+  location_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  time_of_day?: string | null;
+  duration_minutes?: number | null;
+  entry_fee?: number | null;
+  rating?: number | null;
+  category: string;
+  place_category?: string | null;
+  experience_tags?: string[];
+  placement?: 'inside' | 'nearby' | 'outside' | string;
+  inside_destination?: boolean;
+  /** True → experience-matched activity the UI auto-selects (server-decided). */
+  recommended?: boolean;
+  source: string;
+  verified: boolean;
+}
+
 export interface CatalogStay {
   id?: string | null;
   name: string;
@@ -354,11 +386,13 @@ export interface DestinationCatalog {
     constraints?: Record<string, any>;
     message?: string;
   } | null;
-  counts: { attractions: number; stays: number; food: number; activities: number };
+  counts: { attractions: number; tourist_spots?: number; stays: number; food: number; activities: number };
   must_visit: CatalogPlace[];
+  /** Best famousness-ranked attractions of the destination (distinct from Must Visit). */
+  tourist_spots?: CatalogPlace[];
   stays: CatalogStay[];
   food: CatalogFood[];
-  activities: CatalogPlace[];
+  activities: CatalogActivity[];
 }
 
 export type DiscoveryCategory = 'must_visit' | 'activities' | 'food' | 'stays';

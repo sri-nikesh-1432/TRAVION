@@ -337,16 +337,27 @@ _KNOWN_THIN_DESTINATIONS = {"Port Blair"}
 
 
 def test_every_destination_fills_ten_must_visit_and_activities():
-    """Every destination has ≥10 must-visit and ≥10 activities drawn ONLY from
-    real data (curated catalog + the real GeoNames gazetteer).  The one known
-    exception is Port Blair where the Andaman archipelago has fewer than 10
-    town/place entries in the entire island chain."""
+    """MUST VISIT is filled to 10 from real data (curated catalog + real
+    gazetteer entries INSIDE the destination footprint). ACTIVITIES are
+    action-based — things to DO at real destination places — never padded with
+    nearby towns, so the honest count may be below 10 when the destination
+    itself has fewer real spots (strict boundary rule, no 350 km topup).
+    Nothing is ever invented."""
     for name in sorted(pd.VERIFIED_ATTRACTIONS.keys()):
         if name in _KNOWN_THIN_DESTINATIONS:
             continue
         result = pd.discover_destination(name)
-        assert len(result.get("must_visit") or []) == 10, f"{name} must_visit"
-        assert len(result.get("activities") or []) == 10, f"{name} activities"
+        must_visit = result.get("must_visit") or []
+        # Honest fill: up to 10 real places INSIDE the destination footprint.
+        # The old "always exactly 10" was only possible by pulling nearby
+        # towns from a 350 km radius — that padding is gone by design.
+        assert 3 <= len(must_visit) <= 10, f"{name} must_visit: {len(must_visit)}"
+        # Action-based activities: bounded by the destination's real spots.
+        activities = result.get("activities") or []
+        assert len(activities) <= 10, f"{name} activities"
+        for item in activities:
+            assert item.get("category") == "activity", f"{name}: activity cards must be action-based"
+            assert item.get("location_name"), f"{name}: every activity needs a real location"
         for cat in ("must_visit", "activities"):
             for item in result[cat]:
                 assert item["verified"] is True
@@ -354,16 +365,16 @@ def test_every_destination_fills_ten_must_visit_and_activities():
 
 
 def test_port_blair_pool_honest_but_extended():
-    """Port Blair (Andaman islands) has very few town/place entries in the
-    archipelago.  The 10-card guarantee reaches its natural limit here —
-    the pool is honest (no inventions) and the catalog_meta reports the real
-    available count."""
+    """Port Blair (Andaman islands) has very few real entries in the
+    archipelago. With the strict destination boundary the pool is HONEST —
+    no nearby towns are pulled in to hit a number, and catalog_meta reports
+    the real available count."""
     result = pd.discover_destination("Port Blair")
     avail_activities = len(result.get("activities") or [])
     avail_must = len(result.get("must_visit") or [])
     # Islands genuinely have fewer real entries — the pool is honest.
-    assert avail_must == 10, "Port Blair must_visit should reach 10 via real index"
-    assert avail_activities >= 2, "Port Blair should have at least a few real activities"
+    assert avail_must >= 3, "Port Blair must_visit should still surface real places"
+    assert avail_activities >= 1, "Port Blair should have at least a few real activities"
     meta = result["catalog_meta"]["activities"]
     assert meta["available"] == avail_activities
     if avail_activities:
