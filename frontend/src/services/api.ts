@@ -187,6 +187,11 @@ export const api = {
       total_estimated: number;
     }>(`/trips/${tripId}/discovery/next`, { method: 'POST', body: JSON.stringify({ answers_so_far: answersSoFar }) }),
 
+  // Persisted interview answers for a trip — the source of truth when resuming
+  // a mid-planning trip after a refresh (spec §1: ONE trip_id across the flow).
+  getTripProfile: (tripId: string) =>
+    request<Record<string, any>>(`/trips/${tripId}/profile`),
+
   // Planning
   planTrip: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', consentAcknowledged = true) =>
     request<TripItinerary>(`/trips/${tripId}/plan`, { method: 'POST', body: JSON.stringify({ mode, consent_acknowledged: consentAcknowledged }) }),

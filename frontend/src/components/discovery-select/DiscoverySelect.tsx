@@ -170,6 +170,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // pan/zoom, clustered so large POI sets stay smooth.
   const [viewportPlaces, setViewportPlaces] = useState<GeoViewportPlace[]>([]);
   const [vpLoading, setVpLoading] = useState(false);
+  // Honest failure state for the live layer (spec §44): rate limits / auth
+  // errors must never silently render as a map with "0 live places in view".
+  const [vpError, setVpError] = useState<string | null>(null);
   // Map pin popup: click a pin → place card with details + Add to Plan
   // (spec §2 — every map place is clickable and adds to the plan from a
   // proper popup, not a silent toggle).
@@ -385,9 +388,25 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       setVpLoading(true);
       api.getViewportPlaces({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, 100)
         .then((r) => {
-          if (vpSeq.current === seq) setViewportPlaces(r.places || []);
+          if (vpSeq.current === seq) {
+            setViewportPlaces(r.places || []);
+            setVpError(null);
+          }
         })
-        .catch(() => { if (vpSeq.current === seq) setViewportPlaces([]); })
+        .catch((err) => {
+          if (vpSeq.current !== seq) return;
+          setViewportPlaces([]);
+          // NEVER a silent failure: surface why the live layer is empty.
+          console.error('[Step 3] live viewport POIs failed:', err?.message || err);
+          const msg = String(err?.message || '');
+          if (msg.includes('429') || /rate limit/i.test(msg)) {
+            setVpError('Live browsing paused for a moment (provider rate limit) — recommended places below are unaffected.');
+          } else if (msg.includes('401') || msg.includes('403')) {
+            setVpError('Live place browsing needs you to sign in again.');
+          } else {
+            setVpError('Live places could not be loaded — the verified places below are still available.');
+          }
+        })
         .finally(() => {
           if (vpSeq.current === seq) setVpLoading(false);
         });
@@ -679,6 +698,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       <span className="w-1.5 h-1.5 rounded-full bg-travion-500 animate-pulse inline-block" />
                       Loading places in view…
                     </>
+                  ) : vpError ? (
+                    <span className="text-amber-600" title={vpError}>⚠ {vpError}</span>
                   ) : (
                     <>
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />

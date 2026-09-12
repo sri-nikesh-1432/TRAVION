@@ -453,6 +453,39 @@ def test_overpass_skipped_when_fast_tiers_fill_buckets(monkeypatch):
     assert not called["osm"], "Overpass must be skipped when fast tiers already filled every bucket"
 
 
+def test_gazetteer_settlements_never_appear_as_must_visit():
+    """PRODUCT FIX (regression): GeoNames towns/suburbs (Gaddi Annaram,
+    Shamshabad, Meerpet, Boduppal...) must NEVER be presented as Must Visit
+    tourist places. Only real POI providers + kind=="place" top-up feed
+    Must Visit — gazetteer settlements are excluded at the source."""
+    # 1. _index_items is disabled — it can never contribute again.
+    assert pd._index_items("Hyderabad", {"lat": 17.385, "lng": 78.4867}) == []
+    # 2. The top-up only admits real travel destinations: for a large city,
+    #    any near-centre gazetteer contribution must be kind=="place".
+    origin = (17.385, 78.4867)
+    topup = pd._index_topup(
+        {"lat": origin[0], "lng": origin[1], "kind": "city"},
+        origin, 25.0, None,
+        used_names={"Charminar", "Golconda Fort"},
+        core_km=5.0, slack=15,
+    )
+    from app.services.india_places_index import INDIA_PLACES
+    kind_by_id = {p["id"]: p.get("kind") for p in INDIA_PLACES}
+    for item in topup:
+        kind = kind_by_id.get(item.get("id"))
+        assert kind == "place", (
+            f"{item.get('name')} (kind={kind}) leaked into Must Visit top-up"
+        )
+    # 3. The specific suburbs from the bug report are never in any output.
+    banned = {"gaddi annaram", "shamshabad", "meerpet", "boduppal", "jiladiguda"}
+    result = pd.discover_destination("Hyderabad")
+    for cat in ("must_visit", "activities", "tourist_spots"):
+        for item in result.get(cat) or []:
+            nm = pd._norm(item.get("name", ""))
+            for b in banned:
+                assert b not in nm, f"{item['name']} leaked into {cat}"
+
+
 def test_topup_entries_are_real_verified_provenance():
     """Every must-visit and activity item has a real source (never 'invented')
     and carries a real latitude/longitude."""

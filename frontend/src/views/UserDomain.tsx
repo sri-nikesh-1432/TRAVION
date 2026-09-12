@@ -275,14 +275,53 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
       api.getMyTrips().then((trips) => {
         setMyTrips(trips);
+        // ── PERSISTENT TRIP (spec §1/§32) ──────────────────────────────
+        // The SAME trip_id survives refresh across the WHOLE flow — including
+        // the mid-planning stage (REQUESTED/PLANNED/DRAFT) that used to be
+        // lost on refresh and later surfaced as "Trip not found" at checkout.
         const ongoing = trips.find(t => t.status === 'ACTIVE' || t.status === 'GUIDE_ASSIGNED' || t.status === 'PAID');
         if (ongoing) {
           loadTripWorkspace(ongoing.id, true);
+          return;
+        }
+        const midPlanning = trips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
+        if (midPlanning) {
+          resumePlanningTrip(midPlanning);
         }
       }).catch(console.error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSandboxDemo]);
+
+  // Resume an in-flight planning trip from server state (refresh / back-nav).
+  // Everything needed is already persisted server-side: the interview answers
+  // (TripProfile.questions_answers) and the trip record itself — so the flow
+  // picks up exactly where the traveller left off, with the SAME trip_id.
+  const resumePlanningTrip = async (trip: TripItem) => {
+    setActiveTrip(trip);
+    setCurrentView('discovery');
+    try {
+      const saved = await api.getTripProfile(trip.id).catch(() => null);
+      const answers = (saved?.questions_answers as Record<string, any>) || {};
+      setAnswersSoFar(answers);
+      const q = await api.getNextDiscoveryQuestion(trip.id, answers);
+      if (q.is_complete) {
+        setCurrentView('discovery_select');
+      } else {
+        setCurrentQuestion(q);
+      }
+    } catch {
+      // Interview state is unreadable — restart the (3-question) interview
+      // for this SAME trip rather than dropping the traveller's progress.
+      setCurrentQuestion(null);
+      setAnswersSoFar({});
+      try {
+        setCurrentQuestion(await api.getNextDiscoveryQuestion(trip.id, {}));
+      } catch {
+        setCurrentView('search');
+      }
+    }
+  };
 
   const loadTripWorkspace = async (tripId: string, silent = false) => {
     let trip: TripItem | null = null;
@@ -565,10 +604,21 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         });
       }
 
-      setActiveTrip(prev => prev ? { ...prev, status: 'ACTIVE' } : null);
+      // Server truth after signature verification (spec §45: no fake success).
+      // The webhook response carries the authoritative status — an earlier
+      // optimistic update could mask a verification failure.
+      let verifiedTripStatus = 'ACTIVE';
+      try {
+        const t = await api.getTrip(activeTrip.id);
+        verifiedTripStatus = t.status || 'ACTIVE';
+      } catch { /* keep webhook-declared status */ }
+      setActiveTrip(prev => prev ? { ...prev, status: verifiedTripStatus as any } : null);
       setPlanError(null);
       setShowCheckoutModal(false);
       setCurrentView('workspace');
+      // Refresh silently in the background so workspace surfaces (final map,
+      // chat, guide banner) render from the ACTIVATED backend trip.
+      loadTripWorkspace(activeTrip.id, true);
     } catch (err: any) {
       console.error("Payment failed or cancelled:", err);
       if (String(err?.message || '').toLowerCase().includes('cancel')) {

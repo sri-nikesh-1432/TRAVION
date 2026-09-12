@@ -216,6 +216,31 @@ def reverse_geocode(lat: float, lon: float) -> Optional[Dict[str, Any]]:
 
 # ── Places ───────────────────────────────────────────────────────────────────
 
+_last_total: int = 0
+# Total match counts keyed by query, so a caller paging through page 2 reads
+# the total of ITS OWN query — never a stale total from an unrelated request.
+_totals_by_query: dict = {}
+
+
+def _places_query_key(categories: List[str], geo_filter: str, offset: int) -> tuple:
+    return (tuple(categories), str(geo_filter), int(offset))
+
+
+def last_request_total() -> int:
+    """Total number of results the provider reports for the LAST executed
+    /v2/places request — independent of the page limit. 0 when unknown.
+    Lets callers page through additional REAL results instead of inventing
+    filler when one page is smaller than the requirement."""
+    return _last_total
+
+
+def last_total_for(categories: List[str], geo_filter: str, offset: int = 0) -> int:
+    """Total match count for a SPECIFIC query (recorded when that query last
+    executed, including cache hits). 0 when the query never ran — which also
+    makes paging deterministic under test mocks that bypass the provider."""
+    return int(_totals_by_query.get(_places_query_key(categories, geo_filter, offset), 0))
+
+
 @_safe(default=[])
 def places(categories: List[str], geo_filter: str, limit: int = 60,
            offset: int = 0, lang: str = "en") -> List[Dict[str, Any]]:
@@ -227,7 +252,10 @@ def places(categories: List[str], geo_filter: str, limit: int = 60,
     cache_key = f"places::{','.join(categories)}::{geo_filter}::{limit}::{offset}"
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        feats, tot = cached
+        global _last_total
+        _last_total = int(tot)
+        return feats
     data = _get(f"{API}/v2/places", {
         "categories": ",".join(categories),
         "filter": geo_filter,
@@ -235,8 +263,13 @@ def places(categories: List[str], geo_filter: str, limit: int = 60,
         "offset": max(int(offset), 0),
         "lang": lang,
     }) or {}
+    try:
+        _last_total = int(data.get("features_nb") or len(data.get("features") or []))
+    except Exception:
+        _last_total = 0
     out = data.get("features") or []
-    _cache_set(cache_key, out)
+    _totals_by_query[_places_query_key(categories, geo_filter, offset)] = _last_total
+    _cache_set(cache_key, (out, _last_total))
     return out
 
 

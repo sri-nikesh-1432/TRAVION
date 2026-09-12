@@ -78,6 +78,7 @@ TARGET_COUNTS: Dict[str, int] = {
     "activities": 15,
     "food": 15,
     "stays": 15,
+    "tourist_spots": 15,
 }
 
 GOOGLE_PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
@@ -722,12 +723,13 @@ def _geoapify_filter(
     return None
 
 
-def _geoapify_fetch(categories: List[str], geo_filter: str, api_key: str = "") -> List[Dict[str, Any]]:
+def _geoapify_fetch(categories: List[str], geo_filter: str, api_key: str = "",
+                    offset: int = 0) -> List[Dict[str, Any]]:
     """One batched GeoApify Places request across the destination area.
     Delegates to the central GeoApify service (single key owner + TTL cache)."""
     try:
         from app.services import geoapify as _geo
-        return _geo.places(list(categories), geo_filter, limit=60) or []
+        return _geo.places(list(categories), geo_filter, limit=100, offset=offset) or []
     except Exception:
         return []
 
@@ -809,16 +811,38 @@ def _discover_geoapify(
     pref_cats.extend(_GEOAPIFY_EXPERIENCE_CATEGORIES.get(exp_key, ()))
     pref_cats = list(dict.fromkeys(pref_cats))  # de-dup, preserve order
 
-    amenity_cats: List[str] = list(dict.fromkeys(
-        _BASE_GEOAPIFY_CATEGORIES["food"] + _BASE_GEOAPIFY_CATEGORIES["stays"]
-    ))
+    food_cats: List[str] = list(_BASE_GEOAPIFY_CATEGORIES["food"])
+    stay_cats: List[str] = list(_BASE_GEOAPIFY_CATEGORIES["stays"])
 
+    # THREE dedicated batched requests (attractions / food / stays).
+    # Previously food and stays shared ONE request whose 60-result cap was
+    # dominated by dense restaurant coverage — big cities surfaced only 2–8
+    # hotels while 50+ restaurants were discarded. Separate requests give each
+    # section its own full provider page (spec: 10+ real restaurants AND 10+
+    # real stays for every destination).
     features: List[Dict[str, Any]] = []
-    for cats in (pref_cats, amenity_cats):
+    for cats in (pref_cats, food_cats, stay_cats):
         try:
-            features.extend(_geoapify_fetch(cats, geo_filter, api_key))
+            first = _geoapify_fetch(cats, geo_filter, api_key)
         except Exception:
             continue  # provider failure must never break discovery — lower tiers take over
+        features.extend(first)
+        # PAGE 2 — GeoApify serves at most 100 features per request. When the
+        # provider reports MORE real matches for THIS query than one page held,
+        # pull the next page so the section reaches its 10–15 target from real
+        # results (never fabricated filler). The total is keyed per query, so
+        # unrelated requests (or provider-bypassing test mocks) can never
+        # trigger a phantom second page.
+        try:
+            from app.services import geoapify as _geo_svc
+            total = _geo_svc.last_total_for(list(cats), geo_filter, 0)
+        except Exception:
+            total = 0
+        if first and total > len(first):
+            try:
+                features.extend(_geoapify_fetch(cats, geo_filter, api_key, offset=len(first)))
+            except Exception:
+                pass  # page-2 is best-effort; page 1 results still stand
     if not features:
         return buckets
 
@@ -1346,50 +1370,16 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
 
 
 def _index_items(destination: str, resolved: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Nearby REAL places from the GeoNames-derived index, around the resolved
-    destination. Distance-based relevance; no invented fields. Entries are later
-    filtered to the destination footprint (bounding box / destination radius)
-    exactly like every other real source."""
-    if not resolved:
-        return []
-    origin = (resolved["lat"], resolved["lng"])
-    nearby: List[Dict[str, Any]] = []
-    for p in INDIA_PLACES:
-        km = _haversine_km(origin, (p["lat"], p["lng"]))
-        if 0 < km <= 350:  # realistic journey radius around the destination
-            # Administrative districts/cities around the destination (e.g.
-            # "Central Delhi") are not tourist places — prefer real POIs.
-            if p.get("kind") in ("district", "city"):
-                continue
-            nearby.append((km, p))
-    nearby.sort(key=lambda t: t[0])
-    items: List[Dict[str, Any]] = []
-    count = 0
-    for km, p in nearby:
-        if count >= 40:
-            break
-        count += 1
-        items.append({
-            "id": p["id"],
-            "place_id": p["id"],
-            "name": p["name"],
-            "category": "must_visit",
-            "latitude": p["lat"], "longitude": p["lng"],
-            "address": f"{p['name']}, {p['state']}, India",
-            "rating": None,
-            "review_count": None,
-            "opening_hours": None,
-            "website": None,
-            "photos": [],
-            "source": "geonames_local_index",
-            "verified": True,
-            "distance_km": round(km, 1),
-            "entry_fee": None,
-            "price_per_night": None,
-            "duration_minutes": 90,
-            "duration_is_estimate": True,
-        })
-    return items
+    """DISABLED — gazetteer settlements are NOT tourist attractions.
+
+    This used to pour GeoNames towns/suburbs (Gaddi Annaram, Shamshabad,
+    Meerpet, Boduppal...) into the MUST VISIT section as fake "tourist places"
+    whenever the live POI tiers came up short. A settlement name is not an
+    attraction: Must Visit is built exclusively from real POI providers
+    (GeoApify/Google/OSM/curated catalog) plus the strict-footprint
+    _index_topup, which contributes only real TRAVEL destinations
+    (kind "place"). Nothing here ever invents or substitutes data."""
+    return []
 
 
 def _index_topup(
@@ -1411,7 +1401,12 @@ def _index_topup(
     geocoded bounding box (or, failing that, within dest_radius_km) are
     returned. The old 350 km journey-radius fallback is REMOVED — it was the
     root cause of Marakkanam/Villupuram appearing as activities. Only places
-    genuinely inside the destination footprint are included."""
+    genuinely inside the destination footprint are included.
+
+    KIND RESTRICTION (product fix): ONLY kind == "place" entries — real travel
+    destinations (Yercaud, Kovalam, Fort Kochi…). Gazetteer "town" entries are
+    suburbs/settlements (Gaddi Annaram, Shamshabad, Meerpet…), NOT tourist
+    attractions, and must never be presented as Must Visit places."""
     if not resolved or not origin or slack <= 0:
         return []
     out: List[Dict[str, Any]] = []
@@ -1424,7 +1419,7 @@ def _index_topup(
         (
             (p, _haversine_km(origin, (p["lat"], p["lng"])))
             for p in INDIA_PLACES
-            if p.get("kind") in ("place", "town")
+            if p.get("kind") == "place"
         ),
         key=lambda t: t[1],
     )
@@ -1537,17 +1532,82 @@ _CATEGORY_ACTIONS: Dict[str, List[str]] = {
     "spiritual": ["Prayer / Darshan", "Meditation", "Spiritual Walk"],
 }
 
+# When no experience template matches a place's category, fall back to a
+# CATEGORY-appropriate action so a restaurant never becomes "Explore — X"
+# and a temple never becomes "Trek to — X" (spec §10: activities must make
+# semantic sense for the real place).
+_CATEGORY_FALLBACK_TEMPLATES: Dict[str, List[Tuple[str, str, str]]] = {
+    "food": [
+        ("Dine at", "Taste the local flavours at {place}", "Evening"),
+        ("Try local cuisine at", "Sample the signature dishes of {place}", "Afternoon"),
+        ("Street Food Experience", "Try authentic street food around {place}", "Evening"),
+        ("Coffee / Tea break", "Take a refreshing break over local brews at {place}", "Afternoon"),
+    ],
+    "temple": [
+        ("Prayer / Darshan", "Attend prayers and darshan at {place}", "Morning"),
+        ("Spiritual Walk", "Walk through the sacred premises of {place}", "Morning"),
+        ("Meditation", "Sit for quiet meditation at {place}", "Early Morning"),
+    ],
+    "church": [
+        ("Prayer / Visit", "Visit {place} for quiet reflection", "Morning"),
+        ("Photography", "Photograph the architecture of {place}", "Golden Hour"),
+    ],
+    "mosque": [
+        ("Prayer / Visit", "Visit {place} for quiet reflection", "Morning"),
+        ("Photography", "Photograph the architecture of {place}", "Golden Hour"),
+    ],
+    "spiritual": [
+        ("Meditation", "Meditate in the peaceful surroundings of {place}", "Early Morning"),
+        ("Spiritual Walk", "Walk the spiritual circuit at {place}", "Morning"),
+    ],
+    "park": [
+        ("Morning Walk", "Take a relaxed walk through {place}", "Morning"),
+        ("Picnic", "Enjoy a picnic amid the greenery of {place}", "Afternoon"),
+        ("Photography", "Photograph the landscapes of {place}", "Golden Hour"),
+        ("Cycling", "Cycle through the paths of {place}", "Morning"),
+    ],
+    "museum": [
+        ("Tour", "Tour {place} and learn its story", "Afternoon"),
+        ("Explore", "Explore the exhibits and collections at {place}", "Afternoon"),
+    ],
+    "viewpoint": [
+        ("Photography", "Capture the views from {place}", "Golden Hour"),
+        ("Watch Sunset", "Watch the sunset from {place}", "Evening"),
+        ("Watch Sunrise", "Watch the sunrise from {place}", "Early Morning"),
+    ],
+    "beach": [
+        ("Relax at", "Relax by the water at {place}", "Evening"),
+        ("Watch Sunset", "Watch the sunset over {place}", "Evening"),
+        ("Beach Walk", "Take a barefoot walk along {place}", "Evening"),
+    ],
+    "waterfall": [
+        ("Trek to", "Hike to {place} for the falls and scenery", "Morning"),
+        ("Photography", "Photograph the cascades at {place}", "Morning"),
+    ],
+    "heritage": [
+        ("Heritage Walk", "Walk through the heritage of {place}", "Morning"),
+        ("Photography", "Photograph the historic detail of {place}", "Golden Hour"),
+        ("Tour", "Tour the historic site of {place}", "Morning"),
+    ],
+}
+
+
 # Experience-specific place category priority (what to turn into activities)
 _EXPERIENCE_ACTIVITY_PRIORITY: Dict[str, List[str]] = {
-    "adventure": ["park", "viewpoint", "waterfall", "beach", "heritage", "must_visit", "tourist_spot"],
+    "adventure": ["park", "viewpoint", "waterfall", "beach", "heritage", "must_visit", "tourist_spot", "food"],
     "food & culture": ["food", "heritage", "museum", "must_visit", "tourist_spot", "park"],
-    "spiritual": ["temple", "church", "mosque", "spiritual", "must_visit", "tourist_spot"],
-    "mixed": ["must_visit", "tourist_spot", "beach", "park", "heritage", "viewpoint"],
+    "spiritual": ["temple", "church", "mosque", "spiritual", "must_visit", "tourist_spot", "food"],
+    "mixed": ["must_visit", "tourist_spot", "food", "beach", "park", "heritage", "viewpoint"],
 }
 
 
 def _infer_place_category(item: Dict[str, Any]) -> str:
     """Infer a semantic category from a place's name, types, and provider categories."""
+    # The provider-bucket assignment ("food"/"stays"/...) is the strongest
+    # signal — GeoApify already classified the POI's real category.
+    bucket = str(item.get("category") or "").strip().lower()
+    if bucket == "food":
+        return "food"
     name_lower = _norm(item.get("name", ""))
     types_text = " ".join(str(t).replace(".", " ").replace("_", " ").lower()
                           for t in (item.get("types") or []))
@@ -1563,6 +1623,11 @@ def _infer_place_category(item: Dict[str, Any]) -> str:
         return "church"
     if any(w in combined for w in ("mosque", "masjid", "dargah")):
         return "mosque"
+    if any(w in combined for w in ("restaurant", "cafe", "café", "coffee", "fast food",
+                                    "fast_food", "food court", "food_court", "catering",
+                                    "bakery", "biryani", "tiffin", "dhaba", "sweets",
+                                    "ice cream", "eatery", "pizzeria", "juice", "food")):
+        return "food"
     if any(w in combined for w in ("beach", "shore", "coast", "bay")):
         return "beach"
     if any(w in combined for w in ("waterfall", "falls", "cascade")):
@@ -1643,6 +1708,9 @@ def generate_activities(
     # Generate activities: pair each place with an appropriate action template
     activities: List[Dict[str, Any]] = []
     used_place_names: set = set()
+    # Verb rotation per category so 10 dining activities do not all read
+    # "Dine at" — the cycle advances through category-appropriate actions.
+    _fallback_cycle: Dict[str, int] = {}
 
     for place in all_places:
         if len(activities) >= max_count:
@@ -1666,8 +1734,15 @@ def generate_activities(
                 selected_template = tmpl
                 break
         if not selected_template:
-            # Fallback to generic action
-            selected_template = ("Visit", "Explore {place}", "Morning")
+            # Category-aware fallback: a restaurant gets a dining action, a
+            # temple a spiritual one — never a generic "Explore {place}".
+            fallbacks = _CATEGORY_FALLBACK_TEMPLATES.get(pcat)
+            if fallbacks:
+                idx = _fallback_cycle.get(pcat, 0)
+                selected_template = fallbacks[idx % len(fallbacks)]
+                _fallback_cycle[pcat] = idx + 1
+            else:
+                selected_template = ("Visit", "Explore {place}", "Morning")
 
         action_verb, desc_template, time_of_day = selected_template
         description = desc_template.replace("{place}", place_name)
@@ -2285,11 +2360,35 @@ def discover_destination(
     # which actions are generated.
     #
     # NEVER use _index_topup for activities. NEVER return nearby towns as
-    # activities. Only use places from must_visit and tourist_spots as the
-    # location source.
+    # activities. Anchors are always REAL provider-verified POIs.
+    #
+    # WIDE ANCHOR POOL (product fix): activities are anchored on the FULL real
+    # pool — every verified attraction beyond the Must Visit cards, tourist
+    # spots, AND food places (tea/coffee/food-tasting actions are §10 product
+    # requirements) — not only the two truncated card lists. With Must Visit
+    # consuming the top 15 attractions, the old narrow pool left sections with
+    # as few as 7 activities; the wide pool restores the 10–15 target while
+    # generate_activities() still enforces zero overlap with Must Visit
+    # (by stable id AND normalized name), so a wide pool only means MORE real
+    # anchors — never a collision.
+    activity_anchor_pool: List[Dict[str, Any]] = []
+    _seen_anchor_names: set = set()
+    # Food pool FIRST so a restaurant that also appears in the attraction
+    # pool under a commercial.* tag keeps its FOOD classification (name-dedup
+    # keeps the first occurrence) — dining actions then land correctly.
+    for _src in (
+        map_candidates.get("food") or [],
+        tourist_pool or [],
+        map_candidates.get("must_visit") or [],
+    ):
+        for _it in _src:
+            _nm = (_it.get("name") or "").strip()
+            if _nm and _nm not in _seen_anchor_names:
+                _seen_anchor_names.add(_nm)
+                activity_anchor_pool.append(_it)
     action_activities = generate_activities(
-        must_visit_places=result.get("must_visit", []),
-        tourist_spots=result.get("tourist_spots", []),
+        must_visit_places=activity_anchor_pool,
+        tourist_spots=[],
         experience=prefs.get("experience"),
         destination=destination,
         max_count=TARGET_COUNTS.get("activities", 15),
