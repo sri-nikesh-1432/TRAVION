@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Compass, User, Phone, MapPin, CheckCircle2, ShieldAlert,
   Star, Eye, EyeOff, MessageSquare, LogOut, Clock, Navigation,
-  Languages as LanguagesIcon, Briefcase, AlertCircle
+  Languages as LanguagesIcon, Briefcase, AlertCircle, Users, Route, Utensils, BedDouble, ChevronDown
 } from 'lucide-react';
 import { AuthSession, GuideProfile, ReviewItem } from '../types';
 import { api } from '../services/api';
@@ -433,25 +433,83 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
                   className="p-5 rounded-2xl bg-travion-50/50 border border-travion-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-extrabold text-slate-900">
-                        {assignment.trip.destination} Expedition
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-extrabold text-slate-900">
+                      {assignment.trip.destination} Expedition
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-travion-100 text-travion-700">
+                      {assignment.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    Traveller: <span className="font-bold">{assignment.trip.traveller.name}</span> · Preferred Language: {assignment.trip.traveller.language}
+                    {assignment.trip.travellers?.total ? (
+                      <span className="inline-flex items-center gap-1 ml-2 text-travion-700">
+                        <Users className="w-3 h-3" />
+                        {assignment.trip.travellers.total} traveller{assignment.trip.travellers.total === 1 ? '' : 's'}
+                        {assignment.trip.travellers.children ? ` (${assignment.trip.travellers.adults ?? '?'}A · ${assignment.trip.travellers.children}C)` : ''}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-travion-100 text-travion-700">
-                        {assignment.status}
-                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Departure: {new Date(assignment.trip.start_datetime).toLocaleDateString()}
+                  </div>
+                  {assignment.trip.pricing && (
+                    <div className="mt-1.5 text-[11px] font-bold text-slate-500">
+                      Guide fee: ₹{Math.round(assignment.trip.pricing.guide_fee || 0).toLocaleString('en-IN')} · Platform fee: ₹{Math.round(assignment.trip.pricing.platform_fee || 0).toLocaleString('en-IN')}
                     </div>
-                    <div className="text-xs text-slate-600 mt-1">
-                      Traveller: <span className="font-bold">{assignment.trip.traveller.name}</span> · Preferred Language: {assignment.trip.traveller.language}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Departure: {new Date(assignment.trip.start_datetime).toLocaleDateString()}
-                    </div>
-                    {assignment.trip.pricing && (
-                      <div className="mt-1.5 text-[11px] font-bold text-slate-500">
-                        Guide fee: ₹{Math.round(assignment.trip.pricing.guide_fee || 0).toLocaleString('en-IN')} · Platform fee: ₹{Math.round(assignment.trip.pricing.platform_fee || 0).toLocaleString('en-IN')}
+                  )}
+                  {/* §34 — the guide sees the COMPLETE final trip: selections + FINAL itinerary */}
+                  {(assignment.trip.selected_places?.length > 0 || assignment.trip.selected_food?.length > 0 || assignment.trip.selected_stay) && (
+                    <details className="mt-2.5 group">
+                      <summary className="cursor-pointer select-none inline-flex items-center gap-1 text-[11px] font-bold text-travion-700 hover:text-travion-800">
+                        <Route className="w-3.5 h-3.5" />
+                        Traveller's plan ({assignment.trip.selected_places?.length || 0} place{(assignment.trip.selected_places?.length || 0) === 1 ? '' : 's'}{assignment.trip.selected_food?.length ? ` · ${assignment.trip.selected_food.length} food` : ''}{assignment.trip.selected_stay ? ' · stay' : ''})
+                        <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-2 space-y-1.5">
+                        {(assignment.trip.selected_places || []).map((p: any, i: number) => (
+                          <p key={`p${i}`} className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+                            <MapPin className="w-3 h-3 text-travion-500 shrink-0" />{p.name}
+                          </p>
+                        ))}
+                        {(assignment.trip.selected_food || []).map((f: any, i: number) => (
+                          <p key={`f${i}`} className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+                            <Utensils className="w-3 h-3 text-amber-500 shrink-0" />{f.name}
+                          </p>
+                        ))}
+                        {assignment.trip.selected_stay && (
+                          <p className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+                            <BedDouble className="w-3 h-3 text-violet-500 shrink-0" />{assignment.trip.selected_stay.name}
+                          </p>
+                        )}
                       </div>
-                    )}
+                    </details>
+                  )}
+                  {Array.isArray(assignment.trip.final_itinerary) && assignment.trip.final_itinerary.length > 0 && (
+                    <details className="mt-2 group">
+                      <summary className="cursor-pointer select-none inline-flex items-center gap-1 text-[11px] font-bold text-travion-700 hover:text-travion-800">
+                        <Clock className="w-3.5 h-3.5" />
+                        Final day-by-day itinerary ({assignment.trip.final_itinerary.length} day{assignment.trip.final_itinerary.length === 1 ? '' : 's'})
+                        <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {assignment.trip.final_itinerary.map((d: any) => (
+                          <div key={d.day} className="rounded-xl bg-white border border-travion-100 px-3 py-2">
+                            <p className="text-[11px] font-black text-slate-700">Day {d.day}{d.title ? ` · ${d.title}` : ''}</p>
+                            <ul className="mt-1 space-y-0.5">
+                              {(d.stops || []).map((s: any, si: number) => (
+                                <li key={si} className="text-[10.5px] text-slate-500 font-medium">
+                                  <span className="font-bold text-slate-600">{s.time}</span> — {s.title}
+                                </li>
+                              ))}
+                              {(d.stops || []).length === 0 && <li className="text-[10.5px] text-slate-400">No stops scheduled</li>}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                   </div>
 
                   <div className="flex items-center gap-2">

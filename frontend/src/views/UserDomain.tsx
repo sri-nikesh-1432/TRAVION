@@ -153,6 +153,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     stay: SelectedStay | null;
     stayRequired: boolean;
   } | null>(null);
+  // Real ACTIVITY count (things to do, not places) from Step 3 — shown on the
+  // experience-choice summary chips instead of a broken heuristic.
+  const [selectedActivityCount, setSelectedActivityCount] = useState(0);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [checkoutData, setCheckoutData] = useState<any>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -383,10 +386,11 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // NEUTRALLY (base trip cost, no guide fee): the trip-EXPERIENCE choice
   // (Guide vs Adventurous) happens AFTER the traveller has picked and edited a
   // plan — the final pre-payment step — and reprices the itinerary then.
-  const handleGeneratePlans = (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean) => {
+  const handleGeneratePlans = (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
     setPendingSelection({ places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
     setSelectedPlaces(places);
     setSelectedFood(foods);
+    setSelectedActivityCount(Number(activityCount) || 0);
     void generatePlans('ADVENTUROUS_MODE', { places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
   };
 
@@ -974,7 +978,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             <ModeSelectionScreen
             destinationName={activeTrip.destination_name}
             placeCount={pendingSelection?.places.length ?? 0}
-            activityCount={pendingSelection?.placeItems.filter(p => String(p.source || '').includes('act') || false).length ?? 0}
+            activityCount={selectedActivityCount}
             foodCount={pendingSelection?.foods.length ?? 0}
             hasStay={!!(pendingSelection?.stayRequired && pendingSelection?.stay)}
             totalCost={activeTrip.total_cost}

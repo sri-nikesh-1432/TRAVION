@@ -618,7 +618,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                     {(() => {
                       const bd = (itinerary.cost_breakdown || {}) as Record<string, any>;
                       const rows: Array<[string, number, boolean?]> = [
-                        ['Trip cost', Number(bd.transport || 0)],
+                        ['Transport', Number(bd.transport || 0)],
                         ['Stay', Number(bd.stay || 0)],
                         ['Activities', Number(bd.activities || 0)],
                         ['Food', Number(bd.food || 0)],

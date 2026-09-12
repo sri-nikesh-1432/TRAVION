@@ -21,7 +21,7 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.budget_service import PLATFORM_FEE_RATE
-from app.services.pricing_service import compute_guide_fee, party_headcount, GUIDE_FEE_RATE
+from app.services.pricing_service import compute_guide_fee, party_headcount, party_pax, GUIDE_FEE_RATE
 from app.services.ai_orchestrator import _party
 from app.services.india_planner import _estimate_transport, STAY_TIERS
 
@@ -172,8 +172,10 @@ def _haversine_km(a: Optional[Tuple[float, float]], b: Optional[Tuple[float, flo
 
 
 def _pax_and_rooms(profile: Dict[str, Any]) -> Tuple[int, int]:
+    """REAL group size (exact total when the structured answer exists) + rooms
+    at 2 travellers per room — the feasibility floor scales with the group."""
     party = _party(profile)
-    pax = int(party_headcount(party))
+    pax = party_pax(profile.get("party"))
     pax = max(1, pax)
     return pax, max(1, math.ceil(pax / 2))
 

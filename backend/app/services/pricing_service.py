@@ -44,6 +44,7 @@ PARTY_HEADCOUNT: Dict[str, float] = {
 }
 
 # Base guide rate per day (INR) for a standard guided day (fallback only).
+# (party_pax above is the group-size source of truth for every cost engine.)
 GUIDE_BASE_PER_DAY = 900.0
 GUIDE_MIN_FEE = 1500.0
 GUIDE_MAX_FEE = 30000.0
@@ -85,6 +86,35 @@ def party_headcount(party_type: Optional[str]) -> float:
         if key.lower() in party_type.lower():
             return value
     return 1.0
+
+
+def party_pax(party: Any) -> int:
+    """REAL traveller count for group cost maths (product rule: never plan for
+    one person when the user is travelling as a group).
+
+    The 3-question interview stores the party answer as
+    {'group','total','adults','children'} — when that structured answer exists
+    the EXACT total wins (10 travellers → 10× transport, 10× per-person food,
+    10/2 = 5 rooms). Only when no exact count was captured (legacy trips that
+    answered a bare 'Solo'/'Couple' string) do the label estimates apply.
+    """
+    if isinstance(party, dict):
+        raw_total = party.get("total")
+        try:
+            total = int(float(raw_total))
+        except (TypeError, ValueError):
+            total = 0
+        if total >= 1:
+            return total
+        # Malformed/missing total: fall back to adults + children when present.
+        try:
+            a = int(float(party.get("adults") or 0))
+            c = int(float(party.get("children") or 0))
+            if a + c >= 1:
+                return a + c
+        except (TypeError, ValueError):
+            pass
+    return int(party_headcount(party if isinstance(party, str) else None))
 
 
 def platform_rate_for_budget(budget: float) -> float:

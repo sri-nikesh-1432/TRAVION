@@ -74,10 +74,10 @@ DESTINATION_RADIUS_KM: Dict[str, float] = {
 # places; if fewer real places exist inside the destination, we honestly return
 # fewer — we never fabricate to hit a number).
 TARGET_COUNTS: Dict[str, int] = {
-    "must_visit": 10,
-    "activities": 10,
-    "food": 10,
-    "stays": 10,
+    "must_visit": 15,
+    "activities": 15,
+    "food": 15,
+    "stays": 15,
 }
 
 GOOGLE_PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
@@ -1586,6 +1586,8 @@ def generate_activities(
     experience: Optional[str] = None,
     destination: str = "",
     max_count: int = 10,
+    excluded_place_ids: Optional[set] = None,
+    excluded_place_names: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """Generate action-based activities from real discovered places.
 
@@ -1597,13 +1599,34 @@ def generate_activities(
     NEVER generates activities from nearby towns, cities or districts.
     NEVER returns a place name as an activity.
     ONLY uses places from the supplied must_visit_places and tourist_spots lists.
+
+    ZERO-OVERLAP RULE (product spec §6/§21/§22): a place that appears in the
+    Must Visit section must NEVER also appear as an activity anchor. Anchors
+    are filtered by BOTH stable id and normalized name; only leftover real
+    places (typically the wider tourist_spots pool beyond Must Visit) become
+    activity anchors.
     """
     exp_label = _experience_label(experience or "mixed")
     templates = _ACTION_TEMPLATES.get(exp_label, _ACTION_TEMPLATES["mixed"])
     priority_cats = _EXPERIENCE_ACTIVITY_PRIORITY.get(exp_label, _EXPERIENCE_ACTIVITY_PRIORITY["mixed"])
+    excluded_ids = excluded_place_ids or set()
+    excluded_names = excluded_place_names or set()
 
-    # Gather all candidate places in priority order
+    def _pid(p: Dict[str, Any]) -> Optional[str]:
+        return str(p.get("id") or p.get("place_id") or "") or None
+
+    def _overlaps_must_visit(p: Dict[str, Any]) -> bool:
+        pid = _pid(p)
+        if pid and pid in excluded_ids:
+            return True
+        nm = _norm(p.get("name", ""))
+        return bool(nm) and nm in excluded_names
+
+    # Gather all candidate places in priority order, then drop every anchor
+    # that is already a Must Visit place — activities anchor on DIFFERENT
+    # real places only.
     all_places = list(must_visit_places) + list(tourist_spots)
+    all_places = [p for p in all_places if not _overlaps_must_visit(p)]
     if not all_places:
         return []
 
@@ -2269,7 +2292,15 @@ def discover_destination(
         tourist_spots=result.get("tourist_spots", []),
         experience=prefs.get("experience"),
         destination=destination,
-        max_count=TARGET_COUNTS.get("activities", 10),
+        max_count=TARGET_COUNTS.get("activities", 15),
+        # ZERO-OVERLAP: every Must Visit place is banned as an activity anchor
+        # (by stable id AND normalized name — never only string comparison).
+        excluded_place_ids={
+            str(a.get("id") or a.get("place_id") or "")
+            for a in result.get("must_visit", [])
+            if a.get("id") or a.get("place_id")
+        },
+        excluded_place_names={_norm(a.get("name", "")) for a in result.get("must_visit", [])},
     )
     # Also keep the raw activities from providers (sport/leisure places) as a
     # reference pool for the map, but do NOT surface them as activity cards.
@@ -2284,12 +2315,18 @@ def discover_destination(
     # Inside-core activities rank before wider-destination ones (stable sort —
     # the preference priority order is preserved within each group).
     action_activities.sort(key=lambda a: 0 if (a.get("placement") or "inside") == "inside" else 1)
+    # SECOND safety net for the zero-overlap rule: _unique_activities rejects
+    # any generated activity that still collides with a Must Visit place by
+    # id, coordinates (<350 m), or significant-name overlap. The generator
+    # already excludes Must Visit anchors; this guards against near-duplicate
+    # real places under different ids.
+    action_activities = _unique_activities(action_activities, result.get("must_visit", []))
     result["activities"] = action_activities
     result.setdefault("counts", {})["activities"] = len(action_activities)
     total += len(action_activities)
     map_candidates["activities"] = raw_activities_for_map  # map uses real sport/leisure places
     catalog_meta["activities"] = {
-        "requested": TARGET_COUNTS.get("activities", 10),
+        "requested": TARGET_COUNTS.get("activities", 15),
         "available": len(action_activities),
         "status": "success" if action_activities else "unavailable",
         "note": f"Generated {len(action_activities)} action-based activities from real destination places.",

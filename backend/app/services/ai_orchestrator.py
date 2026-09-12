@@ -23,7 +23,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from app.services.budget_service import (
     parse_budget, sanitize_envelope, PLATFORM_FEE_RATE
 )
-from app.services.pricing_service import compute_guide_fee, party_headcount, GUIDE_FEE_RATE
+from app.services.pricing_service import compute_guide_fee, party_headcount, party_pax, GUIDE_FEE_RATE
 from app.services.verified_data import (
     VERIFIED_LOCATIONS, VERIFIED_TRANSPORT, VERIFIED_STAYS,
     VERIFIED_FOOD, VERIFIED_ATTRACTIONS, VERIFIED_SAFETY_INFO
@@ -233,6 +233,28 @@ def _rooms_for_pax(pax: float) -> int:
     return max(1, int(math.ceil(pax / 2)))
 
 
+def _party_adults(profile: Dict[str, Any]) -> int:
+    """Adults count from the structured party answer (0 when unknown)."""
+    party = profile.get("party")
+    if isinstance(party, dict):
+        try:
+            return max(0, int(float(party.get("adults") or 0)))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _party_children(profile: Dict[str, Any]) -> int:
+    """Children count from the structured party answer (0 when unknown)."""
+    party = profile.get("party")
+    if isinstance(party, dict):
+        try:
+            return max(0, int(float(party.get("children") or 0)))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
 def _norm_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     """Discovery stores multi-select answers as structured lists; every planner
     matcher is substring-based, so stringify list selections without losing any
@@ -271,8 +293,11 @@ class AIOrchestrator:
 
         days = _parse_days(start_date, end_date)
         budget = _parse_budget(profile)
+        # Group cost source of truth: the traveller's EXACT headcount (10
+        # members = 10× per-person transport, 10× food, ⌈10/2⌉ rooms) — never
+        # a per-person plan dressed up as a group plan.
         party = _party(profile)
-        pax = party_headcount(party)
+        pax = party_pax(profile.get("party"))
         nights = max(1, days - 1)
         rooms = _rooms_for_pax(pax)
 
@@ -623,6 +648,8 @@ class AIOrchestrator:
             "within_budget": (travel_spend if mode == "GUIDE_MODE" else total) <= hi,
             "party_type": party,
             "headcount": pax,
+            "adults": _party_adults(profile),
+            "children": _party_children(profile),
             "days": days,
             "nights": nights,
             "destination": destination_name,

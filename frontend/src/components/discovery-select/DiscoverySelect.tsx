@@ -19,6 +19,9 @@ interface DiscoverySelectProps {
     foodItems: SelectedFoodItem[],
     selectedStay: SelectedStay | null,
     stayRequired: boolean,
+    /** How many ACTIVITY cards (things to do) the traveller added — real
+        activities, not places (shown on the experience-choice screen). */
+    activityCount: number,
   ) => void;
   onBack: () => void;
   busy?: boolean;
@@ -171,6 +174,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // (spec §2 — every map place is clickable and adds to the plan from a
   // proper popup, not a silent toggle).
   const [popupPlace, setPopupPlace] = useState<{ key: string; item: MapPlace } | null>(null);
+  // Bumped by the Retry button so a failed catalog load can be attempted again
+  // (spec §45: every API-driven operation offers Loading / Error / Retry).
+  const [catalogRetry, setCatalogRetry] = useState(0);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
@@ -424,7 +430,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       })
       .catch(() => { if (alive) setLoadError('Could not load verified places for this destination.'); });
     return () => { alive = false; };
-  }, [tripId, autoSelected]);
+  }, [tripId, autoSelected, catalogRetry]);
 
   useEffect(() => {
     let alive = true;
@@ -519,7 +525,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         selection_source: 'user',
       })),
     ], true).catch(() => { /* non-fatal — selections also ride the plan request */ });
-    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null);
+    // Activities are counted separately: they are THINGS TO DO (action cards),
+    // not places — the experience-choice screen shows the honest split.
+    const activityCount = (catalog?.activities ?? []).filter((a: CatalogActivity) => selected.has(a.name)).length;
+    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null, activityCount);
   };
 
   return (
@@ -537,6 +546,13 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       {loadError && (
         <div className="max-w-md mx-auto rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-[13px] font-bold text-red-600 text-center">
           {loadError}
+          <button
+            type="button"
+            onClick={() => { setLoadError(null); setCatalogRetry((n) => n + 1); }}
+            className="mt-2 block mx-auto px-4 h-9 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[12px] font-extrabold transition-colors"
+          >
+            Retry
+          </button>
         </div>
       )}
 

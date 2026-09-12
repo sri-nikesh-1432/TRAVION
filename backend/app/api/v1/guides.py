@@ -9,6 +9,7 @@ from app.schemas.schemas import (
     GuideOnboardingUpdate, GuideStatusUpdate, ReviewVisibilityUpdate, ReviewResponse
 )
 from app.services.pricing_service import calculate_trip_pricing
+from app.services.place_selections import selections_payload
 
 router = APIRouter(prefix="/guides", tags=["Guides"])
 
@@ -94,9 +95,9 @@ def get_assigned_trips(
         itin = db.query(Itinerary).filter(
             Itinerary.trip_id == trip.id, Itinerary.is_active == True
         ).first()
+        profile = trip.profile.questions_answers if trip.profile else {}
         pricing = None
         if itin:
-            profile = trip.profile.questions_answers if trip.profile else {}
             pricing = calculate_trip_pricing(
                 mode=trip.mode or "ADVENTUROUS_MODE",
                 days=max(1, len(itin.days_data or [])),
@@ -106,6 +107,13 @@ def get_assigned_trips(
                 breakdown=itin.cost_breakdown,
                 guide=(guide if a.status in ("ACCEPTED", "CONFIRMED") else None),
             )
+
+        # §34 — the guide receives the COMPLETE FINAL trip: the traveller's
+        # last-confirmed selections AND the FINAL (user-edited) itinerary —
+        # never an earlier draft. The active itinerary row IS the final plan
+        # (every edit persists into it), so days_data below is final by definition.
+        party = profile.get("party") if isinstance(profile.get("party"), dict) else {}
+        selections = selections_payload(db, trip.id)["selections"]
         res.append({
             "assignment_id": a.id,
             "status": a.status,
@@ -118,8 +126,33 @@ def get_assigned_trips(
                 "start_datetime": trip.start_datetime,
                 "end_datetime": trip.end_datetime,
                 "status": trip.status,
+                "mode": trip.mode or "ADVENTUROUS_MODE",
+                "budget": trip.budget,
                 "total_cost": trip.total_cost,
                 "pricing": pricing,  # authoritative guide/platform/payable for THIS trip
+                # Exact traveller counts captured in the 3-question interview.
+                "travellers": {
+                    "total": int(party.get("total") or 0) or None,
+                    "adults": int(party.get("adults") or 0) or None,
+                    "children": int(party.get("children") or 0) or None,
+                },
+                # Traveller's final picks from Step 3 (places / food / stay).
+                "selected_places": [
+                    {"name": s["name"], "category": s["category"]}
+                    for s in selections
+                    if str(s.get("category", "")) not in ("food", "stays")
+                ],
+                "selected_food": [
+                    {"name": s["name"], "category": s["category"]}
+                    for s in selections
+                    if s.get("category") == "food"
+                ],
+                "selected_stay": next(
+                    ({"name": s["name"]} for s in selections if s.get("category") == "stays"),
+                    None,
+                ),
+                # FINAL user-edited itinerary (day-by-day, with times/costs/coords).
+                "final_itinerary": (itin.days_data if itin else None),
                 "traveller": {
                     "name": f"{user.first_name} {user.last_name}".strip() if user else "Traveller",
                     "language": user.preferred_language if user else "English",

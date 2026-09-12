@@ -26,8 +26,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.services.budget_service import PLATFORM_FEE_RATE
-from app.services.pricing_service import compute_guide_fee, party_headcount, GUIDE_FEE_RATE
-from app.services.ai_orchestrator import _parse_days, _parse_budget, _party, _budget_envelope
+from app.services.pricing_service import compute_guide_fee, party_headcount, party_pax, GUIDE_FEE_RATE
+from app.services.ai_orchestrator import (
+    _parse_days, _parse_budget, _party, _budget_envelope,
+    _party_adults, _party_children,
+)
 
 # Real national emergency / helpline numbers (Government of India).
 NATIONAL_HELP = {
@@ -266,8 +269,11 @@ def build_estimate_plan(
     """Build an honest, fully-estimated itinerary for ANY India -> India pair."""
     days = _parse_days(start_date, end_date)
     budget = _parse_budget(profile)
+    # Group cost source of truth: the traveller's EXACT headcount (10 members
+    # = 10× per-person transport and food, ⌈10/2⌉ rooms) — never a per-person
+    # plan displayed as a group plan.
     party = _party(profile)
-    pax = party_headcount(party)
+    pax = party_pax(profile.get("party"))
     nights = max(1, days - 1)
     rooms = max(1, math.ceil(pax / 2))
 
@@ -512,6 +518,8 @@ def build_estimate_plan(
         "within_budget": (travel_spend if mode == "GUIDE_MODE" else total) <= hi,
         "party_type": party,
         "headcount": pax,
+        "adults": _party_adults(profile),
+        "children": _party_children(profile),
         "days": days,
         "nights": nights,
         "destination": destination_name,

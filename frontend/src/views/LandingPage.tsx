@@ -5,7 +5,7 @@ import {
   Check, CheckCircle2, ChevronDown, Clock, CloudRain, Compass,
   Eye, EyeOff, Globe2, HeartHandshake, IndianRupee, Key, Landmark,
   Layers, Lock, Mail, MapPin, Menu, Mountain, Navigation, Phone,
-  RefreshCw, Route, ShieldCheck, Train, Users, Utensils,
+  RefreshCw, Route, ShieldCheck, Sparkles, Train, Users, Utensils,
   Wallet, X
 } from 'lucide-react';
 import { LocationItem } from '../types';

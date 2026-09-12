@@ -224,6 +224,11 @@ def _inject_selected_places(
     if not days:
         return added_cost
 
+    # Tracks how many times each selected place has been scheduled so spread
+    # across days is positional (selection order → distinct days) — a place is
+    # only re-scheduled after every other selection has had its day.
+    _place_rounds: Dict[str, int] = {}
+
     def _day_of(day_num: int) -> Optional[Dict[str, Any]]:
         return next((d for d in days if d.get("day") == day_num), None)
 
@@ -257,10 +262,13 @@ def _inject_selected_places(
             continue
         if _plan_contains(days, match.get("name", "")):
             continue
-        # Target the day with the fewest attraction stops (spreads the load).
-        target = min(days, key=lambda d: sum(
-            1 for s in d.get("stops", []) if s.get("category") in ("attraction", "hidden_gem")
-        ))
+        # Each selected place is scheduled ONCE on a distinct day, spreading
+        # across days in order (5 selected places over 5 days → one per day).
+        # Repeats only occur after the traveller's selections are exhausted —
+        # user choices are never duplicated while unused picks remain.
+        attraction_round = _place_rounds.get(match.get("name", ""), 0)
+        target = days[min(attraction_round % len(days), len(days) - 1)]
+        _place_rounds[match.get("name", "")] = attraction_round + 1
         stops = target.get("stops") or []
         last = max(
             (s for s in stops if _to_minutes(str(s.get("time", ""))) is not None),
@@ -283,7 +291,7 @@ def _inject_selected_places(
             "title": match.get("name", str(name)),
             "description": match.get("description", ""),
             "category": "attraction",
-            "location_name": dest,
+            "location_name": match.get("location_name") or dest,
             "lat": float(match.get("lat", 0) or 0),
             "lng": float(match.get("lng", 0) or 0),
             "estimated_cost": fee,
