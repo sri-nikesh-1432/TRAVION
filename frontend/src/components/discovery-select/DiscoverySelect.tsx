@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink, X, Clock, ClipboardList, Camera, Search, LocateFixed } from 'lucide-react';
+import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, ArrowUpRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink, X, Clock, ClipboardList, Camera, Search, LocateFixed } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster';
@@ -347,6 +347,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     // The marker must be visible: a narrowed filter that hides this category
     // resets to All Places (spec §13 — clicking a card MUST react on the map).
     if (mapFilter !== 'all' && mapFilter !== key) setMapFilter('all');
+    // Mobile: the map sits ABOVE the stacked panel — bring it into view so
+    // the fly-to is actually seen (desktop keeps the map permanently sticky).
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      mapDiv.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     if (mapRef.current) {
       mapRef.current.flyTo([lat, lng], Math.max(mapRef.current.getZoom(), 15), { duration: 0.8 });
     }
@@ -967,6 +972,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     {visiblePlaces.map((place: CatalogPlace) => {
                       const active = selected.has(place.name);
                       const focused = highlight?.name === place.name;
+                      const displayName = place.name;
+                      const onFly = () => {
+                        const hit = allMapPlaces.find(({ item }) => item.name === place.name);
+                        if (hit) flyToPlace(hit.key, hit.item);
+                      };
                       return (
                         <div
                           key={`${place.id ?? place.name}_${place.category}`}
@@ -981,10 +991,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         >
                           <button
                             type="button"
-                            onClick={() => {
-                              const hit = allMapPlaces.find(({ item }) => item.name === place.name);
-                              if (hit) flyToPlace(hit.key, hit.item);
-                            }}
+                            onClick={onFly}
                             className="w-full flex items-start justify-between gap-2 text-left"
                             title={`Show ${place.name} on the map`}
                             aria-label={`Show ${place.name} on the map`}
@@ -1003,7 +1010,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
                           </button>
                           <div className="mt-2.5 flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                            <button
+                            type="button"
+                            onClick={onFly}
+                            title={`Open ${displayName} on the map`}
+                            aria-label={`Open ${displayName} on the map`}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
+                          </button>
                             <button
                               type="button"
                               onClick={() => toggle(selected, setSelected, place.name)}
@@ -1051,6 +1066,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   {touristSpots.map((spot: CatalogPlace) => {
                     const active = selected.has(spot.name);
                     const focused = highlight?.name === spot.name;
+                    const displayName = spot.name;
+                    const onFly = () => {
+                      const hit = allMapPlaces.find(({ item }) => item.name === spot.name);
+                      if (hit) flyToPlace(hit.key, hit.item);
+                    };
                     return (
                       <div
                         key={`spot_${spot.id ?? spot.name}`}
@@ -1065,10 +1085,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            const hit = allMapPlaces.find(({ item }) => item.name === spot.name);
-                            if (hit) flyToPlace(hit.key, hit.item);
-                          }}
+                          onClick={onFly}
                           className="w-full flex items-start justify-between gap-2 text-left"
                           title={`Show ${spot.name} on the map`}
                           aria-label={`Show ${spot.name} on the map`}
@@ -1087,7 +1104,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={onFly}
+                            title={`Open ${displayName} on the map`}
+                            aria-label={`Open ${displayName} on the map`}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
+                          </button>
                           <button
                             type="button"
                             onClick={() => toggle(selected, setSelected, spot.name)}
@@ -1125,6 +1150,20 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   {activities.map((activity: CatalogActivity) => {
                     const active = selected.has(activity.name);
                     const focused = highlight?.name === activity.location_name;
+                    const displayName = activity.location_name || activity.name;
+                    const onFly = () => {
+                      if (activity.latitude && activity.longitude) {
+                        flyToPlace('activities', {
+                          name: activity.location_name || activity.name,
+                          category: 'activities',
+                          latitude: activity.latitude,
+                          longitude: activity.longitude,
+                          address: activity.description ?? null,
+                          source: activity.source || 'derived',
+                          verified: true,
+                        });
+                      }
+                    };
                     return (
                       <div
                         key={`act_${activity.id ?? activity.name}`}
@@ -1139,19 +1178,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            if (activity.latitude && activity.longitude) {
-                              flyToPlace('activities', {
-                                name: activity.location_name || activity.name,
-                                category: 'activities',
-                                latitude: activity.latitude,
-                                longitude: activity.longitude,
-                                address: activity.description ?? null,
-                                source: activity.source || 'derived',
-                                verified: true,
-                              });
-                            }
-                          }}
+                          onClick={onFly}
                           className="w-full flex items-start justify-between gap-2 text-left"
                           title={`Show ${activity.location_name} on the map`}
                           aria-label={`Show ${activity.location_name} on the map`}
@@ -1177,7 +1204,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-slate-400">tap → see location on map</span>
+                          <button
+                            type="button"
+                            onClick={onFly}
+                            title={`Open ${displayName} on the map`}
+                            aria-label={`Open ${displayName} on the map`}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
+                          </button>
                           <button
                             type="button"
                             onClick={() => toggle(selected, setSelected, activity.name)}
@@ -1274,6 +1309,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   {catalog.food.map((food: CatalogFood) => {
                     const active = selectedFood.has(food.name);
                     const focused = highlight?.name === food.name;
+                    const displayName = food.name;
+                    const onFly = () => {
+                      const hit = allMapPlaces.find(({ item }) => item.name === food.name);
+                      if (hit) flyToPlace(hit.key, hit.item);
+                    };
                     return (
                       <div
                         key={food.id ?? food.name}
@@ -1288,10 +1328,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            const hit = allMapPlaces.find(({ item }) => item.name === food.name);
-                            if (hit) flyToPlace(hit.key, hit.item);
-                          }}
+                          onClick={onFly}
                           className="w-full flex items-start justify-between gap-2 text-left"
                           title={`Show ${food.name} on the map`}
                           aria-label={`Show ${food.name} on the map`}
@@ -1308,7 +1345,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={onFly}
+                            title={`Open ${displayName} on the map`}
+                            aria-label={`Open ${displayName} on the map`}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
+                          </button>
                           <button
                             type="button"
                             onClick={() => toggle(selectedFood, setSelectedFood, food.name)}
@@ -1360,6 +1405,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).map((stay: CatalogStay) => {
                     const active = selectedStay?.name === stay.name;
                     const focused = highlight?.name === stay.name;
+                    const displayName = stay.name;
+                    const onFly = () => {
+                      const hit = allMapPlaces.find(({ item }) => item.name === stay.name);
+                      if (hit) flyToPlace(hit.key, hit.item);
+                    };
                     return (
                       <div
                         key={stay.id ?? stay.name}
@@ -1374,10 +1424,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            const hit = allMapPlaces.find(({ item }) => item.name === stay.name);
-                            if (hit) flyToPlace(hit.key, hit.item);
-                          }}
+                          onClick={onFly}
                           className="w-full flex items-start justify-between gap-2 text-left"
                           title={`Show ${stay.name} on the map`}
                           aria-label={`Show ${stay.name} on the map`}
@@ -1401,7 +1448,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={onFly}
+                            title={`Open ${displayName} on the map`}
+                            aria-label={`Open ${displayName} on the map`}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
+                          </button>
                           <button
                             type="button"
                             onClick={() => setSelectedStay({

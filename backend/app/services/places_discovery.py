@@ -1006,16 +1006,21 @@ MAP_TARGET: int = 25  # cap per map category (broader than the recommended 10s, 
 _OSM_MAP_FILTERS: List[Tuple[str, str]] = [
     ("shopping", 'node["shop"]'),
     ("shopping", 'way["shop"]'),
-    ("healthcare", 'node["amenity"~"^(hospital|clinic|pharmacy)$"]'),
-    ("healthcare", 'way["amenity"~"^(hospital|clinic|pharmacy)$"]'),
+    ("healthcare", 'node["amenity"~"^(hospital|clinic|pharmacy|doctors)$"]'),
+    ("healthcare", 'way["amenity"~"^(hospital|clinic|pharmacy|doctors)$"]'),
     ("education", 'node["amenity"~"^(school|university|college|kindergarten)$"]'),
     ("education", 'way["amenity"~"^(school|university|college|kindergarten)$"]'),
     ("transport", 'node["railway"="station"]'),
     ("transport", 'node["aeroway"="terminal"]'),
+    ("transport", 'node["public_transport"]["name"]'),
     ("transport", 'node["amenity"="bus_station"]'),
     ("transport", 'way["amenity"="bus_station"]'),
-    ("other", 'node["leisure"~"^(cinema|golf_course|swimming_pool|bowling_alley|nightclub)$"]'),
-    ("other", 'node["amenity"~"^(bar|cafe|casino)$"]'),
+    # OSM tags entertainment venues as amenity=cinema/theatre — NOT
+    # leisure=cinema (the old filter matched nothing, so the Other top-up
+    # always came back empty).
+    ("other", 'node["amenity"~"^(cinema|theatre|arts_centre|community_centre|events_venue)$"]'),
+    ("other", 'node["leisure"~"^(golf_course|swimming_pool|bowling_alley|nightclub|escape_game)$"]'),
+    ("other", 'node["amenity"~"^(bar|casino)$"]'),
 ]
 
 
@@ -1024,7 +1029,7 @@ def _map_overpass_query(loc: str) -> str:
     for _, flt in _OSM_MAP_FILTERS:
         lines.append(f"  node{flt}{loc};")
         lines.append(f"  way{flt}{loc};")
-    return f"[out:json][timeout:30];(\n{chr(10).join(lines)}\n);out center tags 450;"
+    return f"[out:json][timeout:30];(\n{chr(10).join(lines)}\n);out center tags 800;"
 
 
 def _map_classify(tags: Dict[str, str]) -> Optional[str]:
@@ -1033,15 +1038,17 @@ def _map_classify(tags: Dict[str, str]) -> Optional[str]:
     if tags.get("shop"):
         return "shopping"
     amenity = tags.get("amenity", "")
-    if amenity in {"hospital", "clinic", "pharmacy"}:
+    if amenity in {"hospital", "clinic", "pharmacy", "doctors"}:
         return "healthcare"
     if amenity in {"school", "university", "college", "kindergarten"}:
         return "education"
     if tags.get("railway") == "station" or tags.get("aeroway") == "terminal" or amenity == "bus_station":
         return "transport"
-    if tags.get("leisure") in {"cinema", "golf_course", "swimming_pool", "bowling_alley", "nightclub"}:
+    if amenity in {"cinema", "theatre", "arts_centre", "community_centre", "events_venue"}:
         return "other"
-    if amenity in {"bar", "cafe", "casino"}:
+    if tags.get("leisure") in {"golf_course", "swimming_pool", "bowling_alley", "nightclub", "escape_game"}:
+        return "other"
+    if amenity in {"bar", "casino"}:
         return "other"
     return None
 
@@ -1157,22 +1164,24 @@ def _discover_google_map(
 
 # The map's GeoApify tier: ONE batched request covers every broader map
 # category (validated live taxonomy only).
-_MAP_GEOAPIFY_CATEGORIES: Dict[str, List[str]] = {
-    # Parent categories (validated live against /v2/places — HTTP 200) so each
-    # map layer pulls the provider's FULL breadth: "commercial" alone covers
-    # marketplaces, malls and every shop subtype that the two narrow children
-    # used to miss (the old "Shopping 3" bug).
-    "shopping": ["commercial"],
-    "healthcare": ["healthcare"],
-    "education": ["education"],
+_MAP_GEOAPIFY_CATEGORIES: Dict[str, List[List[str]]] = {
+    # Each bucket runs ONE request PER GROUP (list of groups): the provider's
+    # OR-quirk (entertainment + catering.bar together = 0 results) makes
+    # combining top-level groups unsafe, so each group queries alone. Every
+    # group has its own page-2 pagination.
+    "shopping": [["commercial"]],
+    "healthcare": [["healthcare"]],
+    "education": [["education"]],
     # Validated live per key plan: the bare `public_transport` parent returns
     # HTTP 200 with ZERO features and `.railway`/`.taxi` 400 — while .bus,
-    # .subway, .ferry and `airport` return real stations/airports. The
-    # per-category request architecture isolates any provider-side category
-    # change so one 400 can never blank the other map layers.
-    "transport": ["public_transport.bus", "public_transport.subway",
-                  "public_transport.ferry", "airport"],
-    "other": ["entertainment", "catering.bar"],
+    # .subway, .ferry and `airport` return real stations/airports (these four
+    # children combined fine for Hyderabad).
+    "transport": [["public_transport.bus", "public_transport.subway",
+                   "public_transport.ferry", "airport"]],
+    # `entertainment` alone returns real cinemas (validated); bars are a
+    # separate group so nightlife POIs fill "Other" in cities without
+    # tripping the OR-quirk.
+    "other": [["entertainment"], ["catering.bar"]],
 }
 
 
@@ -1197,36 +1206,39 @@ def _discover_geoapify_map(
     geo_filter = _geoapify_filter(bounds, resolved)
     if not geo_filter:
         return buckets
-    for target, cats in _MAP_GEOAPIFY_CATEGORIES.items():
-        wanted = list(dict.fromkeys(cats))
-        try:
-            page = _geoapify_fetch(wanted, geo_filter, api_key)
-        except Exception:
-            continue  # one category's failure must never blank the other layers
-        items: List[Dict[str, Any]] = []
-        for feature in page:
-            item = _geoapify_item(feature, target)
-            if item:
-                items.append(item)
-        # PAGE 2 — the provider reported MORE real matches for THIS category
-        # than one page held: pull the next page so the layer reaches its
-        # 10-15+ target from real results (never fabricated filler). The total
-        # is keyed per query, so provider-bypassing test mocks can never
-        # trigger a phantom second page.
-        try:
-            from app.services import geoapify as _geo_svc
-            total = _geo_svc.last_total_for(wanted, geo_filter, 0)
-        except Exception:
-            total = 0
-        if page and total > len(page):
+    for target, groups in _MAP_GEOAPIFY_CATEGORIES.items():
+        bucket_items: List[Dict[str, Any]] = []
+        for cats in groups:
+            wanted = list(dict.fromkeys(cats))
             try:
-                for feature in _geoapify_fetch(wanted, geo_filter, api_key, offset=len(page)):
-                    item = _geoapify_item(feature, target)
-                    if item:
-                        items.append(item)
+                page = _geoapify_fetch(wanted, geo_filter, api_key)
             except Exception:
-                pass  # page-2 is best-effort; page-1 results still stand
-        buckets[target].extend(items)
+                continue  # one category's failure must never blank the other layers
+            items: List[Dict[str, Any]] = []
+            for feature in page:
+                item = _geoapify_item(feature, target)
+                if item:
+                    items.append(item)
+            # PAGE 2 — the provider reported MORE real matches for THIS query
+            # than one page held: pull the next page so the layer reaches its
+            # 10-15+ target from real results (never fabricated filler). The
+            # total is keyed per query, so provider-bypassing test mocks can
+            # never trigger a phantom second page.
+            try:
+                from app.services import geoapify as _geo_svc
+                total = _geo_svc.last_total_for(wanted, geo_filter, 0)
+            except Exception:
+                total = 0
+            if page and total > len(page):
+                try:
+                    for feature in _geoapify_fetch(wanted, geo_filter, api_key, offset=len(page)):
+                        item = _geoapify_item(feature, target)
+                        if item:
+                            items.append(item)
+                except Exception:
+                    pass  # page-2 is best-effort; page-1 results still stand
+            bucket_items.extend(items)
+        buckets[target].extend(bucket_items)
     return buckets
 
 
@@ -1270,16 +1282,17 @@ def discover_map(
                 buckets[k].extend(v)
         except Exception:
             pass
-    # Overpass top-up PER CATEGORY still empty: the free API is slow, but a
-    # genuinely empty map layer is worse (product rule: a displayed category
-    # must not show 0 while real mapped POIs exist). The query+response are
+    # Overpass top-up for any category still UNDER TARGET (not just empty):
+    # small destinations legitimately have fewer POIs per category in the
+    # keyed tier, and OSM's community-mapped data (bars, cinemas, clinics,
+    # bus stops, schools) is real, never fabricated. The query+response are
     # TTL-cached, so repeat Step-3 loads for the destination are instant; the
     # keyed tiers above remain the fast primary path.
-    if any(not buckets[c] for c in MAP_CATEGORIES):
+    if any(len(buckets[c]) < MAP_TARGET for c in MAP_CATEGORIES):
         try:
             osm = _discover_map_osm(resolved, bounds=bounds)
             for k, v in osm.items():
-                if not buckets[k]:
+                if len(buckets[k]) < MAP_TARGET:
                     buckets[k].extend(v)
         except Exception:
             pass
@@ -1567,6 +1580,8 @@ _CATEGORY_ACTIONS: Dict[str, List[str]] = {
     "mosque": ["Prayer / Visit", "Explore", "Spiritual Walk"],
     "park": ["Morning Walk", "Cycling", "Picnic", "Photography"],
     "museum": ["Tour", "Explore", "Heritage Walk"],
+    "market": ["Local Shopping", "Market Exploration", "Shopping", "Browse"],
+    "cinema": ["Watch a Film", "Movie Night"],
     "viewpoint": ["Photography", "Watch Sunset", "Watch Sunrise", "Explore"],
     "waterfall": ["Trek to", "Photography", "Nature Walk"],
     "heritage": ["Heritage Walk", "Photography", "Tour"],
@@ -1611,6 +1626,15 @@ _CATEGORY_FALLBACK_TEMPLATES: Dict[str, List[Tuple[str, str, str]]] = {
         ("Tour", "Tour {place} and learn its story", "Afternoon"),
         ("Explore", "Explore the exhibits and collections at {place}", "Afternoon"),
     ],
+    "market": [
+        ("Local Shopping", "Browse local goods, crafts and street stalls at {place}", "Afternoon"),
+        ("Market Exploration", "Wander the stalls and vendors of {place}", "Morning"),
+        ("Shopping", "Shop for local specialties at {place}", "Afternoon"),
+    ],
+    "cinema": [
+        ("Watch a Film", "Catch a movie the local way at {place}", "Evening"),
+        ("Movie Night", "Enjoy an evening show at {place}", "Evening"),
+    ],
     "viewpoint": [
         ("Photography", "Capture the views from {place}", "Golden Hour"),
         ("Watch Sunset", "Watch the sunset from {place}", "Evening"),
@@ -1636,9 +1660,9 @@ _CATEGORY_FALLBACK_TEMPLATES: Dict[str, List[Tuple[str, str, str]]] = {
 # Experience-specific place category priority (what to turn into activities)
 _EXPERIENCE_ACTIVITY_PRIORITY: Dict[str, List[str]] = {
     "adventure": ["park", "viewpoint", "waterfall", "beach", "heritage", "must_visit", "tourist_spot", "food"],
-    "food & culture": ["food", "heritage", "museum", "must_visit", "tourist_spot", "park"],
+    "food & culture": ["food", "heritage", "museum", "market", "cinema", "must_visit", "tourist_spot", "park"],
     "spiritual": ["temple", "church", "mosque", "spiritual", "must_visit", "tourist_spot", "food"],
-    "mixed": ["must_visit", "tourist_spot", "food", "beach", "park", "heritage", "viewpoint"],
+    "mixed": ["must_visit", "tourist_spot", "food", "beach", "park", "heritage", "viewpoint", "market", "cinema"],
 }
 
 
@@ -1649,6 +1673,10 @@ def _infer_place_category(item: Dict[str, Any]) -> str:
     bucket = str(item.get("category") or "").strip().lower()
     if bucket == "food":
         return "food"
+    if bucket == "shopping":
+        # The map's shopping bucket (real commercial POIs) anchors Local
+        # Shopping activities — never a bare "Explore — Bajaj".
+        return "market"
     name_lower = _norm(item.get("name", ""))
     types_text = " ".join(str(t).replace(".", " ").replace("_", " ").lower()
                           for t in (item.get("types") or []))
@@ -1677,6 +1705,13 @@ def _infer_place_category(item: Dict[str, Any]) -> str:
         return "viewpoint"
     if any(w in combined for w in ("museum", "gallery", "exhibition")):
         return "museum"
+    if any(w in combined for w in ("market", "bazaar", "bazar", "mall", "supermarket",
+                                    "super market", "emporium", "shopping", "commerce",
+                                    "shop", "store", "provision", "complex", "plaza", "traders")):
+        return "market"
+    if any(w in combined for w in ("cinema", "cinemas", "theater", "theatre",
+                                    "multiplex", "movies")):
+        return "cinema"
     if any(w in combined for w in ("park", "garden", "sanctuary", "reserve", "wildlife")):
         return "park"
     if any(w in combined for w in ("fort", "palace", "heritage", "monument", "ruins", "historical")):
@@ -1761,6 +1796,20 @@ def generate_activities(
             continue
         # Skip places without coordinates — activities need a real location
         if place.get("latitude") is None or place.get("longitude") is None:
+            continue
+        # Anchor quality: a generic single-token name ("temple", "More", a
+        # bare statue label) makes a meaningless activity card. Real named
+        # places only — never fabricated replacements.
+        if _is_generic_place_name(place_name):
+            continue
+        # Healthcare POIs are practical infrastructure, not traveller
+        # activities — "Explore a hearing clinic" reads wrong. They stay on
+        # the map; they never anchor an activity.
+        _low = place_name.lower()
+        if any(w in _low for w in ("hospital", "clinic", "pharmacy", "blood bank",
+                                    "diagnostic", "speech and hearing", "nursing home",
+                                    "ticket counter", "booking office", "cabs", "taxi",
+                                    "courier", "cargo", "service point")):
             continue
 
         pcat = _infer_place_category(place)
@@ -1926,6 +1975,14 @@ _GENERIC_PLACE_NAMES = {
     "park", "garden", "museum", "stadium", "gate", "parking", "fort", "palace",
     "lake", "beach", "waterfall", "market", "bazaar", "mall", "zoo", "pool",
 }
+
+
+def _is_generic_place_name(name: str) -> bool:
+    """True for provider noise that cannot anchor an activity: single-token
+    generic names ("temple", "parking", "gate") or tiny abbreviations. Real
+    specific places always pass."""
+    tokens = _norm(name).split()
+    return len(tokens) == 1 and (tokens[0] in _GENERIC_PLACE_NAMES or len(tokens[0]) <= 3)
 
 
 def _experience_label(value: Any) -> str:
@@ -2098,11 +2155,18 @@ def _unique_activities(
                     return True
         a_lat, a_lng = a.get("latitude"), a.get("longitude")
         if a_lat is not None and a_lng is not None:
+            a_cat = _infer_place_category(a)
             for m in must_visit_items:
                 m_lat, m_lng = m.get("latitude"), m.get("longitude")
                 if m_lat is not None and m_lng is not None:
                     if _haversine_km((float(a_lat), float(a_lng)), (float(m_lat), float(m_lng))) <= proximity_km:
-                        return True
+                        # Two DISTINCT real places in a dense town can sit 100 m
+                        # apart (a shop and a church); proximity alone is NOT
+                        # duplication. Same physical place under different
+                        # names/ids is proximity + the SAME semantic category
+                        # (temple vs temple, mall vs mall).
+                        if _infer_place_category(m) == a_cat:
+                            return True
         a_tokens = _significant_tokens(a.get("name", ""))
         a_body = _significant_tokens(f"{a.get('name', '')} {a.get('description', '')}")
         for idx, m in enumerate(must_visit_items):
@@ -2412,15 +2476,52 @@ def discover_destination(
     # generate_activities() still enforces zero overlap with Must Visit
     # (by stable id AND normalized name), so a wide pool only means MORE real
     # anchors — never a collision.
+    # Real MAP data: broader categories (shopping/healthcare/education/
+    # transport/other) via the always-on real provider tier — the map is
+    # allowed to plot MORE than the recommendation buckets, but never a
+    # fabricated marker. Computed BEFORE activity generation so real
+    # markets/malls/cinemas (shopping + other) can anchor activities too —
+    # the mechanism that keeps the 10-15 activity target honest in smaller
+    # destinations.
+    map_places: Dict[str, List[Dict[str, Any]]] = {}
+    map_counts: Dict[str, int] = {}
+    if anchor and use_live:
+        map_places = discover_map(
+            destination, anchor,
+            origin=origin, dest_radius_km=dest_radius_km,
+            core_km=core_km, bounds=bounds,
+        )
+        for _cat, _items in map_places.items():
+            map_counts[_cat] = len(_items)
+    result["map_places"] = map_places
+    result["map_counts"] = map_counts
+
+    # Raw sport/leisure venues from the providers — real places the map plots
+    # AND valid activity anchors (a real sports centre anchors "Train at ...").
+    # Computed BEFORE anchor assembly so the generator can use the full pool.
+    raw_activities_for_map = _dedup(buckets.get("activities") or [])
+    raw_activities_for_map = _filter_by_destination(
+        raw_activities_for_map, origin, dest_radius_km, bounds=bounds
+    )
+    for item in raw_activities_for_map:
+        item["placement"] = _placement_for(item, origin, core_km)
+        item["inside_destination"] = True
+
     activity_anchor_pool: List[Dict[str, Any]] = []
     _seen_anchor_names: set = set()
     # Food pool FIRST so a restaurant that also appears in the attraction
     # pool under a commercial.* tag keeps its FOOD classification (name-dedup
     # keeps the first occurrence) — dining actions then land correctly.
+    # Then the broader REAL pools (tourist spots, attractions, sport/leisure
+    # venues, markets/malls, cinemas) so the 10-15 target holds even in
+    # smaller destinations — every anchor is a real provider POI (§10/§16).
     for _src in (
         map_candidates.get("food") or [],
         tourist_pool or [],
         map_candidates.get("must_visit") or [],
+        raw_activities_for_map,
+        (map_places.get("shopping") or [])[: MAP_TARGET],
+        (map_places.get("other") or [])[: MAP_TARGET],
     ):
         for _it in _src:
             _nm = (_it.get("name") or "").strip()
@@ -2442,16 +2543,6 @@ def discover_destination(
         },
         excluded_place_names={_norm(a.get("name", "")) for a in result.get("must_visit", [])},
     )
-    # Also keep the raw activities from providers (sport/leisure places) as a
-    # reference pool for the map, but do NOT surface them as activity cards.
-    raw_activities_for_map = _dedup(buckets.get("activities") or [])
-    raw_activities_for_map = _filter_by_destination(
-        raw_activities_for_map, origin, dest_radius_km, bounds=bounds
-    )
-    for item in raw_activities_for_map:
-        item["placement"] = _placement_for(item, origin, core_km)
-        item["inside_destination"] = True
-
     # Inside-core activities rank before wider-destination ones (stable sort —
     # the preference priority order is preserved within each group).
     action_activities.sort(key=lambda a: 0 if (a.get("placement") or "inside") == "inside" else 1)
@@ -2474,23 +2565,6 @@ def discover_destination(
 
     result["catalog_meta"] = catalog_meta
     result["map_candidates"] = map_candidates
-
-    # Real MAP data: broader categories (shopping/healthcare/education/
-    # transport/other) via the always-on real provider tier — the map is
-    # allowed to plot MORE than the recommendation buckets, but never a
-    # fabricated marker.
-    map_places: Dict[str, List[Dict[str, Any]]] = {}
-    map_counts: Dict[str, int] = {}
-    if anchor and use_live:
-        map_places = discover_map(
-            destination, anchor,
-            origin=origin, dest_radius_km=dest_radius_km,
-            core_km=core_km, bounds=bounds,
-        )
-        for _cat, _items in map_places.items():
-            map_counts[_cat] = len(_items)
-    result["map_places"] = map_places
-    result["map_counts"] = map_counts
 
     result["total_places"] = total
     # Report the provider that actually produced the visible places (honest UI

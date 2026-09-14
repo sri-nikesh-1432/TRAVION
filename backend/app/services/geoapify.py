@@ -111,22 +111,31 @@ def _safe(default=None):
 
 
 def _get(url: str, params: Dict[str, Any], timeout: int = 15) -> Optional[Any]:
-    """GET with key injection; None on any failure (never raises)."""
+    """GET with key injection; None on any failure (never raises).
+
+    A burst of Step-3 category queries can momentarily trip the provider's
+    rate limit (429): one polite retry after a short backoff keeps discovery
+    complete instead of silently degrading whole map layers to empty."""
     if not has_key():
         return None
     p = dict(params)
     p["apiKey"] = _key()
-    try:
-        resp = requests.get(url, params=p, timeout=timeout,
-                            headers={"User-Agent": "Travion/1.0 (travel planning)"})
-        if resp.status_code != 200:
+    for attempt in range(2):
+        try:
+            resp = requests.get(url, params=p, timeout=timeout,
+                                headers={"User-Agent": "Travion/1.0 (travel planning)"})
+            if resp.status_code == 429 and attempt == 0:
+                time.sleep(1.2)
+                continue
+            if resp.status_code != 200:
+                return None
+            ct = resp.headers.get("content-type", "")
+            if "json" in ct:
+                return resp.json()
+            return resp.content  # binary (static map / icon / tile)
+        except Exception:
             return None
-        ct = resp.headers.get("content-type", "")
-        if "json" in ct:
-            return resp.json()
-        return resp.content  # binary (static map / icon / tile)
-    except Exception:
-        return None
+    return None
 
 
 def _post(url: str, params: Dict[str, Any], body: Dict[str, Any], timeout: int = 20) -> Optional[Any]:
