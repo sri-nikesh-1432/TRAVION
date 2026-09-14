@@ -111,6 +111,22 @@ def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", str(name or "").lower()).strip()
 
 
+def _clean_name(name: str) -> str:
+    """Sanitize raw place names from external providers.
+
+    GeoApify and OSM sometimes return names with bullet separators (•),
+    pipes (|), or other junk characters. Strip them out so activity and
+    place names are clean in the UI.
+    """
+    if not name:
+        return name
+    # Replace common junk separators with a space
+    cleaned = re.sub(r"[•|·]", " ", name)
+    # Collapse multiple spaces
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
 # Region aliases map popular regional names to their representative real
 # indexed place — the coordinates still come from the real gazetteer entry.
 _REGION_ALIASES = {
@@ -756,7 +772,7 @@ def _geoapify_item(feature: Dict[str, Any], category: str) -> Optional[Dict[str,
     provider fields are surfaced — ratings/fees the provider does not give are
     left None, never invented."""
     props = feature.get("properties") or {}
-    name = str(props.get("name") or "").strip()
+    name = _clean_name(str(props.get("name") or "").strip())
     if not name:  # unnamed real features are useless for trip planning
         return None
     lat, lng = props.get("lat"), props.get("lon")
@@ -876,7 +892,7 @@ _OSM_FILTERS: List[Tuple[str, str]] = [
 
 def _osm_item(el: Dict[str, Any], category: str, origin: Optional[Tuple[float, float]] = None) -> Optional[Dict[str, Any]]:
     tags = el.get("tags") or {}
-    name = (tags.get("name") or tags.get("name:en") or "").strip()
+    name = _clean_name((tags.get("name") or tags.get("name:en") or "").strip())
     if not name:  # unnamed real features are useless for trip planning
         return None
     center = el.get("center") or {}

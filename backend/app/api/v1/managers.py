@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -313,7 +313,7 @@ def settle_guide_payout(
         raise HTTPException(status_code=404, detail="Settlement record not found")
 
     split.settlement_status = "SETTLED"
-    split.settled_at = datetime.utcnow()
+    split.settled_at = datetime.now(timezone.utc)
     db.commit()
 
     audit = AuditLog(

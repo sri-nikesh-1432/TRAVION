@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -116,56 +117,10 @@ def _ensure_identity_email_unique():
 
 _ensure_identity_email_unique()
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url=f"{settings.API_V1_STR}/docs",
-    description="Production AI-powered end-to-end travel orchestration platform"
-)
 
-# CORS configuration
-# Explicit allow-list, never a bare "*" with credentials (browsers reject that
-# combination and it defeats CSRF protection). Local dev ports plus any
-# configured deployed origins.
-_configured_origins = [
-    o.strip()
-    for o in settings.CORS_ALLOW_ORIGINS.split(",")
-    if o.strip()
-] if settings.CORS_ALLOW_ORIGINS else []
-_cors_origins = _configured_origins or [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "https://travions.netlify.app",
-    "https://travion18.netlify.app",
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 
-# Include Routers
-app.include_router(auth.router, prefix=settings.API_V1_STR)
-app.include_router(locations.router, prefix=settings.API_V1_STR)
-app.include_router(trips.router, prefix=settings.API_V1_STR)
-app.include_router(discovery.router, prefix=settings.API_V1_STR)
-app.include_router(planning.router, prefix=settings.API_V1_STR)
-app.include_router(guides.router, prefix=settings.API_V1_STR)
-app.include_router(managers.router, prefix=settings.API_V1_STR)
-app.include_router(admin.router, prefix=settings.API_V1_STR)
-app.include_router(payments.router, prefix=settings.API_V1_STR)
-app.include_router(replanning.router, prefix=settings.API_V1_STR)
-app.include_router(offline.router, prefix=settings.API_V1_STR)
-app.include_router(reviews.router, prefix=settings.API_V1_STR)
-app.include_router(chat.router, prefix=settings.API_V1_STR)
-app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
-app.include_router(geoapify.router, prefix=settings.API_V1_STR)
-
-@app.on_event("startup")
-def startup_seeding():
+def _startup_seeding():
     db = SessionLocal()
     try:
         # Seed locations if empty
@@ -275,7 +230,78 @@ def startup_seeding():
     finally:
         db.close()
 
-# WebSocket for real-time trip chat
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── startup ──────────────────────────────────────────────────────────────
+    _startup_seeding()
+    yield
+    # ── shutdown (nothing to clean up) ───────────────────────────────────────
+
+
+# ── FastAPI application ───────────────────────────────────────────────────────
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    description="Production AI-powered end-to-end travel orchestration platform",
+    lifespan=lifespan,
+)
+
+# CORS configuration
+# Explicit allow-list, never a bare "*" with credentials (browsers reject that
+# combination and it defeats CSRF protection). Local dev ports plus any
+# configured deployed origins.
+_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+]
+_PROD_ORIGINS = [
+    "https://travions.netlify.app",
+    "https://travion18.netlify.app",
+    "https://travion-api.onrender.com",
+]
+_configured_origins = [
+    o.strip()
+    for o in settings.CORS_ALLOW_ORIGINS.split(",")
+    if o.strip()
+] if settings.CORS_ALLOW_ORIGINS else []
+# Always include dev origins + both known Netlify deployments + any additional
+# origins from the CORS_ALLOW_ORIGINS env var (set in Render dashboard).
+_cors_origins = list(dict.fromkeys(
+    _DEV_ORIGINS + _PROD_ORIGINS + _configured_origins
+))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include Routers
+app.include_router(auth.router, prefix=settings.API_V1_STR)
+app.include_router(locations.router, prefix=settings.API_V1_STR)
+app.include_router(trips.router, prefix=settings.API_V1_STR)
+app.include_router(discovery.router, prefix=settings.API_V1_STR)
+app.include_router(planning.router, prefix=settings.API_V1_STR)
+app.include_router(guides.router, prefix=settings.API_V1_STR)
+app.include_router(managers.router, prefix=settings.API_V1_STR)
+app.include_router(admin.router, prefix=settings.API_V1_STR)
+app.include_router(payments.router, prefix=settings.API_V1_STR)
+app.include_router(replanning.router, prefix=settings.API_V1_STR)
+app.include_router(offline.router, prefix=settings.API_V1_STR)
+app.include_router(reviews.router, prefix=settings.API_V1_STR)
+app.include_router(chat.router, prefix=settings.API_V1_STR)
+app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
+app.include_router(geoapify.router, prefix=settings.API_V1_STR)
+
+
+# ── WebSocket for real-time trip chat ────────────────────────────────────────
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[str, list[WebSocket]] = {}
