@@ -156,7 +156,7 @@ def _pay(headers, trip_id) -> dict:
     wh = client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": order["order_id"],
         "razorpay_payment_id": "pay_e2e_portal_001",
-        "razorpay_signature": "sim_sig_verified_123",
+        "razorpay_signature": order["simulated_signature"],
     })
     assert wh.status_code == 200, wh.text
     assert wh.json()["payment_status"] == "SUCCESS"

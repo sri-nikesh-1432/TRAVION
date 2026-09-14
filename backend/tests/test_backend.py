@@ -236,11 +236,12 @@ def test_full_user_trip_flow():
     assert order_data["amount"] < bd.get("total", 10**12)
     assert bd["travel_spend"] > 0
 
-    # Payment Webhook simulation
+    # Payment Webhook simulation — uses the SERVER-ISSUED signature returned
+    # by checkout. A client-forged signature is worthless (verified separately).
     webhook_res = client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": order_data["order_id"],
         "razorpay_payment_id": "pay_test_sim_12345",
-        "razorpay_signature": "sim_sig_verified_123"
+        "razorpay_signature": order_data["simulated_signature"]
     })
     assert webhook_res.status_code == 200
     assert webhook_res.json()["payment_status"] == "SUCCESS"
@@ -349,7 +350,7 @@ def test_admin_dual_revenue():
     client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": checkout["order_id"],
         "razorpay_payment_id": "pay_revseed",
-        "razorpay_signature": "sim_sig_verified_123",
+        "razorpay_signature": checkout["simulated_signature"],
     })
 
     rev_res = client.get("/api/v1/admin/revenue", headers=headers)
@@ -468,7 +469,7 @@ def test_guide_chat_locked_until_guide_actually_assigned():
     wh = client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": co["order_id"],
         "razorpay_payment_id": "pay_chatlock",
-        "razorpay_signature": "sim_sig_verified_123",
+        "razorpay_signature": co["simulated_signature"],
     })
     assert wh.status_code == 200  # trip is now ACTIVE
 
@@ -485,3 +486,74 @@ def test_guide_chat_locked_until_guide_actually_assigned():
         "message": "Hello guide?",
     })
     assert send_locked.status_code == 403
+
+
+# ── §33/§53 Payment signature integrity ──────────────────────────────────────
+def test_forged_payment_signature_cannot_activate_trip():
+    """A client that fabricates a webhook signature can NEVER mark a payment
+    SUCCESS or flip a trip to ACTIVE — only the server-issued HMAC (simulated
+    orders) or a genuine Razorpay signature (live orders) passes."""
+    import uuid as _uuid
+    email = f"sig_{_uuid.uuid4().hex[:6]}@test.com"
+    r = client.post("/api/v1/auth/signup", json={
+        "email": email, "password": "StrongPass123!", "role": "USER",
+        "first_name": "Sig", "last_name": "Test", "phone": "9876512345",
+    })
+    tok = r.json()["access_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+
+    src = client.get("/api/v1/locations/search?q=Bangalore", headers=h).json()[0]
+    dst = client.post("/api/v1/locations/register", headers=h, json={
+        "name": "Yercaud", "state": "Tamil Nadu", "country": "India",
+        "lat": 11.7747, "lng": 78.2097,
+    }).json()
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=h, json={
+        "source_location_id": src["id"], "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=30)).isoformat(),
+        "end_datetime": (now + timedelta(days=33)).isoformat(),
+    }).json()
+    client.post(f"/api/v1/trips/{trip['id']}/discovery/next", headers=h, json={
+        "answers_so_far": {"budget": "₹15,000 - ₹25,000", "party": "Solo", "experience": ["Nature"]}
+    })
+    plan = client.post(f"/api/v1/trips/{trip['id']}/plan", headers=h, json={
+        "mode": "ADVENTUROUS_MODE", "consent_acknowledged": True,
+    })
+    assert plan.status_code == 200
+    co = client.post(f"/api/v1/trips/{trip['id']}/checkout", headers=h, json={
+        "payment_method": "razorpay", "non_refundable_acknowledged": True,
+    })
+    assert co.status_code == 200
+    order = co.json()
+    assert order["simulated_signature"], "simulated checkout must carry a server-issued signature"
+
+    # 1. Client-forged signature → rejected, payment FAILED, trip NOT active.
+    forged = client.post("/api/v1/payments/webhook", json={
+        "razorpay_order_id": order["order_id"],
+        "razorpay_payment_id": "pay_sim_forged",
+        "razorpay_signature": "sim_sig_forged_by_client",
+    })
+    assert forged.status_code == 400, forged.text
+    t = client.get(f"/api/v1/trips/{trip['id']}", headers=h).json()
+    assert t["status"] != "ACTIVE"
+
+    # 2. The legacy hard-coded client string is also worthless now.
+    legacy = client.post("/api/v1/payments/webhook", json={
+        "razorpay_order_id": order["order_id"],
+        "razorpay_payment_id": "pay_sim_legacy",
+        "razorpay_signature": "sim_sig_verified_123",
+    })
+    assert legacy.status_code == 400
+    t = client.get(f"/api/v1/trips/{trip['id']}", headers=h).json()
+    assert t["status"] != "ACTIVE"
+
+    # 3. The honest server-issued signature → verified SUCCESS, trip ACTIVE.
+    ok = client.post("/api/v1/payments/webhook", json={
+        "razorpay_order_id": order["order_id"],
+        "razorpay_payment_id": "pay_sim_honest",
+        "razorpay_signature": order["simulated_signature"],
+    })
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["payment_status"] == "SUCCESS"
+    t = client.get(f"/api/v1/trips/{trip['id']}", headers=h).json()
+    assert t["status"] == "ACTIVE"

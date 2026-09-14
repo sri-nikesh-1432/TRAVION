@@ -483,7 +483,7 @@ export const api = {
     request<{ amount_payable: number; guide_fee: number; platform_fee: number; travel_spend: number; total_cost: number; days: number; breakdown: Record<string, any>; guide_required: boolean; guide_assigned: boolean }>(`/trips/${tripId}/pricing`, { method: 'GET' }),
 
   checkoutTrip: (tripId: string, nonRefundableAcknowledged: boolean) =>
-    request<{ order_id: string; amount: number; currency: string; key_id: string; breakdown: Record<string, any>; live_checkout?: boolean }>(`/trips/${tripId}/checkout`, { method: 'POST', body: JSON.stringify({ payment_method: 'razorpay', non_refundable_acknowledged: nonRefundableAcknowledged }) }),
+    request<{ order_id: string; amount: number; currency: string; key_id: string; breakdown: Record<string, any>; live_checkout?: boolean; simulated_signature?: string | null }>(`/trips/${tripId}/checkout`, { method: 'POST', body: JSON.stringify({ payment_method: 'razorpay', non_refundable_acknowledged: nonRefundableAcknowledged }) }),
 
   verifyPaymentWebhook: (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
     request<any>('/payments/webhook', { method: 'POST', body: JSON.stringify(data) }),

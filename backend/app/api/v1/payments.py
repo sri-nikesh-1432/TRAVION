@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+import logging
 from app.core.db import get_db
 from app.core.security import require_role
 from app.models.entities import Trip, Itinerary, Payment, PaymentSplit, OfflinePackage, GuideAssignment
@@ -10,6 +11,7 @@ from app.services.pricing_service import calculate_trip_pricing
 from app.models.entities import get_utc_now
 
 router = APIRouter(prefix="", tags=["Payments"])
+logger = logging.getLogger(__name__)
 
 
 def _pricing_context(trip: Trip, itinerary: Itinerary, db: Session) -> dict:
@@ -134,7 +136,8 @@ def create_trip_checkout(
         currency=order_info["currency"],
         key_id=order_info["key_id"],
         breakdown=display_breakdown,
-        live_checkout=bool(order_info.get("live"))
+        live_checkout=bool(order_info.get("live")),
+        simulated_signature=order_info.get("simulated_signature"),
     )
 
 
@@ -171,7 +174,15 @@ def process_payment_webhook(
 ):
     payment = db.query(Payment).filter(Payment.razorpay_order_id == req.razorpay_order_id).first()
     if not payment:
+        logger.warning("Payment webhook for unknown order %s", req.razorpay_order_id[:24])
         raise HTTPException(status_code=404, detail="Order reference not found")
+
+    # §53: a fabricated payment id must never activate a REAL Razorpay order.
+    # Simulated payment ids are only meaningful for simulated orders.
+    is_simulated_order = req.razorpay_order_id.startswith("order_sim_")
+    if not is_simulated_order and req.razorpay_payment_id.startswith("pay_sim_"):
+        logger.warning("Rejected simulated payment id on live order %s", req.razorpay_order_id[:24])
+        raise HTTPException(status_code=400, detail="Invalid payment reference for this order")
 
     is_valid = PaymentService.verify_payment_signature(
         order_id=req.razorpay_order_id,
@@ -181,7 +192,9 @@ def process_payment_webhook(
     if not is_valid:
         payment.status = "FAILED"
         db.commit()
+        logger.warning("Payment signature verification FAILED for order %s", req.razorpay_order_id[:24])
         raise HTTPException(status_code=400, detail="Invalid payment signature")
+    logger.info("Payment verified for order %s (trip %s)", req.razorpay_order_id[:24], payment.trip_id)
 
     payment.razorpay_payment_id = req.razorpay_payment_id
     payment.razorpay_signature = req.razorpay_signature

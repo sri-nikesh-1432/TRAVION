@@ -308,6 +308,10 @@ class CheckoutResponse(BaseModel):
     key_id: str
     breakdown: Dict[str, Any]
     live_checkout: bool = False  # True = real Razorpay test-mode order, False = simulated/local order
+    # Server-issued signature for SIMULATED orders only (no Razorpay keys
+    # configured). The honest client echoes it to the webhook; a client that
+    # mints its own signature can never activate a trip (§33/§53).
+    simulated_signature: Optional[str] = None
 
 class TripPricingResponse(BaseModel):
     """THE authoritative backend-calculated Trip pricing. Every surface

@@ -596,11 +596,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           rzp.open();
         });
       } else {
-        // Simulated fallback — same server-side signature-verified flow
+        // Simulated fallback — same server-side signature-verified flow. The
+        // signature is the SERVER-ISSUED HMAC from the checkout response: the
+        // client can never mint its own payment success (§33/§53).
         await api.verifyPaymentWebhook({
           razorpay_order_id: checkout.order_id,
-          razorpay_payment_id: `pay_${Date.now()}`,
-          razorpay_signature: `sim_sig_verified_${Date.now()}`
+          razorpay_payment_id: `pay_sim_${Date.now()}`,
+          razorpay_signature: checkout.simulated_signature || ''
         });
       }
 

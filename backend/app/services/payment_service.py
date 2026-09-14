@@ -7,8 +7,34 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Placeholder key used when no real key is configured — disables live API calls.
+# Placeholder keys used when no real key is configured — disables live API calls.
 _PLACEHOLDER_KEY_ID = "rzp_test_travion_live"
+_PLACEHOLDER_KEY_SECRET = "travion_sec_verified_razorpay"
+
+
+def _has_live_razorpay_keys() -> bool:
+    """True when the deployment has REAL Razorpay credentials configured."""
+    return bool(
+        settings.RAZORPAY_KEY_ID
+        and settings.RAZORPAY_KEY_SECRET
+        and settings.RAZORPAY_KEY_ID != _PLACEHOLDER_KEY_ID
+        and settings.RAZORPAY_KEY_SECRET != _PLACEHOLDER_KEY_SECRET
+    )
+
+
+def simulated_signature(order_id: str) -> str:
+    """Server-issued, unforgeable signature for simulated (no-keys) orders.
+
+    §33/§53: the client must NEVER be able to mint a payment success on its
+    own. The HMAC is keyed with the platform secret, so only this backend can
+    produce a valid signature for an order — the client receives it from the
+    checkout response and echoes it back. When real Razorpay credentials are
+    configured, simulated signatures are rejected outright (see verify).
+    """
+    key = f"travion-sim-payment|{settings.SECRET_KEY}".encode("utf-8")
+    msg = f"{order_id}|sim".encode("utf-8")
+    digest = hmac.new(key, msg, hashlib.sha256).hexdigest()
+    return f"sim_sig_{digest}"
 
 try:
     import requests
@@ -32,14 +58,17 @@ class PaymentService:
         if live:
             return live
 
-        # Simulated fallback order (same official format)
-        order_id = f"order_{uuid.uuid4().hex[:14]}"
+        # Simulated fallback order (same official format). The response carries
+        # a server-issued signature the honest client echoes to the webhook —
+        # a fabricated signature can never activate a trip.
+        order_id = f"order_sim_{uuid.uuid4().hex[:14]}"
         return {
             "order_id": order_id,
             "amount": amount,
             "currency": currency,
             "key_id": settings.RAZORPAY_KEY_ID,
-            "live": False
+            "live": False,
+            "simulated_signature": simulated_signature(order_id),
         }
 
     @classmethod
@@ -56,7 +85,6 @@ class PaymentService:
             return None
         if not key_id.startswith("rzp_test_") and not key_id.startswith("rzp_live_"):
             return None
-
         try:
             resp = requests.post(
                 "https://api.razorpay.com/v1/orders",
@@ -96,10 +124,17 @@ class PaymentService:
         """
         if not signature:
             return False
-        # For testing / sandbox environments, accept test signatures if prefixed
-        if signature.startswith("sim_sig_"):
-            return True
 
+        # §33/§53 hard rule: when the deployment has REAL Razorpay credentials,
+        # only genuine Razorpay HMAC signatures are accepted — simulated ones
+        # are worthless here because a real order was created with Razorpay.
+        if order_id.startswith("order_sim_") or not _has_live_razorpay_keys():
+            # Simulated order (or no real keys): only THIS server's issued HMAC
+            # passes. Anything else — including the legacy hard-coded client
+            # strings — is rejected, so a forged webhook cannot activate a trip.
+            return hmac.compare_digest(signature, simulated_signature(order_id))
+
+        # Real Razorpay order with real keys: genuine signature check only.
         msg = f"{order_id}|{payment_id}".encode('utf-8')
         generated_signature = hmac.new(
             settings.RAZORPAY_KEY_SECRET.encode('utf-8'),

@@ -7,10 +7,73 @@ adventurous), checkout + webhook, guide onboarding->approval->assignment->lock,
 settlement, admin revenue, chat context/actions/translation/refusal, replan,
 offline package, review, non-India structured refusal.
 """
-import json, uuid, sys, urllib.request, urllib.error
-from datetime import datetime, timedelta
+import json, uuid, sys, os, hmac, hashlib, urllib.request, urllib.error
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 BASE = "http://localhost:8002/api/v1"
+
+# Razorpay TEST-mode payment helper: when the backend has real test keys, checkout
+# returns a GENUINE Razorpay order (live_checkout=true). To complete the journey
+# programmatically we use Razorpay's official test-mode payment creation API and
+# compute the REAL HMAC signature exactly as Razorpay's checkout handler would.
+def _razorpay_creds():
+    key_id = os.environ.get("RAZORPAY_KEY_ID")
+    key_secret = os.environ.get("RAZORPAY_KEY_SECRET")
+    if key_id and key_secret:
+        return key_id, key_secret
+    env_file = Path(__file__).resolve().parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("RAZORPAY_KEY_ID="):
+                key_id = line.split("=", 1)[1].strip().strip('"')
+            elif line.startswith("RAZORPAY_KEY_SECRET="):
+                key_secret = line.split("=", 1)[1].strip().strip('"')
+    return key_id, key_secret
+
+def _complete_razorpay_test_payment(order_id: str, amount: float):
+    """Complete a REAL Razorpay test-mode payment and return (payment_id, signature).
+    Returns None if the backend order was simulated or the test API is unavailable."""
+    if order_id.startswith("order_sim_"):
+        return None
+    key_id, key_secret = _razorpay_creds()
+    if not key_id or not key_secret:
+        print("  !! live Razorpay order present but no test credentials found")
+        return None
+    body = json.dumps({
+        "amount": int(round(amount * 100)),
+        "currency": "INR",
+        "order_id": order_id,
+        "method": "netbanking",
+        "bank": "HDFC",
+        "email": "e2e@travion.test",
+        "contact": "9876543210",
+    }).encode()
+    r = urllib.request.Request("https://api.razorpay.com/v1/payments/create/json", data=body, method="POST")
+    r.add_header("Content-Type", "application/json")
+    import base64
+    r.add_header("Authorization", "Basic " + base64.b64encode(f"{key_id}:{key_secret}".encode()).decode())
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        payment_id = data["id"]
+        signature = hmac.new(key_secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
+        return payment_id, signature
+    except Exception as exc:
+        print(f"  !! Razorpay test payment API failed: {exc}")
+        return None
+
+def _webhook_sig_for(checkout_resp: dict):
+    """Return the correct (payment_id, signature) pair for a checkout response.
+    Simulated orders use the server-issued signature; live Razorpay orders
+    cannot be auto-completed (the legacy test-payment API was retired by
+    Razorpay) — the caller must surface an honest skip instead."""
+    order_id = checkout_resp["order_id"]
+    if order_id.startswith("order_sim_"):
+        return f"pay_sim_{uuid.uuid4().hex[:10]}", checkout_resp.get("simulated_signature")
+    return None, None  # live order: requires the real Razorpay browser checkout
+
 suffix = uuid.uuid4().hex[:6]
 FAILS = []
 OKS = []
@@ -158,13 +221,32 @@ check("itinerary fetch has day stops", s == 200 and len(stops_a) >= 3, s)
 check("stops carry real coords + category + source", all(st.get("lat") is not None and st.get("category") and st.get("source") for st in stops_a[:5]), stops_a[:1])
 
 # ---------------------------------------------------------------- checkout + webhook (A)
-s, r = req("POST", f"/trips/{trip_a}/checkout", token=user_tok, body={})
+# ---------------------------------------------------------------- checkout + webhook (A)
+# NOTE: this script runs against a SIMULATION-mode server (placeholder Razorpay
+# keys) so the server-issued signature path is exercised deterministically. A
+# server with REAL test keys behaves identically except the order comes from
+# Razorpay and the signature comes from Razorpay's browser checkout.
+s, r = req("POST", f"/trips/{trip_a}/checkout", token=user_tok, body={"payment_method": "razorpay", "non_refundable_acknowledged": True})
 amount_a = r.get("amount")
 order_a = r.get("order_id")
+checkout_a = r
+if order_a and str(order_a).startswith("order_sim_"):
+    check("checkout returns server-issued simulated signature", s == 200 and bool(r.get("simulated_signature")), r)
+else:
+    check("checkout created a REAL Razorpay TEST order", s == 200 and str(order_a).startswith("order_") and r.get("live_checkout") is True, {"order_id": order_a, "live": r.get("live_checkout")})
 check("checkout amount == payable only (never trip budget)", s == 200 and abs(amount_a - float(bd_a.get("payable", -1))) < 1 and amount_a < float(bd_a.get("total", 10**9)), r)
 
-s, r = req("POST", "/payments/webhook", body={"razorpay_order_id": order_a, "razorpay_payment_id": f"pay_{uuid.uuid4().hex[:10]}", "razorpay_signature": "sim_sig_e2e"})
-check("webhook verifies payment (sim sig) -> ACTIVE", s == 200 and r.get("payment_status") == "SUCCESS" and r.get("trip_status") == "ACTIVE", r)
+# §53: a client-forged signature can NEVER activate a trip — the webhook only
+# accepts the server-issued HMAC (simulated orders) or a genuine Razorpay
+# signature (live orders). A fabricated string is rejected either way.
+s, r = req("POST", "/payments/webhook", body={"razorpay_order_id": order_a, "razorpay_payment_id": f"pay_sim_forged_{uuid.uuid4().hex[:8]}", "razorpay_signature": "sim_sig_forged_by_client"}, expect=400)
+check("forged client signature rejected (400)", s == 400, r)
+
+sig_pair = _webhook_sig_for(checkout_a)
+payment_id_a, real_sig_a = sig_pair if sig_pair else (None, None)
+check("simulated order carries server-issued signature", bool(real_sig_a), {"order": order_a})
+s, r = req("POST", "/payments/webhook", body={"razorpay_order_id": order_a, "razorpay_payment_id": payment_id_a, "razorpay_signature": real_sig_a})
+check("webhook verifies payment (backend-verified signature) -> ACTIVE", s == 200 and r.get("payment_status") == "SUCCESS" and r.get("trip_status") == "ACTIVE", r)
 check("offline package assembled on payment", r.get("offline_package_ready") is True, r)
 
 s, r = req("GET", f"/trips/{trip_a}/offline-package", token=user_tok)
@@ -235,10 +317,12 @@ s, r = req("POST", f"/manager/trip-requests/{trip_d}/assign", token=mgr_tok, bod
 check("BUSY guide cannot take overlapping trip D (400)", s == 400, r)
 
 # ---------------------------------------------------------------- payment B + settlement + admin revenue
-s, r = req("POST", f"/trips/{trip_b}/checkout", token=user_tok, body={})
-order_b = r.get("order_id"); amount_b = r.get("amount")
+s, r = req("POST", f"/trips/{trip_b}/checkout", token=user_tok, body={"payment_method": "razorpay", "non_refundable_acknowledged": True})
+order_b = r.get("order_id"); amount_b = r.get("amount"); checkout_b = r
+sig_pair_b = _webhook_sig_for(checkout_b)
+payment_id_b, real_sig_b = sig_pair_b if sig_pair_b else (None, None)
 check("guide-mode checkout amount == guide+platform", s == 200 and abs(amount_b - float(bd_b.get("payable", -1))) < 1, r)
-s, r = req("POST", "/payments/webhook", body={"razorpay_order_id": order_b, "razorpay_payment_id": f"pay_{uuid.uuid4().hex[:10]}", "razorpay_signature": "sim_sig_e2e"})
+s, r = req("POST", "/payments/webhook", body={"razorpay_order_id": order_b, "razorpay_payment_id": payment_id_b, "razorpay_signature": real_sig_b})
 check("trip B payment success -> ACTIVE", s == 200 and r.get("payment_status") == "SUCCESS", r)
 
 s, r = req("GET", "/manager/settlements", token=mgr_tok)

@@ -104,11 +104,15 @@ def _checkout(trip_id, headers):
     return res.json()
 
 
-def _webhook(order_id, pid="pay_test_pricing_001"):
+def _webhook(order_id, pid="pay_test_pricing_001", signature=None):
+    if signature is None:
+        # Default to a client-forged string — callers that expect SUCCESS must
+        # pass the server-issued signature from the checkout response.
+        signature = "sim_sig_client_forged"
     return client.post("/api/v1/payments/webhook", json={
         "razorpay_order_id": order_id,
         "razorpay_payment_id": pid,
-        "razorpay_signature": "sim_sig_verified_123",
+        "razorpay_signature": signature,
     })
 
 
@@ -244,7 +248,7 @@ def test_webhook_detects_pricing_drift_and_refreshes_split():
     })
     assert r.status_code == 200
 
-    wh = _webhook(co["order_id"])
+    wh = _webhook(co["order_id"], signature=co["simulated_signature"])
     assert wh.status_code == 200, wh.text
     data = wh.json()
     assert data["status"] == "success"
