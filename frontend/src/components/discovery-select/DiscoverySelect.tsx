@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink, X, Clock, ClipboardList, Camera } from 'lucide-react';
+import { BadgeCheck, MapPin, BedDouble, Utensils, Mountain, Compass, ArrowRight, Landmark, ShieldAlert, Info, CalendarDays, ExternalLink, X, Clock, ClipboardList, Camera, Search, LocateFixed } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster';
@@ -146,11 +146,13 @@ function vpToMapPlace(vp: GeoViewportPlace): MapPlace {
 }
 
 /**
- * Destination Discovery — "Choose what you want to experience".
- * Shows ONLY real verified places (each carries verified: true from the backend).
- * Places INSIDE the destination core are shown first; stays are a single-select
- * choice ('Continue without a stay' skips accommodation); the budget tier is the
- * honest advisor strip on top. Selections become hard preferences for the planner.
+ * Destination Discovery — MAP-FIRST "Explore & select places".
+ * The interactive map is the PRIMARY interface (spec §1): it dominates the
+ * desktop as a sticky pane, every card/marker/selected-chip is synchronized
+ * with it both ways, and selections become hard preferences for the planner.
+ * Shows ONLY real verified places (each carries verified: true from the
+ * backend); stays are a single-select choice ('Continue without a stay'
+ * skips accommodation).
  */
 export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   tripId, destinationName, onConfirm, onBack, busy,
@@ -180,34 +182,20 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // Bumped by the Retry button so a failed catalog load can be attempted again
   // (spec §45: every API-driven operation offers Loading / Error / Retry).
   const [catalogRetry, setCatalogRetry] = useState(0);
+  // Card ↔ map sync (spec §8/§32): the highlighted place (from a marker click
+  // OR a card click) renders a ring on the map and a highlight on the card.
+  const [highlight, setHighlight] = useState<{ key: string; name: string } | null>(null);
+  // In-dataset search (spec §33): searches the REAL loaded POI dataset only.
+  const [searchQuery, setSearchQuery] = useState('');
+  // Whether the CURRENT popup was opened from a marker (→ scroll its card into
+  // view) or from a card (→ already visible, don't scroll-jump the panel).
+  const lastFocusFromMap = useRef(false);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
     if (next.has(name)) next.delete(name); else next.add(name);
     setter(next);
   };
-
-  // The map plots the FULL real dataset from map-places: recommended buckets +
-  // every broader provider-verified category. Click → add to the visit list.
-  const mapPlaces = useMemo(() => {
-    const all: Array<{ key: string; item: MapPlace }> = [];
-    if (mapData) {
-      for (const key of MAP_KEY_ORDER) {
-        for (const item of (mapData.map_places as Record<string, MapPlace[]>)[key] ?? []) {
-          if (item.latitude && item.longitude) all.push({ key, item });
-        }
-      }
-    } else if (catalog) {
-      const push = (key: string, arr: Array<MapPlace | CatalogFood | CatalogStay>) => {
-        for (const it of arr) if (it.latitude && it.longitude) all.push({ key, item: it as MapPlace });
-      };
-      push('must_visit', catalog.must_visit);
-      push('activities', catalog.activities);
-      push('food', catalog.food);
-      push('stays', catalog.stays);
-    }
-    return all;
-  }, [mapData, catalog]);
 
   // Step 3 interactive map (raw Leaflet — leaflet is the only map dependency).
   const mapDiv = useRef<HTMLDivElement | null>(null);
@@ -218,6 +206,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const tileUrlRef = useRef<string | null>(null);
   const vpSeq = useRef(0);
   const vpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // DOM refs for every rendered card, keyed `card_<category>_<encodedName>` —
+  // a marker click scrolls its card into view (spec §17: marker → card).
+  const cardRefs = useRef<Map<string, HTMLElement | null>>(new Map());
+  const setCardRef = (key: string, name: string) => (el: HTMLElement | null) => {
+    cardRefs.current.set(`card_${key}_${encodeURIComponent(name)}`, el);
+  };
 
   useEffect(() => {
     // The map container only mounts once `catalog` is populated (the discovery
@@ -328,6 +322,72 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     return counts;
   }, [allMapPlaces]);
 
+  // A category's count is only HONEST once its data source has reported.
+  // While the broader map payload is still loading, secondary categories must
+  // show '—' — never a misleading 0 (spec §15: no fake zeros during load).
+  const countReady = useCallback((key: string) => {
+    if (mapData) return true; // full verified dataset (all categories) loaded
+    if (catalog && ['must_visit', 'activities', 'food', 'stays'].includes(key)) return true;
+    return false; // still loading → render '—', never 0
+  }, [mapData, catalog]);
+
+  const chipCount = useCallback((key: string) =>
+    countReady(key) ? (mapFilterCount as Record<string, number>)[key] ?? 0 : null
+  , [countReady, mapFilterCount]);
+
+  // ── CARD ↔ MAP SYNCHRONIZATION (spec §8/§32) ─────────────────────────────
+  // CARD → MAP: fly to the exact place, highlight the marker, open the popup.
+  const flyToPlace = useCallback((key: string, item: MapPlace) => {
+    const lat = Number(item.latitude);
+    const lng = Number(item.longitude);
+    if (!lat || !lng) return;
+    lastFocusFromMap.current = false;
+    setHighlight({ key, name: item.name });
+    setPopupPlace({ key, item });
+    // The marker must be visible: a narrowed filter that hides this category
+    // resets to All Places (spec §13 — clicking a card MUST react on the map).
+    if (mapFilter !== 'all' && mapFilter !== key) setMapFilter('all');
+    if (mapRef.current) {
+      mapRef.current.flyTo([lat, lng], Math.max(mapRef.current.getZoom(), 15), { duration: 0.8 });
+    }
+  }, [mapFilter]);
+
+  // Fly to a selected chip / card by name — resolves against the full map
+  // dataset, then activity anchors ("Action — Place" → its real location).
+  const flyToByName = useCallback((name: string) => {
+    const norm = name.trim().toLowerCase();
+    const hit = allMapPlaces.find(({ item }) => item.name.toLowerCase() === norm)
+      ?? allMapPlaces.find(({ item }) => item.name.toLowerCase().includes(norm));
+    if (hit) { flyToPlace(hit.key, hit.item); return; }
+    const act = (catalog?.activities ?? []).find((a) => a.name === name);
+    if (act?.latitude && act?.longitude) {
+      flyToPlace('activities', {
+        name: act.location_name || act.name, category: 'activities',
+        latitude: act.latitude, longitude: act.longitude,
+        address: act.description ?? null, source: act.source || 'derived', verified: true,
+      });
+    }
+  }, [allMapPlaces, catalog, flyToPlace]);
+
+  // MAP → CARD: after a marker click, scroll the corresponding card into view.
+  useEffect(() => {
+    if (!popupPlace || !lastFocusFromMap.current) return;
+    const el = cardRefs.current.get(`card_${popupPlace.key}_${encodeURIComponent(popupPlace.item.name)}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [popupPlace]);
+
+  // In-dataset search over the REAL loaded POIs only (spec §33) — never a
+  // fabricated result. Click → map flies to the exact place.
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allMapPlaces.filter(({ item }) =>
+      item.name?.toLowerCase().includes(q)
+      || (item.address || '').toLowerCase().includes(q)
+      || (MAP_LAYERS[item.category]?.label || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [searchQuery, allMapPlaces]);
+
   useEffect(() => {
     if (!mapRef.current || !layerRef.current) return;
     const layer = layerRef.current;
@@ -348,19 +408,25 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         : kind === 'stay'
           ? selectedStay?.name === name
           : selected.has(name);
+      const isHighlight = highlight?.name === name && (mapFilter === 'all' || mapFilter === key);
       const color = COLORS[key] ?? '#64748b';
       const marker = L.circleMarker([lat, lng], {
-        radius: active ? 12 : 8,
-        color: '#ffffff',
-        weight: 2,
+        radius: isHighlight ? 14 : active ? 12 : 8,
+        color: isHighlight ? '#f59e0b' : '#ffffff',
+        weight: isHighlight ? 4 : 2,
         fillColor: active ? color : `${color}cc`,
         fillOpacity: active ? 1 : 0.75,
       });
-      const oh = (item as MapPlace).opening_hours;
       marker.bindTooltip(`<b>${name}</b><br/>${MAP_LAYERS[key]?.label ?? key}${active ? '<br/>✓ selected' : ''}`);
       // Click a pin → proper place popup with details + explicit Add to Plan
-      // (spec §2 — never a silent toggle).
-      marker.on('click', () => setPopupPlace({ key, item }));
+      // (spec §2 — never a silent toggle); also highlights + scrolls to the
+      // corresponding card (spec §17: marker → card sync).
+      marker.on('click', () => {
+        lastFocusFromMap.current = true;
+        setHighlight({ key, name });
+        setPopupPlace({ key, item });
+        mapRef.current?.flyTo([lat, lng], Math.max(mapRef.current.getZoom(), 15), { duration: 0.6 });
+      });
       // Clustered markers keep large POI sets smooth (spec §30); the plain
       // layer still draws when clustering is unavailable.
       if (cluster) marker.addTo(cluster); else marker.addTo(layer);
@@ -374,7 +440,18 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.25), { maxZoom: 15 });
       }
     }
-  }, [allMapPlaces, mapFilter, selected, selectedFood, selectedStay, toggleMapItem]);
+  }, [allMapPlaces, mapFilter, selected, selectedFood, selectedStay, highlight, toggleMapItem]);
+
+  // "Back to the destination view" — reset the camera to the fitted dataset.
+  const resetView = useCallback(() => {
+    const pts = allMapPlaces
+      .map(({ item }) => (item.latitude && item.longitude ? L.latLng(Number(item.latitude), Number(item.longitude)) : null))
+      .filter((p): p is L.LatLng => !!p);
+    if (pts.length && mapRef.current) {
+      mapRef.current.flyToBounds(L.latLngBounds(pts).pad(0.18), { maxZoom: 13, duration: 0.8 });
+      setMapFilter('all');
+    }
+  }, [allMapPlaces]);
 
   // Viewport-based loading (spec §30): debounced fetch of real POIs for the
   // area actually on screen — every category, from the GeoApify proxy.
@@ -551,12 +628,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="text-center mb-6">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 3 · Destination discovery</span>
         <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Explore {destinationName}</h2>
         <p className="mt-1.5 text-[13px] font-medium text-slate-500">
-          Browse the destination map, tap any pin for details, and build your own plan.
+          The map is your planner: pan the real destination, tap any pin or card for details, and build your own plan.
           Travion pre-selects the best matches for your travel style — unselect or add freely;
           only your final picks shape the itinerary.
         </p>
@@ -575,36 +652,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         </div>
       )}
 
-      {/* Budget Feasibility advisor — the honest strip */}
-      {catalog && budgetPanel && budgetTier && (
-        <div className={`mb-7 rounded-2xl border px-4 py-3.5 flex items-start gap-3 ${
-          budgetTier.impossible
-            ? 'bg-red-50 border-red-200'
-            : budgetPanel.budget_status === 'restricted'
-              ? 'bg-amber-50 border-amber-200'
-              : 'bg-emerald-50 border-emerald-200'
-        }`}>
-          {budgetTier.impossible ? (
-            <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          ) : budgetPanel.budget_status === 'restricted' ? (
-            <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-          ) : (
-            <BadgeCheck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-          )}
-          <div className="min-w-0">
-            <p className={`text-[13px] font-extrabold ${budgetTier.impossible ? 'text-red-700' : budgetPanel.budget_status === 'restricted' ? 'text-amber-700' : 'text-emerald-700'}`}>
-              {budgetTier.label}
-            </p>
-            <p className={`text-[12px] font-medium mt-0.5 ${budgetTier.impossible ? 'text-red-600' : budgetPanel.budget_status === 'restricted' ? 'text-amber-700' : 'text-emerald-700'}`}>
-              {budgetPanel.message || budgetTier.summary}
-            </p>
-          </div>
-        </div>
-      )}
-
       {!catalog && !loadError && (
         <div className="py-16 text-center">
-          <p className="text-[13px] font-bold text-slate-500">Discovering real places around {destinationName}…</p>
+          <p className="text-[13px] font-bold text-slate-500">Exploring {destinationName}…</p>
+          <p className="mt-1 text-[12px] font-medium text-slate-400">Finding verified places · loading the destination map…</p>
           <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="p-4 rounded-2xl border border-slate-200 bg-white animate-pulse">
@@ -644,562 +695,801 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             ) : null}
           </div>
 
-          {/* Step 3 interactive map — every real place, click to add */}
-          <div className="mb-8">
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-              <button
-                key="all"
-                type="button"
-                onClick={() => setMapFilter('all')}
-                className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all ${
-                  mapFilter === 'all' ? 'text-white bg-travion-600 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
-                All places <span className="ml-0.5 text-[10px] font-black opacity-80">{mapFilterCount.all ?? 0}</span>
-              </button>
-              {MAP_KEY_ORDER.map((f) => {
-                const count = (mapFilterCount as Record<string, number>)[f] ?? 0;
-                const zero = count === 0;
-                const label = MAP_LAYERS[f]?.label ?? f;
-                const color = COLORS[f];
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    disabled={zero}
-                    title={zero ? 'No verified places in this category yet.' : undefined}
-                    onClick={() => setMapFilter(f)}
-                    className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                      mapFilter === f
-                        ? 'text-white border-transparent shadow-sm'
-                        : 'bg-white text-slate-600 hover:border-slate-300'
-                    }`}
-                    style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#0f172a' } : undefined}
-                  >
-                    {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-slate-400'}`}>{count}</span>
-                  </button>
-                );
-              })}
+          {/* Budget Feasibility advisor — the honest strip */}
+          {budgetPanel && budgetTier && (
+            <div className={`mb-6 rounded-2xl border px-4 py-3.5 flex items-start gap-3 ${
+              budgetTier.impossible
+                ? 'bg-red-50 border-red-200'
+                : budgetPanel.budget_status === 'restricted'
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-emerald-50 border-emerald-200'
+            }`}>
+              {budgetTier.impossible ? (
+                <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              ) : budgetPanel.budget_status === 'restricted' ? (
+                <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              ) : (
+                <BadgeCheck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+              )}
+              <div className="min-w-0">
+                <p className={`text-[13px] font-extrabold ${budgetTier.impossible ? 'text-red-700' : budgetPanel.budget_status === 'restricted' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                  {budgetTier.label}
+                </p>
+                <p className={`text-[12px] font-medium mt-0.5 ${budgetTier.impossible ? 'text-red-600' : budgetPanel.budget_status === 'restricted' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                  {budgetPanel.message || budgetTier.summary}
+                </p>
+              </div>
             </div>
-            <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
-              <div ref={mapDiv} className="h-[440px] w-full z-0 relative" />
-              <p className="flex flex-wrap items-center justify-center gap-4 px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] font-bold text-slate-500">
-                {(Object.entries(COLORS) as Array<[string, string]>).map(([k, c]) => (
-                  <span key={k} className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
-                    {MAP_LAYERS[k]?.label ?? k}
-                  </span>
-                ))}
-                <span className="text-slate-400 font-medium">Tap a marker to add it to your trip</span>
-                <span className="inline-flex items-center gap-1 text-slate-400 font-medium">
-                  {vpLoading ? (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-travion-500 animate-pulse inline-block" />
-                      Loading places in view…
-                    </>
-                  ) : vpError ? (
-                    <span className="text-amber-600" title={vpError}>⚠ {vpError}</span>
-                  ) : (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                      {viewportPlaces.length} live places in view · pan to explore
-                    </>
-                  )}
-                </span>
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* My Plan — the user's live selection. Every Add to Plan lands
-              here instantly (spec §14: selected places must be visible). */}
-          <div className="mb-8 rounded-3xl border border-travion-100 bg-travion-50/40 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-600">
-                <ClipboardList className="w-4 h-4 text-travion-600" /> My Plan
-              </h3>
-              <span className="text-[11px] font-bold text-slate-500">
-                {totalSelected > 0
-                  ? `${selected.size} place${selected.size === 1 ? '' : 's'} · ${selectedFood.size} food stop${selectedFood.size === 1 ? '' : 's'}${selectedStay ? ' · stay selected' : ''}`
-                  : 'Nothing selected yet — tap pins or cards to add'}
-              </span>
-            </div>
-            {totalSelected === 0 && !selectedStay ? (
-              <p className="text-[12px] font-medium text-slate-400">
-                Places, activities and food stops you add will appear here before your itinerary is organized.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {Array.from(selected).map((name) => (
-                  <span key={`mp_${name}`} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-travion-200 text-[11px] font-bold text-slate-700">
-                    {name}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${name} from plan`}
-                      onClick={() => toggle(selected, setSelected, name)}
-                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                {Array.from(selectedFood).map((name) => (
-                  <span key={`mpf_${name}`} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-orange-200 text-[11px] font-bold text-slate-700">
-                    {name}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${name} from plan`}
-                      onClick={() => toggle(selectedFood, setSelectedFood, name)}
-                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                {selectedStay && (
-                  <span className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-violet-200 text-[11px] font-bold text-slate-700">
-                    {selectedStay.name}
-                    <button
-                      type="button"
-                      aria-label="Remove stay"
-                      onClick={() => setSelectedStay(null)}
-                      className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
+          {/* ── MAP-FIRST LAYOUT — the map is the hero (spec §1/§18) ──
+              Desktop: sticky map pane (~62%) + independently scrollable
+              exploration panel. Mobile: full-width map on top, panel below. */}
+          <div className="lg:flex lg:items-start lg:gap-6">
+
+            {/* ══ LEFT / TOP: THE MAP PANE ══ */}
+            <div className="lg:w-[62%] lg:sticky lg:top-4 lg:self-start mb-6 lg:mb-0">
+              {/* In-dataset search (spec §33) — real loaded POIs only */}
+              <div className="relative mb-2.5">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Search places in ${destinationName}… (museum, hotel, park)`}
+                  className="w-full h-11 pl-10 pr-4 rounded-2xl border border-slate-200 bg-white text-[13px] font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300 shadow-soft"
+                  aria-label={`Search places in ${destinationName}`}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                {searchResults.length > 0 && (
+                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-slate-200 bg-white shadow-floating overflow-hidden">
+                    {searchResults.map(({ key, item }) => (
+                      <button
+                        key={`sr_${key}_${item.name}`}
+                        type="button"
+                        onClick={() => { flyToPlace(key, item); setSearchQuery(''); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left hover:bg-travion-50 transition-colors"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[key] ?? '#64748b' }} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-extrabold text-slate-900 truncate">{item.name}</span>
+                          {item.address && <span className="block text-[11px] font-medium text-slate-400 truncate">{item.address}</span>}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wide text-travion-600 shrink-0">{MAP_LAYERS[key]?.label ?? key}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchQuery.trim() && searchResults.length === 0 && (
+                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-slate-200 bg-white shadow-floating px-4 py-3 text-[12px] font-bold text-slate-500">
+                    No loaded place matches "{searchQuery.trim()}" — try panning the map to load more.
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <Mountain className="w-4 h-4 text-travion-600" /> Must visit
-              <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-emerald-600 normal-case">✓ verified real places</span>
-            </h3>
-            {places.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center">
-                <p className="text-[13px] font-bold text-slate-600">
-                  No verified places found for {catalog.destination} right now.
-                </p>
-                <p className="mt-1 text-[12px] font-medium text-slate-400">
-                  We only show real, verified places — we never invent attractions. Check back later or try a nearby destination.
-                </p>
-              </div>
-            ) : (
-            <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {visiblePlaces.map((place: CatalogPlace) => {
-                  const active = selected.has(place.name);
+              {/* Category filter bar — floating over the map, counts from REAL
+                  loaded data; '—' while loading (never a fake 0, spec §15) */}
+              <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                <button
+                  key="all"
+                  type="button"
+                  onClick={() => setMapFilter('all')}
+                  className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all ${
+                    mapFilter === 'all' ? 'text-white bg-travion-600 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
+                  All places <span className="ml-0.5 text-[10px] font-black opacity-80">{chipCount('all') ?? '—'}</span>
+                </button>
+                {MAP_KEY_ORDER.map((f) => {
+                  const count = chipCount(f);
+                  const empty = count === 0;
+                  const label = MAP_LAYERS[f]?.label ?? f;
+                  const color = COLORS[f];
                   return (
-                    <motion.button
-                      key={`${place.id ?? place.name}_${place.category}`}
+                    <button
+                      key={f}
                       type="button"
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => toggle(selected, setSelected, place.name)}
-                      className={`text-left p-4 rounded-2xl border transition-all ${
-                        active
-                          ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                          : 'bg-white border-slate-200 hover:border-travion-200'
+                      disabled={count != null && empty}
+                      title={count === 0 ? 'No verified places in this category yet.' : undefined}
+                      onClick={() => setMapFilter(f)}
+                      className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                        mapFilter === f
+                          ? 'text-white border-transparent shadow-sm'
+                          : 'bg-white text-slate-600 hover:border-slate-300'
                       }`}
+                      style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#0f172a' } : undefined}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{place.name}</p>
-                          {place.description && (
-                            <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{place.description}</p>
-                          )}
-                          <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                            <span className="text-travion-600">{placementLabel(place.placement, place.distance_km)}</span>
-                            {(place.entry_fee ?? 0) > 0 ? <span>· ₹{place.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
-                            {place.rating != null && <span>· ★ {Number(place.rating).toFixed(1)}</span>}
-                          </div>
-                        </div>
-                        <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
-                          active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
-                        }`}>
-                          {active && (
-                            <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                          )}
-                        </span>
-                      </div>
-                    </motion.button>
+                      {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-slate-400'}`}>{count ?? '—'}</span>
+                    </button>
                   );
                 })}
               </div>
-              {places.length > 6 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAll((s) => !s)}
-                  className="mt-3 text-[12px] font-extrabold text-travion-700 hover:text-travion-800"
-                >
-                  {showAll ? 'Show fewer' : `Show all ${places.length} verified places`}
-                </button>
-              )}
-            </>
-            )}
-          </div>
 
-          {/* Best Tourist Spots — the destination's most famous attractions,
-              ranked by popularity rather than preference. DISTINCT from Must
-              Visit (which is AI-preference-matched). Every item is a PLACE
-              inside the destination — never a nearby town (spec §4). */}
-          {touristSpots.length > 0 && (
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <Camera className="w-4 h-4 text-travion-600" /> Best tourist spots
-              <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-emerald-600 normal-case">most popular attractions in {destinationName}</span>
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {touristSpots.map((spot: CatalogPlace) => {
-                const active = selected.has(spot.name);
-                return (
-                  <button
-                    key={`spot_${spot.id ?? spot.name}`}
-                    type="button"
-                    onClick={() => toggle(selected, setSelected, spot.name)}
-                    className={`text-left p-4 rounded-2xl border transition-all ${
-                      active
-                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                        : 'bg-white border-slate-200 hover:border-travion-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{spot.name}</p>
-                        {spot.description && (
-                          <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{spot.description}</p>
-                        )}
-                        <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                          <span className="text-travion-600">{placementLabel(spot.placement, spot.distance_km)}</span>
-                          {(spot.entry_fee ?? 0) > 0 ? <span>· ₹{spot.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
-                          {spot.rating != null && <span>· ★ {Number(spot.rating).toFixed(1)}</span>}
-                        </div>
-                      </div>
-                      <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
-                        active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
-                      }`}>
-                        {active && (
-                          <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                        )}
+              {/* THE MAP — dominates the viewport (spec §1/§18) */}
+              <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
+                <div ref={mapDiv} className="h-[360px] sm:h-[440px] lg:h-[560px] w-full z-0 relative" />
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500">
+                    {(Object.entries(COLORS) as Array<[string, string]>).map(([k, c]) => (
+                      <span key={k} className="inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
+                        {MAP_LAYERS[k]?.label ?? k}
                       </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          )}
-
-          {/* Activities to do — THINGS THE USER CAN DO, never place names
-              (spec §5). Each card shows the ACTION, the real LOCATION where it
-              happens, and the recommended time of day. */}
-          {activities.length > 0 && (
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <Compass className="w-4 h-4 text-travion-600" /> Activities to do
-              <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-emerald-600 normal-case">real experiences at real places</span>
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activities.map((activity: CatalogActivity) => {
-                const active = selected.has(activity.name);
-                return (
-                  <button
-                    key={`act_${activity.id ?? activity.name}`}
-                    type="button"
-                    onClick={() => toggle(selected, setSelected, activity.name)}
-                    className={`text-left p-4 rounded-2xl border transition-all ${
-                      active
-                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                        : 'bg-white border-slate-200 hover:border-travion-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{activity.action}</p>
-                        {activity.description && (
-                          <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{activity.description}</p>
-                        )}
-                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-slate-400">
-                          <span className="inline-flex items-center gap-1 text-travion-700">
-                            <MapPin className="w-3 h-3" /> {activity.location_name}
-                          </span>
-                          {activity.time_of_day && (
-                            <span className="inline-flex items-center gap-1 text-amber-600">
-                              <Clock className="w-3 h-3" /> {activity.time_of_day}
-                            </span>
-                          )}
-                          {activity.duration_minutes != null && <span>· ~{activity.duration_minutes} min</span>}
-                          {activity.rating != null && <span>· ★ {Number(activity.rating).toFixed(1)}</span>}
-                        </div>
-                      </div>
-                      <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide transition-colors ${
-                        active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700'
-                      }`}>
-                        {active ? (
-                          <>
-                            <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                            Added
-                          </>
-                        ) : (
-                          '+ Add Activity'
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          )}
-
-          {/* Live events around the travel dates — only real provider-backed
-              listings; the section disappears entirely when there are none. */}
-          {events.length > 0 && (
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <CalendarDays className="w-4 h-4 text-travion-600" /> Live during your dates
-              <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-slate-400 normal-case">tap to add to your trip</span>
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {events.map((ev) => {
-                const active = selected.has(ev.name);
-                return (
-                  <div
-                    key={ev.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggle(selected, setSelected, ev.name)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggle(selected, setSelected, ev.name); }}
-                    className={`text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                      active
-                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                        : 'bg-white border-slate-200 hover:border-travion-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{ev.name}</p>
-                        {ev.venue && (
-                          <p className="mt-0.5 text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" /> {ev.venue}
-                          </p>
-                        )}
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                          {ev.date && <span className="text-travion-600">{ev.date}{ev.time ? ` · ${ev.time}` : ''}</span>}
-                          {ev.price != null && <span>· ₹{ev.price}</span>}
-                          {ev.booking_url && (
-                            <a
-                              href={ev.booking_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-0.5 text-travion-600 hover:underline"
-                            >
-                              Book <ExternalLink className="w-3 h-3" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
-                        active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
-                      }`}>
-                        {active && (
-                          <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                        )}
-                      </span>
-                    </div>
+                    ))}
                   </div>
-                );
-              })}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={resetView}
+                      className="inline-flex items-center gap-1 text-[11px] font-extrabold text-travion-700 hover:text-travion-800"
+                      title="Reset the map to the whole destination"
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" /> Reset view
+                    </button>
+                    <span className="inline-flex items-center gap-1 text-slate-400 font-medium text-[11px]">
+                      {vpLoading ? (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-travion-500 animate-pulse inline-block" />
+                          Loading places in view…
+                        </>
+                      ) : vpError ? (
+                        <span className="text-amber-600" title={vpError}>⚠ {vpError}</span>
+                      ) : (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                          {viewportPlaces.length} live places in view · pan to explore
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          )}
 
-          {/* Food — hidden entirely when the source has none (never invented) */}
-          {catalog.food.length > 0 && (
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <Utensils className="w-4 h-4 text-travion-600" /> Where to eat
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {catalog.food.map((food: CatalogFood) => {
-                const active = selectedFood.has(food.name);
-                return (
-                  <button
-                    key={food.id ?? food.name}
-                    type="button"
-                    onClick={() => toggle(selectedFood, setSelectedFood, food.name)}
-                    className={`text-left p-4 rounded-2xl border transition-all ${
-                      active
-                        ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100'
-                        : 'bg-white border-slate-200 hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{food.name}</p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500 truncate">{food.cuisine}</p>
-                        <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                          {food.avg_cost_for_two != null && <span>₹{food.avg_cost_for_two} for two</span>}
-                          {food.rating != null && <span>· ★ {Number(food.rating).toFixed(1)}</span>}
-                          <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified</span>
+            {/* ══ RIGHT / BOTTOM: THE EXPLORATION PANEL ══ */}
+            <div className="lg:w-[38%] lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1 lg:flex-none">
+
+              {/* My Plan — the user's live selection. Every Add to Plan lands
+                  here instantly (spec §11/§14); tapping a chip flies the map
+                  back to that exact place (spec §11). */}
+              <div className="mb-6 rounded-3xl border border-travion-100 bg-travion-50/40 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-600">
+                    <ClipboardList className="w-4 h-4 text-travion-600" /> My Plan
+                  </h3>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {totalSelected > 0
+                      ? `${selected.size} place${selected.size === 1 ? '' : 's'} · ${selectedFood.size} food stop${selectedFood.size === 1 ? '' : 's'}${selectedStay ? ' · stay selected' : ''}`
+                      : 'Nothing selected yet — tap pins or cards to add'}
+                  </span>
+                </div>
+                {totalSelected === 0 && !selectedStay ? (
+                  <p className="text-[12px] font-medium text-slate-400">
+                    Places, activities and food stops you add will appear here before your itinerary is organized.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(selected).map((name) => (
+                      <button
+                        key={`mp_${name}`}
+                        type="button"
+                        title="Show on map"
+                        onClick={() => flyToByName(name)}
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-travion-200 text-[11px] font-bold text-slate-700 hover:border-travion-400 transition-colors"
+                      >
+                        {name}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Remove ${name} from plan`}
+                          onClick={(e) => { e.stopPropagation(); toggle(selected, setSelected, name); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggle(selected, setSelected, name); } }}
+                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      </button>
+                    ))}
+                    {Array.from(selectedFood).map((name) => (
+                      <button
+                        key={`mpf_${name}`}
+                        type="button"
+                        title="Show on map"
+                        onClick={() => flyToByName(name)}
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-orange-200 text-[11px] font-bold text-slate-700 hover:border-orange-400 transition-colors"
+                      >
+                        {name}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Remove ${name} from plan`}
+                          onClick={(e) => { e.stopPropagation(); toggle(selectedFood, setSelectedFood, name); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggle(selectedFood, setSelectedFood, name); } }}
+                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      </button>
+                    ))}
+                    {selectedStay && (
+                      <button
+                        type="button"
+                        title="Show on map"
+                        onClick={() => flyToByName(selectedStay.name)}
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-violet-200 text-[11px] font-bold text-slate-700 hover:border-violet-400 transition-colors"
+                      >
+                        {selectedStay.name}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label="Remove stay"
+                          onClick={(e) => { e.stopPropagation(); setSelectedStay(null); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setSelectedStay(null); } }}
+                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <Mountain className="w-4 h-4 text-travion-600" /> Must visit
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] font-bold text-emerald-600 normal-case">✓ verified real places</span>
+                </h3>
+                {places.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center">
+                    <p className="text-[13px] font-bold text-slate-600">
+                      No verified places found for {catalog.destination} right now.
+                    </p>
+                    <p className="mt-1 text-[12px] font-medium text-slate-400">
+                      We only show real, verified places — we never invent attractions. Check back later or try a nearby destination.
+                    </p>
+                  </div>
+                ) : (
+                <>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                    {visiblePlaces.map((place: CatalogPlace) => {
+                      const active = selected.has(place.name);
+                      const focused = highlight?.name === place.name;
+                      return (
+                        <div
+                          key={`${place.id ?? place.name}_${place.category}`}
+                          ref={setCardRef('must_visit', place.name)}
+                          className={`p-4 rounded-2xl border transition-all ${
+                            active
+                              ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                              : focused
+                                ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
+                                : 'bg-white border-slate-200 hover:border-travion-200'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const hit = allMapPlaces.find(({ item }) => item.name === place.name);
+                              if (hit) flyToPlace(hit.key, hit.item);
+                            }}
+                            className="w-full flex items-start justify-between gap-2 text-left"
+                            title={`Show ${place.name} on the map`}
+                            aria-label={`Show ${place.name} on the map`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{place.name}</p>
+                              {place.description && (
+                                <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{place.description}</p>
+                              )}
+                              <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                                <span className="text-travion-600">{placementLabel(place.placement, place.distance_km)}</span>
+                                {(place.entry_fee ?? 0) > 0 ? <span>· ₹{place.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
+                                {place.rating != null && <span>· ★ {Number(place.rating).toFixed(1)}</span>}
+                              </div>
+                            </div>
+                            <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                          </button>
+                          <div className="mt-2.5 flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                            <button
+                              type="button"
+                              onClick={() => toggle(selected, setSelected, place.name)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
+                                active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
+                              }`}
+                            >
+                              {active ? (
+                                <>
+                                  <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                                  Added
+                                </>
+                              ) : '+ Add to Plan'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
-                        active ? 'bg-orange-500 border-orange-500' : 'border-slate-300 bg-white'
-                      }`}>
-                        {active && (
-                          <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          )}
-
-          {/* Stays — single-select radio. The chosen stay is used EVERY night of the trip. */}
-          {catalog.stays.length > 0 && (
-          <div className="mb-8">
-            <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
-              <BedDouble className="w-4 h-4 text-travion-600" /> Pick your stay
-              <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-bold text-slate-400 normal-case">use one stay for the whole trip</span>
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedStay(null)}
-                className={`text-left p-4 rounded-2xl border transition-all ${
-                  selectedStay === null
-                    ? 'bg-slate-50 border-slate-400 ring-2 ring-slate-100'
-                    : 'bg-white border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <p className="text-[13.5px] font-extrabold text-slate-900">Continue without a stay</p>
-                <p className="mt-1 text-[11px] font-medium text-slate-500">Plans will be day-trip style — great for low budgets.</p>
-                <span className={`mt-2 inline-flex w-4 h-4 rounded-full border items-center justify-center ${
-                  selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-slate-300'
-                }`}>
-                  {selectedStay === null && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                </span>
-              </button>
-              {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).map((stay: CatalogStay) => {
-                const active = selectedStay?.name === stay.name;
-                return (
-                  <button
-                    key={stay.id ?? stay.name}
-                    type="button"
-                    onClick={() => setSelectedStay({
-                      id: stay.id ?? null,
-                      name: stay.name,
-                      latitude: stay.latitude ?? null,
-                      longitude: stay.longitude ?? null,
-                      distance_km: stay.distance_km ?? null,
-                      budget_category: stay.budget_category ?? null,
-                      price_per_night: stay.price_per_night ?? null,
+                      );
                     })}
+                  </div>
+                  {places.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAll((s) => !s)}
+                      className="mt-3 text-[12px] font-extrabold text-travion-700 hover:text-travion-800"
+                    >
+                      {showAll ? 'Show fewer' : `Show all ${places.length} verified places`}
+                    </button>
+                  )}
+                </>
+                )}
+              </div>
+
+              {/* Best Tourist Spots — the destination's most famous attractions,
+                  ranked by popularity rather than preference. DISTINCT from Must
+                  Visit (which is AI-preference-matched). Every item is a PLACE
+                  inside the destination — never a nearby town (spec §4). */}
+              {touristSpots.length > 0 && (
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <Camera className="w-4 h-4 text-travion-600" /> Best tourist spots
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] font-bold text-emerald-600 normal-case">most popular attractions in {destinationName}</span>
+                </h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                  {touristSpots.map((spot: CatalogPlace) => {
+                    const active = selected.has(spot.name);
+                    const focused = highlight?.name === spot.name;
+                    return (
+                      <div
+                        key={`spot_${spot.id ?? spot.name}`}
+                        ref={setCardRef('must_visit', spot.name)}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          active
+                            ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                            : focused
+                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
+                              : 'bg-white border-slate-200 hover:border-travion-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hit = allMapPlaces.find(({ item }) => item.name === spot.name);
+                            if (hit) flyToPlace(hit.key, hit.item);
+                          }}
+                          className="w-full flex items-start justify-between gap-2 text-left"
+                          title={`Show ${spot.name} on the map`}
+                          aria-label={`Show ${spot.name} on the map`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{spot.name}</p>
+                            {spot.description && (
+                              <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{spot.description}</p>
+                            )}
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                              <span className="text-travion-600">{placementLabel(spot.placement, spot.distance_km)}</span>
+                              {(spot.entry_fee ?? 0) > 0 ? <span>· ₹{spot.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
+                              {spot.rating != null && <span>· ★ {Number(spot.rating).toFixed(1)}</span>}
+                            </div>
+                          </div>
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                        </button>
+                        <div className="mt-2.5 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={() => toggle(selected, setSelected, spot.name)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
+                              active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
+                            }`}
+                          >
+                            {active ? (
+                              <>
+                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                                Added
+                              </>
+                            ) : '+ Add to Plan'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              )}
+
+              {/* Activities to do — THINGS THE USER CAN DO, never place names
+                  (spec §5). Each card shows the ACTION, the real LOCATION where
+                  it happens, and the recommended time of day. Tapping the card
+                  flies the map to the activity's exact real location (§8). */}
+              {activities.length > 0 && (
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <Compass className="w-4 h-4 text-travion-600" /> Activities to do
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] font-bold text-emerald-600 normal-case">real experiences at real places</span>
+                </h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                  {activities.map((activity: CatalogActivity) => {
+                    const active = selected.has(activity.name);
+                    const focused = highlight?.name === activity.location_name;
+                    return (
+                      <div
+                        key={`act_${activity.id ?? activity.name}`}
+                        ref={setCardRef('activities', activity.name)}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          active
+                            ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                            : focused
+                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
+                              : 'bg-white border-slate-200 hover:border-travion-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (activity.latitude && activity.longitude) {
+                              flyToPlace('activities', {
+                                name: activity.location_name || activity.name,
+                                category: 'activities',
+                                latitude: activity.latitude,
+                                longitude: activity.longitude,
+                                address: activity.description ?? null,
+                                source: activity.source || 'derived',
+                                verified: true,
+                              });
+                            }
+                          }}
+                          className="w-full flex items-start justify-between gap-2 text-left"
+                          title={`Show ${activity.location_name} on the map`}
+                          aria-label={`Show ${activity.location_name} on the map`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{activity.action}</p>
+                            {activity.description && (
+                              <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{activity.description}</p>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-slate-400">
+                              <span className="inline-flex items-center gap-1 text-travion-700">
+                                <MapPin className="w-3 h-3" /> {activity.location_name}
+                              </span>
+                              {activity.time_of_day && (
+                                <span className="inline-flex items-center gap-1 text-amber-600">
+                                  <Clock className="w-3 h-3" /> {activity.time_of_day}
+                                </span>
+                              )}
+                              {activity.duration_minutes != null && <span>· ~{activity.duration_minutes} min</span>}
+                              {activity.rating != null && <span>· ★ {Number(activity.rating).toFixed(1)}</span>}
+                            </div>
+                          </div>
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                        </button>
+                        <div className="mt-2.5 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400">tap → see location on map</span>
+                          <button
+                            type="button"
+                            onClick={() => toggle(selected, setSelected, activity.name)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
+                              active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
+                            }`}
+                          >
+                            {active ? (
+                              <>
+                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                                Added
+                              </>
+                            ) : '+ Add Activity'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              )}
+
+              {/* Live events around the travel dates — only real provider-backed
+                  listings; the section disappears entirely when there are none. */}
+              {events.length > 0 && (
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <CalendarDays className="w-4 h-4 text-travion-600" /> Live during your dates
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] font-bold text-slate-400 normal-case">tap to add to your trip</span>
+                </h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                  {events.map((ev) => {
+                    const active = selected.has(ev.name);
+                    return (
+                      <div
+                        key={ev.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggle(selected, setSelected, ev.name)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggle(selected, setSelected, ev.name); }}
+                        className={`text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                            : 'bg-white border-slate-200 hover:border-travion-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{ev.name}</p>
+                            {ev.venue && (
+                              <p className="mt-0.5 text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                                <MapPin className="w-3 h-3" /> {ev.venue}
+                              </p>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                              {ev.date && <span className="text-travion-600">{ev.date}{ev.time ? ` · ${ev.time}` : ''}</span>}
+                              {ev.price != null && <span>· ₹{ev.price}</span>}
+                              {ev.booking_url && (
+                                <a
+                                  href={ev.booking_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-0.5 text-travion-600 hover:underline"
+                                >
+                                  Book <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
+                            active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
+                          }`}>
+                            {active && (
+                              <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              )}
+
+              {/* Food — hidden entirely when the source has none (never invented) */}
+              {catalog.food.length > 0 && (
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <Utensils className="w-4 h-4 text-travion-600" /> Where to eat
+                </h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                  {catalog.food.map((food: CatalogFood) => {
+                    const active = selectedFood.has(food.name);
+                    const focused = highlight?.name === food.name;
+                    return (
+                      <div
+                        key={food.id ?? food.name}
+                        ref={setCardRef('food', food.name)}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          active
+                            ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100'
+                            : focused
+                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
+                              : 'bg-white border-slate-200 hover:border-orange-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hit = allMapPlaces.find(({ item }) => item.name === food.name);
+                            if (hit) flyToPlace(hit.key, hit.item);
+                          }}
+                          className="w-full flex items-start justify-between gap-2 text-left"
+                          title={`Show ${food.name} on the map`}
+                          aria-label={`Show ${food.name} on the map`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{food.name}</p>
+                            <p className="mt-0.5 text-[11px] font-medium text-slate-500 truncate">{food.cuisine}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                              {food.avg_cost_for_two != null && <span>₹{food.avg_cost_for_two} for two</span>}
+                              {food.rating != null && <span>· ★ {Number(food.rating).toFixed(1)}</span>}
+                              <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified</span>
+                            </div>
+                          </div>
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                        </button>
+                        <div className="mt-2.5 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={() => toggle(selectedFood, setSelectedFood, food.name)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
+                              active ? 'bg-orange-500 text-white' : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                            }`}
+                          >
+                            {active ? (
+                              <>
+                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                                Added
+                              </>
+                            ) : '+ Add to Plan'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              )}
+
+              {/* Stays — single-select radio. The chosen stay is used EVERY night of the trip. */}
+              {catalog.stays.length > 0 && (
+              <div className="mb-6">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                  <BedDouble className="w-4 h-4 text-travion-600" /> Pick your stay
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] font-bold text-slate-400 normal-case">use one stay for the whole trip</span>
+                </h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStay(null)}
                     className={`text-left p-4 rounded-2xl border transition-all ${
-                      active
-                        ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                        : 'bg-white border-slate-200 hover:border-travion-200'
+                      selectedStay === null
+                        ? 'bg-slate-50 border-slate-400 ring-2 ring-slate-100'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        {stay.tier && <p className="text-[10px] font-black uppercase tracking-wide text-travion-700">{stay.tier}</p>}
-                        <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug mt-0.5">{stay.name}</p>
-                        <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
-                          {stay.price_per_night
-                            ? <span>₹{Number(stay.price_per_night).toLocaleString('en-IN')}/night</span>
-                            : <span>Price not available</span>}
-                          {stay.rating != null && <span>· ★ {Number(stay.rating).toFixed(1)}</span>}
-                          {stay.distance_km != null && <span className="text-travion-600">· {stay.distance_km} km</span>}
-                        </div>
-                        {stay.budget_category && (
-                          <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
-                            {stay.budget_category}
-                          </span>
-                        )}
-                      </div>
-                      <span className={`mt-0.5 inline-flex w-5 h-5 shrink-0 rounded-full border items-center justify-center ${
-                        active ? 'bg-travion-500 border-travion-600' : 'border-slate-300 bg-white'
-                      }`}>
-                        {active && <span className="w-2 h-2 rounded-full bg-white" />}
-                      </span>
-                    </div>
+                    <p className="text-[13.5px] font-extrabold text-slate-900">Continue without a stay</p>
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">Plans will be day-trip style — great for low budgets.</p>
+                    <span className={`mt-2 inline-flex w-4 h-4 rounded-full border items-center justify-center ${
+                      selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-slate-300'
+                    }`}>
+                      {selectedStay === null && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </span>
                   </button>
-                );
-              })}
-            </div>
-          </div>
-          )}
-
-          {/* Over-budget warning — selected entry fees exceed what the budget can hold */}
-          {!budgetTier?.impossible && budgetPanel?.maximum_allowed_spend != null && selectedEntryFees > budgetPanel.maximum_allowed_spend && (
-            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-[12px] font-bold text-amber-700">
-                Selected entry fees add up to ₹{selectedEntryFees.toLocaleString('en-IN')}, more than your budget of ₹{Math.round(budgetPanel.maximum_allowed_spend).toLocaleString('en-IN')}. Drop a few paid places or the plan can't stay within budget.
-              </p>
-            </div>
-          )}
-
-          {/* Live selection estimate — no hidden costs, updated as you pick */}
-          {(totalSelected > 0 || selectedStay) && (
-            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-slate-600">
-              <span className="text-slate-500">
-                Estimated add-on spend so far
-              </span>
-              <span className="text-travion-700">
-                ₹{selectedEntryFees.toLocaleString('en-IN')} entry fees
-                {selectedStayCost > 0 && <> · ₹{selectedStayCost.toLocaleString('en-IN')}/night stay</>}
-              </span>
-            </div>
-          )}
-
-          {/* Sticky action bar */}
-          <div className="sticky bottom-4 z-10">
-            <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-slate-200 shadow-floating px-5 py-4">
-              <button type="button" onClick={onBack} className="text-[13px] font-bold text-slate-500 hover:text-slate-700">
-                Back
-              </button>
-              {!hasNothing && (
-                <button
-                  type="button"
-                  disabled={busy || !!budgetTier?.impossible}
-                  onClick={handleConfirm}
-                  className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
-                >
-                  {budgetTier?.impossible ? 'Budget too low for plans'
-                    : busy ? 'Generating your plans…' : 'Continue to Trip Planning'}
-                  {!busy && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
-                </button>
+                  {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).map((stay: CatalogStay) => {
+                    const active = selectedStay?.name === stay.name;
+                    const focused = highlight?.name === stay.name;
+                    return (
+                      <div
+                        key={stay.id ?? stay.name}
+                        ref={setCardRef('stays', stay.name)}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          active
+                            ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
+                            : focused
+                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
+                              : 'bg-white border-slate-200 hover:border-travion-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hit = allMapPlaces.find(({ item }) => item.name === stay.name);
+                            if (hit) flyToPlace(hit.key, hit.item);
+                          }}
+                          className="w-full flex items-start justify-between gap-2 text-left"
+                          title={`Show ${stay.name} on the map`}
+                          aria-label={`Show ${stay.name} on the map`}
+                        >
+                          <div className="min-w-0">
+                            {stay.tier && <p className="text-[10px] font-black uppercase tracking-wide text-travion-700">{stay.tier}</p>}
+                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug mt-0.5">{stay.name}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                              {stay.price_per_night
+                                ? <span>₹{Number(stay.price_per_night).toLocaleString('en-IN')}/night</span>
+                                : <span>Price not available</span>}
+                              {stay.rating != null && <span>· ★ {Number(stay.rating).toFixed(1)}</span>}
+                              {stay.distance_km != null && <span className="text-travion-600">· {stay.distance_km} km</span>}
+                            </div>
+                            {stay.budget_category && (
+                              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                                {stay.budget_category}
+                              </span>
+                            )}
+                          </div>
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                        </button>
+                        <div className="mt-2.5 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400">tap name → see on map</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStay({
+                              id: stay.id ?? null,
+                              name: stay.name,
+                              latitude: stay.latitude ?? null,
+                              longitude: stay.longitude ?? null,
+                              distance_km: stay.distance_km ?? null,
+                              budget_category: stay.budget_category ?? null,
+                              price_per_night: stay.price_per_night ?? null,
+                            })}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
+                              active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
+                            }`}
+                          >
+                            {active ? (
+                              <>
+                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
+                                My stay
+                              </>
+                            ) : 'Select stay'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               )}
-              {hasNothing && (
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-slate-200 text-slate-400 text-sm font-extrabold cursor-not-allowed"
-                >
-                  No verified places to add yet
-                </button>
+
+              {/* Over-budget warning — selected entry fees exceed what the budget can hold */}
+              {!budgetTier?.impossible && budgetPanel?.maximum_allowed_spend != null && selectedEntryFees > budgetPanel.maximum_allowed_spend && (
+                <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[12px] font-bold text-amber-700">
+                    Selected entry fees add up to ₹{selectedEntryFees.toLocaleString('en-IN')}, more than your budget of ₹{Math.round(budgetPanel.maximum_allowed_spend).toLocaleString('en-IN')}. Drop a few paid places or the plan can't stay within budget.
+                  </p>
+                </div>
               )}
+
+              {/* Live selection estimate — no hidden costs, updated as you pick */}
+              {(totalSelected > 0 || selectedStay) && (
+                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-slate-600">
+                  <span className="text-slate-500">
+                    Estimated add-on spend so far
+                  </span>
+                  <span className="text-travion-700">
+                    ₹{selectedEntryFees.toLocaleString('en-IN')} entry fees
+                    {selectedStayCost > 0 && <> · ₹{selectedStayCost.toLocaleString('en-IN')}/night stay</>}
+                  </span>
+                </div>
+              )}
+
+              {/* Sticky action bar (inside the scrollable panel on desktop) */}
+              <div className="sticky bottom-4 z-10">
+                <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-slate-200 shadow-floating px-5 py-4">
+                  <button type="button" onClick={onBack} className="text-[13px] font-bold text-slate-500 hover:text-slate-700">
+                    Back
+                  </button>
+                  {!hasNothing && (
+                    <button
+                      type="button"
+                      disabled={busy || !!budgetTier?.impossible}
+                      onClick={handleConfirm}
+                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
+                    >
+                      {budgetTier?.impossible ? 'Budget too low for plans'
+                        : busy ? 'Generating your plans…' : 'Continue to Trip Planning'}
+                      {!busy && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
+                    </button>
+                  )}
+                  {hasNothing && (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-slate-200 text-slate-400 text-sm font-extrabold cursor-not-allowed"
+                    >
+                      No verified places to add yet
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </>
       )}
 
-      {/* ── Map pin popup: place details + explicit Add to Plan (spec §2) ── */}
+      {/* ── Map pin popup: place details + explicit Add to Plan (spec §9/§10) ── */}
       <AnimatePresence>
         {popupPlace && (() => {
           const p = popupPlace.item;
@@ -1253,6 +1543,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     {(p as MapPlace).opening_hours && <span>🕘 {(p as MapPlace).opening_hours}</span>}
                     {p.distance_km != null && <span>{p.distance_km} km from centre</span>}
                     <span className="text-travion-600">{placementLabel(p.placement, p.distance_km)}</span>
+                    <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified place data</span>
                   </div>
                   {kind === 'stay' ? (
                     <button

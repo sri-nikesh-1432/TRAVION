@@ -231,10 +231,11 @@ def viewport_places_endpoint(
             geo.BASE_CATEGORIES["must_visit"] + geo.BASE_CATEGORIES["food"]
             + geo.BASE_CATEGORIES["stays"] + geo.BASE_CATEGORIES["activities"]
             + geo.EXPERIENCE_CATEGORIES.get(str(experience or "mixed").strip().lower(), [])
-            + ["commercial.marketplace", "commercial.shopping_mall", "healthcare.hospital",
-               "public_transport"]  # parent category — subcategories like
-            # public_transport.railway/aerodrome are NOT in this key's plan
-            # (provider 400s the whole batched request when one category is invalid)
+            + ["commercial", "healthcare", "education",
+               "public_transport.bus", "public_transport.subway", "airport"]
+            # Validated live per key plan: the bare `public_transport` parent
+            # returns 200 with ZERO features and `.railway`/`.taxi` 400 — the
+            # covered children above return real stations/airports.
         ))
     region = geo.rect_filter(south, west, north, east)
     features = geo.places(cats, region, limit=limit)

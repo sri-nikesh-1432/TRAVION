@@ -1158,10 +1158,20 @@ def _discover_google_map(
 # The map's GeoApify tier: ONE batched request covers every broader map
 # category (validated live taxonomy only).
 _MAP_GEOAPIFY_CATEGORIES: Dict[str, List[str]] = {
-    "shopping": ["commercial.marketplace", "commercial.shopping_mall"],
+    # Parent categories (validated live against /v2/places — HTTP 200) so each
+    # map layer pulls the provider's FULL breadth: "commercial" alone covers
+    # marketplaces, malls and every shop subtype that the two narrow children
+    # used to miss (the old "Shopping 3" bug).
+    "shopping": ["commercial"],
     "healthcare": ["healthcare"],
     "education": ["education"],
-    "transport": ["public_transport"],
+    # Validated live per key plan: the bare `public_transport` parent returns
+    # HTTP 200 with ZERO features and `.railway`/`.taxi` 400 — while .bus,
+    # .subway, .ferry and `airport` return real stations/airports. The
+    # per-category request architecture isolates any provider-side category
+    # change so one 400 can never blank the other map layers.
+    "transport": ["public_transport.bus", "public_transport.subway",
+                  "public_transport.ferry", "airport"],
     "other": ["entertainment", "catering.bar"],
 }
 
@@ -1171,39 +1181,52 @@ def _discover_geoapify_map(
     api_key: str,
     bounds: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """The map's FAST GeoApify tier — a single batched request returning real
-    shopping/healthcare/education/transport/entertainment POIs across the
-    destination area. Empty buckets on any failure."""
+    """The map's FAST GeoApify tier — ONE dedicated request PER map category
+    (shopping/healthcare/education/transport/other), each across the whole
+    destination area, each with its own pagination.
+
+    WHY per-category requests (root-cause fix for "Shopping 0 / Healthcare 0"):
+    a single batched request's 100-result page is dominated by whichever
+    category is densest in the destination — big cities returned page after
+    page of commercial POIs while healthcare/education/transport got 0-3
+    slots. One request per category gives every map layer its own full
+    provider page so no category shows 0 while real data exists (product
+    spec: every displayed category targets 10-15 real POIs — never fabricated
+    filler, so a category the provider genuinely cannot cover stays empty)."""
     buckets: Dict[str, List[Dict[str, Any]]] = {c: [] for c in MAP_CATEGORIES}
     geo_filter = _geoapify_filter(bounds, resolved)
     if not geo_filter:
         return buckets
-    all_cats: List[str] = []
-    for cats in _MAP_GEOAPIFY_CATEGORIES.values():
-        all_cats.extend(cats)
-    features = _geoapify_fetch(list(dict.fromkeys(all_cats)), geo_filter, api_key)
-    for feature in features:
-        props = feature.get("properties") or {}
-        cats = props.get("categories") or []
-        target: Optional[str] = None
-        for c in cats or []:
-            if c.startswith("commercial."):
-                target = "shopping"
-            elif c.startswith("healthcare."):
-                target = "healthcare"
-            elif c.startswith("education."):
-                target = "education"
-            elif c.startswith("public_transport."):
-                target = "transport"
-            elif c.startswith("entertainment.") or c == "catering.bar":
-                target = "other"
-            if target:
-                break
-        if not target:
-            continue
-        item = _geoapify_item(feature, target)
-        if item:
-            buckets[target].append(item)
+    for target, cats in _MAP_GEOAPIFY_CATEGORIES.items():
+        wanted = list(dict.fromkeys(cats))
+        try:
+            page = _geoapify_fetch(wanted, geo_filter, api_key)
+        except Exception:
+            continue  # one category's failure must never blank the other layers
+        items: List[Dict[str, Any]] = []
+        for feature in page:
+            item = _geoapify_item(feature, target)
+            if item:
+                items.append(item)
+        # PAGE 2 — the provider reported MORE real matches for THIS category
+        # than one page held: pull the next page so the layer reaches its
+        # 10-15+ target from real results (never fabricated filler). The total
+        # is keyed per query, so provider-bypassing test mocks can never
+        # trigger a phantom second page.
+        try:
+            from app.services import geoapify as _geo_svc
+            total = _geo_svc.last_total_for(wanted, geo_filter, 0)
+        except Exception:
+            total = 0
+        if page and total > len(page):
+            try:
+                for feature in _geoapify_fetch(wanted, geo_filter, api_key, offset=len(page)):
+                    item = _geoapify_item(feature, target)
+                    if item:
+                        items.append(item)
+            except Exception:
+                pass  # page-2 is best-effort; page-1 results still stand
+        buckets[target].extend(items)
     return buckets
 
 
@@ -1247,10 +1270,12 @@ def discover_map(
                 buckets[k].extend(v)
         except Exception:
             pass
-    # Overpass top-up ONLY when the fast tiers essentially failed (4+ of 5 map
-    # categories empty) — the free API is slow and must never gate Step 3
-    # latency when a keyed tier already delivered real data.
-    if sum(1 for c in MAP_CATEGORIES if not buckets[c]) >= len(MAP_CATEGORIES) - 1:
+    # Overpass top-up PER CATEGORY still empty: the free API is slow, but a
+    # genuinely empty map layer is worse (product rule: a displayed category
+    # must not show 0 while real mapped POIs exist). The query+response are
+    # TTL-cached, so repeat Step-3 loads for the destination are instant; the
+    # keyed tiers above remain the fast primary path.
+    if any(not buckets[c] for c in MAP_CATEGORIES):
         try:
             osm = _discover_map_osm(resolved, bounds=bounds)
             for k, v in osm.items():
