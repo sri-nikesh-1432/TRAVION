@@ -191,7 +191,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
         <span>Personalizing Your Experience · Question {answeredCount + 1} of {totalEstimated}</span>
       </div>
 
-      <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-6 leading-tight">
+      <h3 className="text-xl md:text-2xl font-extrabold text-charcoal-900 mb-6 leading-tight">
         {questionText}
       </h3>
 
@@ -209,7 +209,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
                   className={`p-4 rounded-2xl border text-left font-bold text-sm transition-all flex items-center justify-between ${
                     isSelected
                       ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
-                      : 'border-slate-200 hover:border-travion-300 text-slate-700 bg-white'
+                      : 'border-charcoal-200 hover:border-travion-300 text-charcoal-700 bg-white'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -231,7 +231,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
               className={`p-4 rounded-2xl border text-left font-bold text-sm transition-all flex items-center justify-between sm:col-span-2 ${
                 isCustomBudget
                   ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
-                  : 'border-dashed border-slate-300 hover:border-travion-300 text-slate-700 bg-white'
+                  : 'border-dashed border-charcoal-300 hover:border-travion-300 text-charcoal-700 bg-white'
               }`}
             >
               <span className="flex items-center gap-2.5">
@@ -255,30 +255,30 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
             >
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">From</label>
+                  <label className="block text-xs font-bold text-charcoal-500 mb-1">From</label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₹</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-charcoal-400">₹</span>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={budgetFrom}
                       onChange={(e) => setBudgetFrom(onlyDigits(e.target.value))}
                       placeholder="8000"
-                      className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200 text-base font-bold text-slate-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                      className="w-full pl-8 pr-4 py-3 rounded-2xl border border-charcoal-200 text-base font-bold text-charcoal-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">To</label>
+                  <label className="block text-xs font-bold text-charcoal-500 mb-1">To</label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₹</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-charcoal-400">₹</span>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={budgetTo}
                       onChange={(e) => setBudgetTo(onlyDigits(e.target.value))}
                       placeholder="10000"
-                      className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200 text-base font-bold text-slate-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                      className="w-full pl-8 pr-4 py-3 rounded-2xl border border-charcoal-200 text-base font-bold text-charcoal-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -319,7 +319,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
                   className={`p-4 rounded-2xl border text-left font-bold text-sm transition-all flex items-center justify-between ${
                     isSelected
                       ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
-                      : 'border-slate-200 hover:border-travion-300 text-slate-700 bg-white'
+                      : 'border-charcoal-200 hover:border-travion-300 text-charcoal-700 bg-white'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -344,41 +344,41 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
               className="mt-4"
             >
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">How many people are travelling?</label>
+                <label className="block text-xs font-bold text-charcoal-500 mb-1">How many people are travelling?</label>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={totalTravellers}
                   onChange={(e) => setTotalTravellers(onlyDigits(e.target.value))}
                   placeholder="6"
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-base font-bold text-slate-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                  className="w-full px-4 py-3 rounded-2xl border border-charcoal-200 text-base font-bold text-charcoal-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
                 />
               </div>
 
               {totalTravellers && (
                 <div className="mt-3">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Split (optional)</label>
+                  <label className="block text-xs font-bold text-charcoal-500 mb-1">Split (optional)</label>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-1">Adults</label>
+                      <label className="block text-[11px] font-bold text-charcoal-400 mb-1">Adults</label>
                       <input
                         type="text"
                         inputMode="numeric"
                         value={adults}
                         onChange={(e) => setAdults(onlyDigits(e.target.value))}
                         placeholder="4"
-                        className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-base font-bold text-slate-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                        className="w-full px-4 py-2.5 rounded-2xl border border-charcoal-200 text-base font-bold text-charcoal-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-1">Children</label>
+                      <label className="block text-[11px] font-bold text-charcoal-400 mb-1">Children</label>
                       <input
                         type="text"
                         inputMode="numeric"
                         value={children}
                         onChange={(e) => setChildren(onlyDigits(e.target.value))}
                         placeholder="2"
-                        className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-base font-bold text-slate-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                        className="w-full px-4 py-2.5 rounded-2xl border border-charcoal-200 text-base font-bold text-charcoal-800 focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -411,7 +411,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
                 className={`p-4 rounded-2xl border text-left transition-all ${
                   isSelected
                     ? 'border-travion-500 bg-travion-50/70 shadow-sm ring-2 ring-travion-200'
-                    : 'border-slate-200 hover:border-travion-300 bg-white'
+                    : 'border-charcoal-200 hover:border-travion-300 bg-white'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
@@ -424,8 +424,8 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
                     </span>
                   )}
                 </div>
-                <p className={`text-[14.5px] font-extrabold ${isSelected ? 'text-travion-800' : 'text-slate-900'}`}>{label}</p>
-                <p className="mt-1 text-[11.5px] font-medium text-slate-500 leading-relaxed">{description}</p>
+                <p className={`text-[14.5px] font-extrabold ${isSelected ? 'text-travion-800' : 'text-charcoal-900'}`}>{label}</p>
+                <p className="mt-1 text-[11.5px] font-medium text-charcoal-500 leading-relaxed">{description}</p>
               </button>
             );
           })}
@@ -447,7 +447,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
                   className={`p-4 rounded-2xl border text-left font-semibold text-sm transition-all flex items-center justify-between ${
                     isSelected
                       ? 'border-travion-500 bg-travion-50/70 text-travion-900 shadow-sm ring-2 ring-travion-200'
-                      : 'border-slate-200 hover:border-travion-300 text-slate-700 bg-white'
+                      : 'border-charcoal-200 hover:border-travion-300 text-charcoal-700 bg-white'
                   }`}
                 >
                   <span>{label}</span>
@@ -464,12 +464,12 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
       )}
 
       {/* Bottom Controls */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+      <div className="flex items-center justify-between pt-4 border-t border-charcoal-100">
         {onBack ? (
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-charcoal-500 hover:text-charcoal-800 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back</span>

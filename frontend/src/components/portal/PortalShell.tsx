@@ -54,10 +54,10 @@ export const PortalShell: React.FC<PortalShellProps> = ({
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12.5px] font-bold transition-all ${
                 isActive
                   ? isAdmin ? 'bg-white/10 text-white' : 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-charcoal-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <span className={`${isActive ? 'text-white' : 'text-slate-500'}`}>{item.icon}</span>
+              <span className={`${isActive ? 'text-white' : 'text-charcoal-500'}`}>{item.icon}</span>
               <span className="flex-1 text-left truncate">{item.label}</span>
               {item.badge != null && (
                 <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[9.5px] font-black flex items-center justify-center ${isActive ? 'bg-white text-travion-600' : 'bg-travion-500 text-white'}`}>
@@ -76,9 +76,9 @@ export const PortalShell: React.FC<PortalShellProps> = ({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10.5px] font-bold text-white truncate">{sessionEmail}</p>
-            <p className="text-[9px] font-semibold text-slate-400">{isAdmin ? 'Administrator' : 'Operations Manager'}</p>
+            <p className="text-[9px] font-semibold text-charcoal-400">{isAdmin ? 'Administrator' : 'Operations Manager'}</p>
           </div>
-          <button onClick={onLogout} className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-colors" title="Sign out">
+          <button onClick={onLogout} className="p-2 rounded-lg text-charcoal-400 hover:text-rose-400 hover:bg-white/5 transition-colors" title="Sign out">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -108,14 +108,14 @@ export const PortalShell: React.FC<PortalShellProps> = ({
 
       <div className="lg:pl-60 flex flex-col min-h-screen">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-slate-200/80 px-4 md:px-6 py-3 flex items-center gap-3">
-          <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100">
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-charcoal-200/80 px-4 md:px-6 py-3 flex items-center gap-3">
+          <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl text-charcoal-500 hover:bg-sand-100">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-charcoal-400">
             <span>{subtitle}</span>
             <ChevronRight className="w-3 h-3" />
-            <span className="text-slate-900">{activeLabel}</span>
+            <span className="text-charcoal-900">{activeLabel}</span>
           </div>
         </header>
 

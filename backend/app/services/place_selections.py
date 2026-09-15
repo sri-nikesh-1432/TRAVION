@@ -11,7 +11,9 @@ on the exact REAL place the user picked — nothing invented, nothing name-guess
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import uuid
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.entities import TripPlaceSelection
@@ -73,15 +75,35 @@ def upsert_selection(
         TripPlaceSelection.provider_place_id == key,
     ).first()
     if row is None:
-        row = TripPlaceSelection(
-            trip_id=trip_id,
-            user_id=user_id,
-            provider_place_id=key,
-            status="active",
-            selected_at=_utcnow(),
-            selection_source=str(item.get("selection_source") or default_source or "map"),
+        now = _utcnow()
+        src = str(item.get("selection_source") or default_source or "map")
+        # INSERT OR IGNORE is atomic: concurrent requests silently skip the
+        # duplicate instead of raising IntegrityError / PendingRollbackError.
+        db.execute(
+            text(
+                "INSERT OR IGNORE INTO trip_place_selections"
+                " (id, trip_id, user_id, provider_place_id, name, category,"
+                "  status, selected_at, selection_source, created_at)"
+                " VALUES"
+                " (:id, :trip_id, :user_id, :key, :name, :category,"
+                "  'active', :ts, :src, :ts)"
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "trip_id": trip_id,
+                "user_id": user_id,
+                "key": key,
+                "name": str(item.get("name") or ""),
+                "category": str(item.get("category") or "must_visit"),
+                "ts": now,
+                "src": src,
+            },
         )
-        db.add(row)
+        db.flush()
+        row = db.query(TripPlaceSelection).filter(
+            TripPlaceSelection.trip_id == trip_id,
+            TripPlaceSelection.provider_place_id == key,
+        ).first()
     row.place_id = item.get("place_id") or row.place_id
     row.name = str(item.get("name") or row.name or "")
     row.category = str(item.get("category") or "must_visit")

@@ -22,7 +22,7 @@ const SuspenseShell: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center animate-pulse">
             <Compass className="w-5 h-5 text-white" />
           </span>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Loading Travion…</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-charcoal-400">Loading Travion…</p>
         </div>
       </div>
     }

@@ -34,9 +34,9 @@ export const ReplanningNotice: React.FC<ReplanningNoticeProps> = ({
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-travion-100 text-travion-700">
                 Itinerary v{newVersion} Active
               </span>
-              <span className="text-xs font-semibold text-slate-400">Dynamic AI Adaptation</span>
+              <span className="text-xs font-semibold text-charcoal-400">Dynamic AI Adaptation</span>
             </div>
-            <h4 className="text-sm font-bold text-slate-900 mt-0.5">
+            <h4 className="text-sm font-bold text-charcoal-900 mt-0.5">
               {reason}
             </h4>
           </div>
@@ -52,7 +52,7 @@ export const ReplanningNotice: React.FC<ReplanningNoticeProps> = ({
           </button>
           <button
             onClick={onDismiss}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+            className="p-1.5 text-charcoal-400 hover:text-charcoal-600 rounded-full hover:bg-sand-100"
           >
             <X className="w-4 h-4" />
           </button>
@@ -66,7 +66,7 @@ export const ReplanningNotice: React.FC<ReplanningNoticeProps> = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-700 leading-relaxed font-medium bg-travion-50/50 rounded-2xl p-3.5"
+            className="mt-3 pt-3 border-t border-charcoal-100 text-xs text-charcoal-700 leading-relaxed font-medium bg-travion-50/50 rounded-2xl p-3.5"
           >
             <div className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-travion-600 shrink-0 mt-0.5" />

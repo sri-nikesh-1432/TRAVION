@@ -143,7 +143,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
             <SplitRow label="Total platform transactions" amount={revenue?.total_platform_transactions ?? 0} strong />
             <SplitRow label="Actual platform revenue (fees)" amount={revenue?.actual_platform_revenue ?? 0} tone="indigo" />
             <SplitRow label="Guide fees held for settlement" amount={revenue?.total_guide_fees_payout ?? 0} tone="emerald" />
-            <p className="pt-2 text-[10.5px] leading-relaxed font-semibold text-slate-400">
+            <p className="pt-2 text-[10.5px] leading-relaxed font-semibold text-charcoal-400">
               Traveller payments are split at payment time into the guide pool and platform commission. The estimated travel budget is never counted as Travion revenue.
             </p>
           </div>
@@ -161,11 +161,11 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <ResponsiveTable
           rows={filtered} empty="No users registered yet"
           columns={[
-            { key: 'name', label: 'User', render: (r) => <span className="font-extrabold text-slate-900">{r.name}</span> },
-            { key: 'email', label: 'Email', render: (r) => <span className="text-slate-500">{r.email}</span> },
-            { key: 'preferred_language', label: 'Language', render: (r) => <span className="text-slate-500">{r.preferred_language || '—'}</span> },
-            { key: 'home_city', label: 'Home city', render: (r) => <span className="text-slate-500">{r.home_city || '—'}</span> },
-            { key: 'created_at', label: 'Joined', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
+            { key: 'name', label: 'User', render: (r) => <span className="font-extrabold text-charcoal-900">{r.name}</span> },
+            { key: 'email', label: 'Email', render: (r) => <span className="text-charcoal-500">{r.email}</span> },
+            { key: 'preferred_language', label: 'Language', render: (r) => <span className="text-charcoal-500">{r.preferred_language || '—'}</span> },
+            { key: 'home_city', label: 'Home city', render: (r) => <span className="text-charcoal-500">{r.home_city || '—'}</span> },
+            { key: 'created_at', label: 'Joined', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
           ]}
         />
       </SectionCard>
@@ -181,10 +181,10 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <ResponsiveTable
           rows={filtered} empty="No guides yet"
           columns={[
-            { key: 'name', label: 'Guide', render: (r) => <span className="font-extrabold text-slate-900">{r.name}</span> },
-            { key: 'email', label: 'Email', render: (r) => <span className="text-slate-500">{r.email}</span> },
-            { key: 'destinations', label: 'Coverage', render: (r) => <span className="text-slate-500">{r.destinations?.join(', ') || '—'}</span> },
-            { key: 'languages', label: 'Languages', render: (r) => <span className="text-slate-500">{r.languages?.join(', ') || '—'}</span> },
+            { key: 'name', label: 'Guide', render: (r) => <span className="font-extrabold text-charcoal-900">{r.name}</span> },
+            { key: 'email', label: 'Email', render: (r) => <span className="text-charcoal-500">{r.email}</span> },
+            { key: 'destinations', label: 'Coverage', render: (r) => <span className="text-charcoal-500">{r.destinations?.join(', ') || '—'}</span> },
+            { key: 'languages', label: 'Languages', render: (r) => <span className="text-charcoal-500">{r.languages?.join(', ') || '—'}</span> },
             { key: 'rating', label: 'Rating', render: (r) => <span className="font-bold text-amber-600 inline-flex items-center gap-1"><Star className="w-3 h-3 fill-amber-400 text-amber-400" />{r.rating} ({r.review_count})</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'approval_status', label: 'Verification', render: (r) => <StatusPill status={r.approval_status} /> },
@@ -199,12 +199,12 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       <ResponsiveTable
         rows={managers} empty="No managers elevated yet"
         columns={[
-          { key: 'name', label: 'Manager', render: (r) => <span className="font-extrabold text-slate-900">{r.name}</span> },
-          { key: 'email', label: 'Email', render: (r) => <span className="text-slate-500">{r.email}</span> },
-          { key: 'department', label: 'Department', render: (r) => <span className="text-slate-500">{r.department || 'Operations'}</span> },
+          { key: 'name', label: 'Manager', render: (r) => <span className="font-extrabold text-charcoal-900">{r.name}</span> },
+          { key: 'email', label: 'Email', render: (r) => <span className="text-charcoal-500">{r.email}</span> },
+          { key: 'department', label: 'Department', render: (r) => <span className="text-charcoal-500">{r.department || 'Operations'}</span> },
           { key: 'assignments', label: 'Assignments', render: (r) => <span className="font-bold text-travion-600">{r.assignments}</span> },
-          { key: 'audit_actions', label: 'Audit actions', render: (r) => <span className="text-slate-500">{r.audit_actions}</span> },
-          { key: 'created_at', label: 'Joined', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
+          { key: 'audit_actions', label: 'Audit actions', render: (r) => <span className="text-charcoal-500">{r.audit_actions}</span> },
+          { key: 'created_at', label: 'Joined', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
         ]}
       />
     </SectionCard>
@@ -222,7 +222,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
               trip: r.trip_id, traveller: r.traveller, source: r.source, destination: r.destination,
               start: r.start_datetime, end: r.end_datetime, mode: r.mode, budget: r.budget,
               total_cost: r.total_cost, status: r.status, guide: r.guide_name, payment: r.payment_status,
-            }))} className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200" title="Export CSV">
+            }))} className="p-2 rounded-xl bg-sand-100 text-charcoal-600 hover:bg-sand-200" title="Export CSV">
               <Download className="w-4 h-4" />
             </button>
           </div>
@@ -230,13 +230,13 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <ResponsiveTable
           rows={filtered} empty="No trips recorded"
           columns={[
-            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-            { key: 'route', label: 'Route', render: (r) => <span className="text-slate-600">{r.source} → {r.destination}</span> },
-            { key: 'start_datetime', label: 'Dates', render: (r) => <span className="text-slate-500 whitespace-nowrap">{fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)}</span> },
+            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+            { key: 'route', label: 'Route', render: (r) => <span className="text-charcoal-600">{r.source} → {r.destination}</span> },
+            { key: 'start_datetime', label: 'Dates', render: (r) => <span className="text-charcoal-500 whitespace-nowrap">{fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)}</span> },
             { key: 'mode', label: 'Mode', render: (r) => <ModePill mode={r.mode} /> },
-            { key: 'budget', label: 'Budget', render: (r) => <span className="text-slate-600">{inr(r.budget)}</span> },
-            { key: 'total_cost', label: 'Plan cost', render: (r) => <span className="font-bold text-slate-700">{inr(r.total_cost)}</span> },
-            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+            { key: 'budget', label: 'Budget', render: (r) => <span className="text-charcoal-600">{inr(r.budget)}</span> },
+            { key: 'total_cost', label: 'Plan cost', render: (r) => <span className="font-bold text-charcoal-700">{inr(r.total_cost)}</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-charcoal-300">—</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'details', label: '', render: (r) => <IconBtn onClick={() => setDetailTrip(r)} title="View lifecycle"><Eye className="w-4 h-4" /></IconBtn> },
           ]}
@@ -263,12 +263,12 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
           <ResponsiveTable
             rows={conversions?.assignments || []} empty="No assignments made yet"
             columns={[
-              { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-              { key: 'destination', label: 'Destination', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-              { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+              { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+              { key: 'destination', label: 'Destination', render: (r) => <span className="text-charcoal-600">{r.destination}</span> },
+              { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-charcoal-300">—</span> },
               { key: 'match_score', label: 'Match', render: (r) => <span className="font-black text-travion-600">{r.match_score}%</span> },
               { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
-              { key: 'requested_at', label: 'Requested', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDateTime(r.requested_at)}</span> },
+              { key: 'requested_at', label: 'Requested', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDateTime(r.requested_at)}</span> },
             ]}
           />
         </SectionCard>
@@ -281,11 +281,11 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       <ResponsiveTable
         rows={activeOps} empty="No trips currently running"
         columns={[
-          { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-          { key: 'route', label: 'Route', render: (r) => <span className="text-slate-600">{r.source} → {r.destination}</span> },
-          { key: 'start_datetime', label: 'Started', render: (r) => <span className="text-slate-500 whitespace-nowrap">{fmtDateTime(r.start_datetime)}</span> },
+          { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+          { key: 'route', label: 'Route', render: (r) => <span className="text-charcoal-600">{r.source} → {r.destination}</span> },
+          { key: 'start_datetime', label: 'Started', render: (r) => <span className="text-charcoal-500 whitespace-nowrap">{fmtDateTime(r.start_datetime)}</span> },
           { key: 'mode', label: 'Mode', render: (r) => <ModePill mode={r.mode} /> },
-          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-charcoal-300">—</span> },
           { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
           { key: 'details', label: '', render: (r) => <IconBtn onClick={() => setDetailTrip(r)} title="View"><Eye className="w-4 h-4" /></IconBtn> },
         ]}
@@ -305,7 +305,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
               payment: r.payment_id, order: r.razorpay_order_id, traveller: r.traveller, destination: r.destination,
               amount: r.amount, currency: r.currency, status: r.status, guide: r.guide_name,
               guide_fee: r.guide_fee, platform_fee: r.platform_fee, settlement: r.settlement_status, date: r.created_at,
-            }))} className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200" title="Export CSV">
+            }))} className="p-2 rounded-xl bg-sand-100 text-charcoal-600 hover:bg-sand-200" title="Export CSV">
               <Download className="w-4 h-4" />
             </button>
           </div>
@@ -313,15 +313,15 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <ResponsiveTable
           rows={filtered} empty="No payments recorded"
           columns={[
-            { key: 'payment_id', label: 'Transaction', render: (r) => <span className="font-mono text-[10.5px] text-slate-400">{shortId(r.payment_id)}</span> },
-            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-            { key: 'destination', label: 'Trip', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-            { key: 'amount', label: 'Total amount', render: (r) => <span className="font-bold text-slate-900">{inr(r.amount)}</span> },
+            { key: 'payment_id', label: 'Transaction', render: (r) => <span className="font-mono text-[10.5px] text-charcoal-400">{shortId(r.payment_id)}</span> },
+            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+            { key: 'destination', label: 'Trip', render: (r) => <span className="text-charcoal-600">{r.destination}</span> },
+            { key: 'amount', label: 'Total amount', render: (r) => <span className="font-bold text-charcoal-900">{inr(r.amount)}</span> },
             { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="text-emerald-600 font-bold">{inr(r.guide_fee)}</span> },
             { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-travion-600 font-bold">{inr(r.platform_fee)}</span> },
-            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name || <span className="text-slate-300">—</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name || <span className="text-charcoal-300">—</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
-            { key: 'created_at', label: 'Date', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
+            { key: 'created_at', label: 'Date', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
           ]}
         />
       </SectionCard>
@@ -333,15 +333,15 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       <ResponsiveTable
         rows={settlements} empty="No settlement records yet"
         columns={[
-          { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-          { key: 'destination', label: 'Destination', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
+          { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+          { key: 'destination', label: 'Destination', render: (r) => <span className="text-charcoal-600">{r.destination}</span> },
+          { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-charcoal-300">—</span> },
           { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="font-bold text-emerald-600">{inr(r.guide_fee)}</span> },
-          { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-slate-500">{inr(r.platform_fee)}</span> },
-          { key: 'total_amount', label: 'Traveller paid', render: (r) => <span className="font-bold text-slate-700">{inr(r.total_amount)}</span> },
+          { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-charcoal-500">{inr(r.platform_fee)}</span> },
+          { key: 'total_amount', label: 'Traveller paid', render: (r) => <span className="font-bold text-charcoal-700">{inr(r.total_amount)}</span> },
           { key: 'payment_status', label: 'Payment', render: (r) => <StatusPill status={r.payment_status} /> },
           { key: 'settlement_status', label: 'Settlement', render: (r) => <StatusPill status={r.settlement_status} /> },
-          { key: 'settled_at', label: 'Settled at', render: (r) => <span className="text-slate-400 whitespace-nowrap">{r.settled_at ? fmtDateTime(r.settled_at) : '—'}</span> },
+          { key: 'settled_at', label: 'Settled at', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{r.settled_at ? fmtDateTime(r.settled_at) : '—'}</span> },
         ]}
       />
     </SectionCard>
@@ -444,16 +444,16 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         <ResponsiveTable
           rows={filtered} empty="No reviews recorded"
           columns={[
-            { key: 'user_name', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.user_name}</span> },
+            { key: 'user_name', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.user_name}</span> },
             { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-bold text-travion-700">{r.guide_name}</span> },
             { key: 'rating', label: 'Rating', render: (r) => (
               <span className="inline-flex items-center gap-0.5 text-amber-400">
                 {Array.from({ length: Math.min(r.rating, 5) }).map((_, i) => <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />)}
               </span>
             ) },
-            { key: 'comment', label: 'Comment', render: (r) => <span className="text-slate-500 line-clamp-2 max-w-[300px]">{r.comment || '—'}</span> },
+            { key: 'comment', label: 'Comment', render: (r) => <span className="text-charcoal-500 line-clamp-2 max-w-[300px]">{r.comment || '—'}</span> },
             { key: 'visible', label: 'Visibility', render: (r) => <StatusPill status={r.is_visible_on_profile ? 'Public' : 'Hidden'} /> },
-            { key: 'created_at', label: 'Date', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
+            { key: 'created_at', label: 'Date', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
           ]}
         />
       </SectionCard>
@@ -468,12 +468,12 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         actions={<SearchBox value={q} onChange={setQFor('audit')} placeholder="Search audit trail…" />}>
         <div className="space-y-2">
           {filtered.length === 0 ? <EmptyState title="No audit entries" /> : filtered.map((log, i) => (
-            <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div key={i} className="p-3 rounded-xl bg-ivory-50 border border-charcoal-200 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-black text-travion-700">[{log.action}]</span>
-              <span className="font-bold text-slate-800">{log.actor_email}</span>
-              <span className="text-slate-400">({log.actor_role})</span>
-              {log.target_id && <span className="font-mono text-[10px] text-slate-400">{shortId(log.target_id)}</span>}
-              <span className="ml-auto text-slate-400 font-semibold whitespace-nowrap">{fmtDateTime(log.created_at)}</span>
+              <span className="font-bold text-charcoal-800">{log.actor_email}</span>
+              <span className="text-charcoal-400">({log.actor_role})</span>
+              {log.target_id && <span className="font-mono text-[10px] text-charcoal-400">{shortId(log.target_id)}</span>}
+              <span className="ml-auto text-charcoal-400 font-semibold whitespace-nowrap">{fmtDateTime(log.created_at)}</span>
             </div>
           ))}
         </div>
@@ -498,8 +498,8 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     const tones: Record<string, string> = { indigo: 'text-travion-700', emerald: 'text-emerald-700' };
     return (
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[12px] font-bold text-slate-500">{label}</span>
-        <span className={`text-[15px] ${strong ? 'font-black text-slate-900' : 'font-extrabold ' + (tones[tone || ''] || 'text-slate-700')} tabular-nums`}>
+        <span className="text-[12px] font-bold text-charcoal-500">{label}</span>
+        <span className={`text-[15px] ${strong ? 'font-black text-charcoal-900' : 'font-extrabold ' + (tones[tone || ''] || 'text-charcoal-700')} tabular-nums`}>
           {inr(amount)}
         </span>
       </div>
@@ -520,7 +520,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       {notice && (
         <div className="mb-5 px-4 py-3 rounded-2xl bg-travion-600 text-white text-[12px] font-bold flex items-center gap-2">
           {notice}
-          <button onClick={() => setNotice(null)} className="ml-auto text-slate-400 hover:text-white">Dismiss</button>
+          <button onClick={() => setNotice(null)} className="ml-auto text-charcoal-400 hover:text-white">Dismiss</button>
         </div>
       )}
 
@@ -543,9 +543,9 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
         {detailTrip && (
           <>
             <div className="rounded-2xl bg-travion-600 text-white p-5">
-              <p className="text-[10px] font-bold uppercase text-slate-400">{detailTrip.traveller}</p>
+              <p className="text-[10px] font-bold uppercase text-charcoal-400">{detailTrip.traveller}</p>
               <p className="text-lg font-black mt-0.5">{detailTrip.source} → {detailTrip.destination}</p>
-              <p className="text-[11px] font-semibold text-slate-400 mt-0.5">{fmtDateTime(detailTrip.start_datetime)} – {fmtDateTime(detailTrip.end_datetime)}</p>
+              <p className="text-[11px] font-semibold text-charcoal-400 mt-0.5">{fmtDateTime(detailTrip.start_datetime)} – {fmtDateTime(detailTrip.end_datetime)}</p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <ModePill mode={detailTrip.mode} />
                 <StatusPill status={detailTrip.status} />
@@ -553,21 +553,21 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400">Budget</p>
-                <p className="text-base font-black text-slate-900">{inr(detailTrip.budget)}</p>
+              <div className="rounded-2xl bg-ivory-50 border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400">Budget</p>
+                <p className="text-base font-black text-charcoal-900">{inr(detailTrip.budget)}</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400">Planned cost</p>
-                <p className="text-base font-black text-slate-900">{inr(detailTrip.total_cost)}</p>
+              <div className="rounded-2xl bg-ivory-50 border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400">Planned cost</p>
+                <p className="text-base font-black text-charcoal-900">{inr(detailTrip.total_cost)}</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400">Guide</p>
+              <div className="rounded-2xl bg-ivory-50 border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400">Guide</p>
                 <p className="text-sm font-extrabold text-travion-700">{detailTrip.guide_name || 'Not assigned'}</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400">Trip ID</p>
-                <p className="text-sm font-mono text-slate-500 break-all">{detailTrip.trip_id}</p>
+              <div className="rounded-2xl bg-ivory-50 border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400">Trip ID</p>
+                <p className="text-sm font-mono text-charcoal-500 break-all">{detailTrip.trip_id}</p>
               </div>
             </div>
           </>

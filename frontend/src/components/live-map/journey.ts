@@ -162,9 +162,9 @@ export const STATE_META: Record<StopState, { label: string; dot: string; text: s
   },
   upcoming: {
     label: 'Upcoming',
-    dot: 'bg-white border-slate-300 text-slate-400',
-    text: 'text-slate-400',
-    ring: 'border-slate-200/80 bg-white',
+    dot: 'bg-white border-charcoal-300 text-charcoal-400',
+    text: 'text-charcoal-400',
+    ring: 'border-charcoal-200/80 bg-white',
   },
 };
 

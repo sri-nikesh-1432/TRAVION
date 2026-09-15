@@ -21,7 +21,7 @@ interface LiveTripMapProps {
 }
 
 const CATEGORY_ICONS: Record<StopCategory, { glyph: string; color: string; label: string }> = {
-  transport: { glyph: 'train-front', color: '#0284c7', label: 'Transport' },
+  transport: { glyph: 'train-front', color: '#267aa8', label: 'Transport' },
   stay: { glyph: 'bed-double', color: '#6366f1', label: 'Stay' },
   food: { glyph: 'utensils', color: '#f59e0b', label: 'Dining' },
   attraction: { glyph: 'landmark', color: '#10b981', label: 'Attraction' },
@@ -159,7 +159,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
     // Draw connected route polyline
     if (coordinates.length > 1) {
       const polyline = L.polyline(coordinates, {
-        color: '#0284c7',
+        color: '#267aa8',
         weight: 4,
         opacity: 0.8,
         dashArray: '8, 8',
@@ -222,16 +222,16 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
   }, [avatarPosition]);
 
   return (
-    <div className="relative w-full h-full min-h-[480px] rounded-3xl overflow-hidden border border-slate-200/80 shadow-soft">
+    <div className="relative w-full h-full min-h-[480px] rounded-3xl overflow-hidden border border-charcoal-200/80 shadow-soft">
       {/* The Leaflet Container */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
       {/* Map Type Switcher Floating Toggle */}
-      <div className="absolute top-4 left-4 z-30 flex items-center gap-1.5 p-1 rounded-2xl bg-white/90 backdrop-blur-md shadow-soft border border-slate-200 text-xs font-semibold">
+      <div className="absolute top-4 left-4 z-30 flex items-center gap-1.5 p-1 rounded-2xl bg-white/90 backdrop-blur-md shadow-soft border border-charcoal-200 text-xs font-semibold">
         <button
           onClick={() => setMapType('roadmap')}
           className={`px-3 py-1.5 rounded-xl transition-all ${
-            mapType === 'roadmap' ? 'bg-travion-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            mapType === 'roadmap' ? 'bg-travion-600 text-white shadow-sm' : 'text-charcoal-600 hover:text-charcoal-900'
           }`}
         >
           Roadmap
@@ -239,7 +239,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
         <button
           onClick={() => setMapType('satellite')}
           className={`px-3 py-1.5 rounded-xl transition-all ${
-            mapType === 'satellite' ? 'bg-travion-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            mapType === 'satellite' ? 'bg-travion-600 text-white shadow-sm' : 'text-charcoal-600 hover:text-charcoal-900'
           }`}
         >
           Satellite
@@ -247,7 +247,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
         <button
           onClick={() => setMapType('terrain')}
           className={`px-3 py-1.5 rounded-xl transition-all ${
-            mapType === 'terrain' ? 'bg-travion-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            mapType === 'terrain' ? 'bg-travion-600 text-white shadow-sm' : 'text-charcoal-600 hover:text-charcoal-900'
           }`}
         >
           Terrain
@@ -256,7 +256,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
           <button
             onClick={() => setMapType('google')}
             className={`px-3 py-1.5 rounded-xl transition-all ${
-              mapType === 'google' ? 'bg-travion-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              mapType === 'google' ? 'bg-travion-600 text-white shadow-sm' : 'text-charcoal-600 hover:text-charcoal-900'
             }`}
           >
             Google
@@ -288,32 +288,32 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
                   <span className="text-[10px] font-bold uppercase tracking-wider text-travion-600">
                     Day {selectedStop.day} · {selectedStop.time}
                   </span>
-                  <h4 className="text-base font-bold text-slate-900 leading-tight">
+                  <h4 className="text-base font-bold text-charcoal-900 leading-tight">
                     {selectedStop.title}
                   </h4>
                 </div>
               </div>
               <button
                 onClick={() => onSelectStop(null as any)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+                className="p-1.5 text-charcoal-400 hover:text-charcoal-600 rounded-full hover:bg-sand-100"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 mb-3 line-clamp-2">
+            <p className="text-xs text-charcoal-600 mb-3 line-clamp-2">
               {selectedStop.description}
             </p>
 
             {/* Weather, Duration & Cost Pills */}
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600 mb-4">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-charcoal-600 mb-4">
               {selectedStop.weather_note && (
                 <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700">
                   <CloudSun className="w-3.5 h-3.5" />
                   <span>{selectedStop.weather_note}</span>
                 </span>
               )}
-              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100">
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sand-100">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{selectedStop.duration_minutes} min</span>
               </span>
@@ -344,7 +344,7 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
                 href={`https://maps.google.com/?q=${selectedStop.lat},${selectedStop.lng}`}
                 target="_blank"
                 rel="noreferrer"
-                className="p-2.5 rounded-xl border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-900 transition-colors"
+                className="p-2.5 rounded-xl border border-charcoal-200 hover:border-charcoal-300 text-charcoal-600 hover:text-charcoal-900 transition-colors"
                 title="Open in Google Maps"
               >
                 <ArrowUpRight className="w-4 h-4" />

@@ -56,7 +56,7 @@ function DockItem({
       onClick={item.onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`relative flex items-center justify-center rounded-2xl bg-white/90 shadow-sm border border-travion-100 hover:border-travion-400 hover:shadow-soft text-slate-700 hover:text-travion-600 transition-colors focus:outline-none ${item.className || ''}`}
+      className={`relative flex items-center justify-center rounded-2xl bg-white/90 shadow-sm border border-travion-100 hover:border-travion-400 hover:shadow-soft text-charcoal-700 hover:text-travion-600 transition-colors focus:outline-none ${item.className || ''}`}
     >
       {/* Tooltip */}
       {isHovered && (

@@ -101,7 +101,7 @@ export const GuideSignIn: React.FC<GuideSignInProps> = ({ onSignInSuccess, onSwi
           initial={{ opacity: 0, y: 30, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.8, ease: EASE }}
-          className="rounded-3xl bg-white shadow-soft-lg border border-slate-200 p-8 md:p-10"
+          className="rounded-3xl bg-white shadow-soft-lg border border-charcoal-200 p-8 md:p-10"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -113,39 +113,39 @@ export const GuideSignIn: React.FC<GuideSignInProps> = ({ onSignInSuccess, onSwi
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
                 />
               </div>
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full h-12 pl-12 pr-12 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
+                  className="w-full h-12 pl-12 pr-12 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-600 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -175,7 +175,7 @@ export const GuideSignIn: React.FC<GuideSignInProps> = ({ onSignInSuccess, onSwi
 
             {/* Switch to Registration */}
             <div className="text-center">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-charcoal-500">
                 Don't have a guide account yet?
               </p>
               <button

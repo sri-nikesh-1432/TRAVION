@@ -4,7 +4,7 @@ import {
   Compass, MapPin, Sparkles, Navigation, Phone, ShieldCheck,
   CreditCard, MessageSquare, Download, RefreshCw, CheckCircle2,
   LogOut, ArrowLeft, Star, Heart, Clock, User, AlertCircle,
-  TrainFront, BedDouble, Utensils, Mountain, Wallet, Lock, BadgeCheck
+  TrainFront, BedDouble, Utensils, Mountain, Wallet, Lock, BadgeCheck, Check
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
@@ -30,59 +30,61 @@ import { PlannerWorkspace } from '../components/planner/PlannerWorkspace';
 import { ModeSelectionScreen, TripMode } from '../components/mode-selection/ModeSelectionModal';
 import { resolveBudgetMax } from '../utils/budget';
 
-/* ─── Booking flow stepper: the visible before/after-Step-3 split ───────────
-   Everything left of the divider is "choose WHAT" (budget, style, discovery);
-   everything right of it is "choose HOW" (plan, experience, pay). The divider
-   makes the Step 3 boundary explicit in every booking view. */
+/* ─── Booking flow stepper: the visible 7-step journey ─────────────
+   Steps 01–03 choose WHAT the trip contains (trip, travellers, explore);
+   steps 04–06 choose HOW it runs (plan, itinerary, experience); step 07
+   is the secure Razorpay checkout. The step ORDER follows the real backend
+   contract — the experience choice (Guide vs Adventurous) is always last so
+   the engine reprices the FINAL edited itinerary, never a draft. */
 const BOOKING_STEPS = [
-  { key: 'search', label: 'Budget' },
-  { key: 'discovery', label: 'Travel Style' },
-  { key: 'discovery_select', label: 'Discover' },
+  { key: 'search', label: 'Trip' },
+  { key: 'discovery', label: 'Travellers' },
+  { key: 'discovery_select', label: 'Explore' },
   { key: 'plan_choice', label: 'Plan' },
-  { key: 'planner', label: 'Edit' },
+  { key: 'planner', label: 'Itinerary' },
   { key: 'mode_select', label: 'Experience' },
+  { key: 'pay', label: 'Payment' },
 ] as const;
 
 const FlowStepper: React.FC<{ current: string }> = ({ current }) => {
-  const activeIdx = BOOKING_STEPS.findIndex(s => s.key === current);
-  // Payment is the terminal step; the planner's checkout modal covers it.
+  const activeIdx = BOOKING_STEPS.findIndex((s) => s.key === current);
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2" aria-label="Booking progress">
-      {BOOKING_STEPS.map((s, i) => {
-        const done = activeIdx >= 0 && i < activeIdx;
-        const active = i === activeIdx;
-        const afterSplit = i >= 3; // Plan / Edit / Experience — after the Step 3 split
-        return (
-          <React.Fragment key={s.key}>
-            {i === 3 && (
-              <span className="mx-1 hidden sm:flex items-center" aria-hidden>
-                <span className="w-4 h-px bg-slate-300" />
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                <span className="w-4 h-px bg-slate-300" />
-              </span>
-            )}
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-[10.5px] sm:text-[11px] font-black border transition-colors ${
-                active
-                  ? 'bg-travion-600 border-travion-600 text-white shadow-soft'
-                  : done
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-white border-slate-200 text-slate-400'
-              }`}
-            >
-              {done ? (
-                <CheckCircle2 className="w-3 h-3" />
-              ) : (
-                <span className={`w-3.5 h-3.5 rounded-full text-[8px] font-black flex items-center justify-center ${active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-400'}`}>{i + 1}</span>
+    <nav aria-label="Booking progress" className="mb-9">
+      <ol className="flex items-start justify-center gap-0 max-w-4xl mx-auto">
+        {BOOKING_STEPS.map((s, i) => {
+          const done = activeIdx >= 0 && i < activeIdx;
+          const active = i === activeIdx;
+          const stepNo = String(i + 1).padStart(2, '0');
+          const lineDone = i > 0 && i <= activeIdx;
+          return (
+            <li key={s.key} className="relative flex flex-1 min-w-0 flex-col items-center">
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  className={`absolute top-3.5 left-0 w-1/2 h-px -translate-y-1/2 transition-colors duration-300 ${
+                    lineDone ? 'bg-gold-300' : 'bg-charcoal-200'
+                  }`}
+                />
               )}
-              {s.label}
-              {i === 2 && <span className="hidden md:inline font-bold opacity-60">· Step 3</span>}
-              {afterSplit && i !== 2 && <span className="hidden md:inline font-bold opacity-40">· after Step 3</span>}
-            </span>
-          </React.Fragment>
-        );
-      })}
-    </div>
+              <span
+                className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black border-2 transition-all duration-300 ${
+                  active
+                    ? 'bg-travion-600 border-travion-600 text-white shadow-floating scale-110'
+                    : done
+                      ? 'bg-gold-100 border-gold-400 text-gold-500'
+                      : 'bg-white border-charcoal-200 text-charcoal-400'
+                }`}
+              >
+                {done ? <Check className="w-3 h-3" /> : stepNo}
+              </span>
+              <span className={`mt-1.5 px-0.5 text-center text-[8.5px] sm:text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-colors duration-300 ${active ? 'text-travion-700' : done ? 'text-charcoal-600' : 'text-charcoal-400'}`}>
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 };
 
@@ -576,7 +578,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             description: `${activeTrip.source_name} to ${activeTrip.destination_name} trip`,
             order_id: checkout.order_id,
             prefill: { email: session.email },
-            theme: { color: '#0284c7' },
+            theme: { color: '#267aa8' },
             handler: async (response: any) => {
               try {
                 await api.verifyPaymentWebhook({
@@ -717,7 +719,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
       
       {/* Top Header */}
-      <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5">
+      <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-charcoal-200/80 px-6 py-3.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -727,7 +729,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               <div className="w-9 h-9 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft">
                 <Compass className="w-5 h-5" />
               </div>
-              <span className="text-lg font-black text-slate-900 tracking-tight">TRAVION</span>
+              <span className="text-lg font-black text-charcoal-900 tracking-tight">TRAVION</span>
             </button>
 
             {isSandboxDemo && (
@@ -740,13 +742,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           <div className="flex items-center gap-4">
             {/* Profile Avatar / Logout — the trip-planning CTA lives in the main
                 flow, not as a duplicate top-nav button (product rule #10) */}
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <span className="text-xs font-bold text-slate-700 hidden sm:inline">
+            <div className="flex items-center gap-2 pl-2 border-l border-charcoal-200">
+              <span className="text-xs font-bold text-charcoal-700 hidden sm:inline">
                 {userProfile?.preferred_name || session.email.split('@')[0]}
               </span>
               <button
                 onClick={onLogout}
-                className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition-colors"
+                className="p-2 text-charcoal-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition-colors"
                 title="Sign out"
               >
                 <LogOut className="w-4 h-4" />
@@ -776,10 +778,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           <div className="pt-6">
             <div className="text-center max-w-2xl mx-auto mb-8">
               <span className="text-[11px] font-bold uppercase tracking-wider text-travion-600">AI Travel Hub</span>
-              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
+              <h2 className="text-3xl sm:text-4xl font-black text-charcoal-900 tracking-tight mt-1">
                 Where would you like to go?
               </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 font-medium">
+              <p className="text-xs sm:text-sm text-charcoal-500 mt-2 font-medium">
                 Start anywhere, go anywhere. Search any city, region, landmark or place — Travion orchestrates the journey around you.
               </p>
             </div>
@@ -810,7 +812,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             {/* Recent Trips Section */}
             {myTrips.length > 0 && (
               <div className="mt-16 max-w-4xl mx-auto">
-                <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="text-base font-bold text-charcoal-900 mb-4 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-travion-600" />
                   <span>Your Planned & Completed Trips</span>
                 </h3>
@@ -819,13 +821,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     <div
                       key={trip.id}
                       onClick={() => loadTripWorkspace(trip.id)}
-                      className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200 hover:border-travion-300 hover:shadow-soft transition-all flex items-center justify-between"
+                      className="cursor-pointer p-4 rounded-2xl bg-white border border-charcoal-200 hover:border-travion-300 hover:shadow-soft transition-all flex items-center justify-between"
                     >
                       <div>
                         <div className="text-xs font-bold text-travion-700">{trip.source_name} → {trip.destination_name}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">Status: <span className="font-semibold text-slate-600">{trip.status}</span></div>
+                        <div className="text-[11px] text-charcoal-400 mt-0.5">Status: <span className="font-semibold text-charcoal-600">{trip.status}</span></div>
                       </div>
-                      <span className="text-xs font-bold text-slate-700">₹{trip.total_cost}</span>
+                      <span className="text-xs font-bold text-charcoal-700">₹{trip.total_cost}</span>
                     </div>
                   ))}
                 </div>
@@ -840,7 +842,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             <FlowStepper current="discovery" />
             <div className="text-center mb-6">
               <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 2 · Adaptive Discovery</span>
-              <h2 className="text-2xl font-bold text-slate-900 mt-1">Understanding Your Travel Style</h2>
+              <h2 className="text-2xl font-bold text-charcoal-900 mt-1">Understanding Your Travel Style</h2>
             </div>
 
             {currentQuestion ? (
@@ -857,23 +859,23 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               />
             ) : planError ? (
               /* ── Recovery panel — never leave the user on a blank screen ── */
-              <div className="max-w-2xl mx-auto rounded-3xl border border-slate-200 bg-white shadow-soft overflow-hidden">
-                <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4 bg-red-50/50">
+              <div className="max-w-2xl mx-auto rounded-3xl border border-charcoal-200 bg-white shadow-soft overflow-hidden">
+                <div className="flex items-center gap-3 border-b border-charcoal-100 px-6 py-4 bg-red-50/50">
                   <span className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
                     <AlertCircle className="w-5 h-5" />
                   </span>
                   <div>
-                    <h3 className="text-[15px] font-extrabold text-slate-900">Your plan could not be generated yet</h3>
-                    <p className="text-[12px] font-semibold text-slate-500">Your search is saved — nothing was lost.</p>
+                    <h3 className="text-[15px] font-extrabold text-charcoal-900">Your plan could not be generated yet</h3>
+                    <p className="text-[12px] font-semibold text-charcoal-500">Your search is saved — nothing was lost.</p>
                   </div>
                 </div>
 
                 <div className="px-6 py-5">
-                  <p className="text-[13px] font-medium text-slate-600 leading-relaxed">{planError.message}</p>
+                  <p className="text-[13px] font-medium text-charcoal-600 leading-relaxed">{planError.message}</p>
 
                   {planError.available && planError.available.length > 0 && activeTrip && (
                     <div className="mt-5">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400 mb-2">
                         Journey-ready destinations right now
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -890,7 +892,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                           </button>
                         ))}
                       </div>
-                      <p className="mt-2.5 text-[11px] font-semibold text-slate-400">
+                      <p className="mt-2.5 text-[11px] font-semibold text-charcoal-400">
                         {activeTrip.source_name} → choose above — your departure city, dates and traveller details carry over automatically.
                       </p>
                     </div>
@@ -899,7 +901,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <div className="mt-6 flex flex-col sm:flex-row gap-2.5">
                     <button
                       onClick={() => { setPlanError(null); setCurrentView('search'); }}
-                      className="flex-1 h-11 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:border-slate-300 transition-colors"
+                      className="flex-1 h-11 rounded-xl border border-charcoal-200 text-charcoal-700 font-bold text-sm hover:border-charcoal-300 transition-colors"
                     >
                       Back to search
                     </button>
@@ -916,12 +918,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               </div>
             ) : !isGeneratingPlan ? (
               /* ── Resumed state: interview finished — continue planning ── */
-              <div className="max-w-md mx-auto rounded-3xl border border-slate-200 bg-white shadow-soft p-8 text-center">
+              <div className="max-w-md mx-auto rounded-3xl border border-charcoal-200 bg-white shadow-soft p-8 text-center">
                 <span className="mx-auto w-14 h-14 rounded-2xl bg-travion-100 text-travion-600 flex items-center justify-center mb-4">
                   <CheckCircle2 className="w-7 h-7" />
                 </span>
-                <h3 className="text-lg font-extrabold text-slate-900">Your travel style is captured</h3>
-                <p className="mt-2 text-[13px] font-medium text-slate-500 leading-relaxed">
+                <h3 className="text-lg font-extrabold text-charcoal-900">Your travel style is captured</h3>
+                <p className="mt-2 text-[13px] font-medium text-charcoal-500 leading-relaxed">
                   Ready to pick the places you want to experience.
                 </p>
                 <button
@@ -932,7 +934,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 </button>
                 <button
                   onClick={() => { setPlanError(null); setCurrentView('search'); }}
-                  className="mt-2.5 w-full h-11 rounded-2xl text-slate-500 text-[13px] font-bold hover:text-slate-700 transition-colors"
+                  className="mt-2.5 w-full h-11 rounded-2xl text-charcoal-500 text-[13px] font-bold hover:text-charcoal-700 transition-colors"
                 >
                   Start a different trip
                 </button>
@@ -951,39 +953,39 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     <AlertCircle className="w-5 h-5" />
                   </span>
                   <div>
-                    <h3 className="text-[15px] font-extrabold text-slate-900">This budget can't fund the trip yet</h3>
-                    <p className="text-[12px] font-semibold text-slate-500">Travion stays honest — it will never hand you a normal itinerary you can't afford.</p>
+                    <h3 className="text-[15px] font-extrabold text-charcoal-900">This budget can't fund the trip yet</h3>
+                    <p className="text-[12px] font-semibold text-charcoal-500">Travion stays honest — it will never hand you a normal itinerary you can't afford.</p>
                   </div>
                 </div>
 
                 <div className="px-6 py-5">
-                  <p className="text-[13px] font-medium text-slate-600 leading-relaxed">{planError.message}</p>
+                  <p className="text-[13px] font-medium text-charcoal-600 leading-relaxed">{planError.message}</p>
 
                   <div className="mt-4 grid sm:grid-cols-3 gap-2.5">
                     <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Realistic minimum</p>
-                      <p className="text-lg font-extrabold text-slate-900">₹{Number(planError.budget.minimum_required_budget || 0).toLocaleString('en-IN')}</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400">Realistic minimum</p>
+                      <p className="text-lg font-extrabold text-charcoal-900">₹{Number(planError.budget.minimum_required_budget || 0).toLocaleString('en-IN')}</p>
                     </div>
                     <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Budget supports</p>
-                      <p className="text-lg font-extrabold text-slate-900">{planError.budget.max_affordable_days || 0} day{planError.budget.max_affordable_days === 1 ? '' : 's'}</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400">Budget supports</p>
+                      <p className="text-lg font-extrabold text-charcoal-900">{planError.budget.max_affordable_days || 0} day{planError.budget.max_affordable_days === 1 ? '' : 's'}</p>
                     </div>
                     <div className="rounded-xl bg-white border border-red-100 px-3.5 py-2.5">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Requested</p>
-                      <p className="text-lg font-extrabold text-slate-900">{planError.budget.requested_days || 0} day{planError.budget.requested_days === 1 ? '' : 's'}</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400">Requested</p>
+                      <p className="text-lg font-extrabold text-charcoal-900">{planError.budget.requested_days || 0} day{planError.budget.requested_days === 1 ? '' : 's'}</p>
                     </div>
                   </div>
 
                   {planError.budget.alternatives.length > 0 && (
                     <div className="mt-4">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">Ways to make it work</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400 mb-2">Ways to make it work</p>
                       <div className="space-y-1.5">
                         {planError.budget.alternatives.map((alt, ai) => (
-                          <div key={ai} className="flex items-start gap-2 text-[12.5px] font-semibold text-slate-600">
+                          <div key={ai} className="flex items-start gap-2 text-[12.5px] font-semibold text-charcoal-600">
                             <span className="w-4 h-4 rounded-full bg-travion-100 text-travion-700 text-[10px] font-black flex items-center justify-center shrink-0">
                               {ai + 1}
                             </span>
-                            <span>{alt.heading} — <span className="font-medium text-slate-500">{alt.text}</span></span>
+                            <span>{alt.heading} — <span className="font-medium text-charcoal-500">{alt.text}</span></span>
                           </div>
                         ))}
                       </div>
@@ -993,7 +995,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <div className="mt-5 flex flex-col sm:flex-row gap-2.5">
                     <button
                       onClick={() => { setPlanError(null); setCurrentView('search'); }}
-                      className="flex-1 h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:border-slate-300 transition-colors"
+                      className="flex-1 h-11 rounded-xl border border-charcoal-200 bg-white text-charcoal-700 font-bold text-sm hover:border-charcoal-300 transition-colors"
                     >
                       Back to search
                     </button>
@@ -1097,16 +1099,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         {currentView === 'workspace' && itinerary && activeTrip && (
           <div>
             {/* Trip Context Banner */}
-            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-3xl bg-white border border-slate-200/80 shadow-soft">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-3xl bg-white border border-charcoal-200/80 shadow-soft">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-travion-100 text-travion-600 flex items-center justify-center">
                   {activeTrip.mode === 'GUIDE_MODE' ? <Compass className="w-6 h-6" /> : <Mountain className="w-6 h-6" />}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <span className="text-sm font-extrabold text-charcoal-900 flex items-center gap-1.5">
                       {activeTrip.source_name}
-                      <ArrowLeft className="w-3.5 h-3.5 text-slate-400 rotate-180" />
+                      <ArrowLeft className="w-3.5 h-3.5 text-charcoal-400 rotate-180" />
                       {activeTrip.destination_name}
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
@@ -1115,7 +1117,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   </div>
                   {/* §21: NEVER claim a guide is assigned before a real
                       assignment exists. Status text follows the actual trip state. */}
-                  <div className="text-xs text-slate-500 font-medium mt-0.5">
+                  <div className="text-xs text-charcoal-500 font-medium mt-0.5">
                     {activeTrip.mode === 'GUIDE_MODE'
                       ? (assignedGuide
                           ? `Verified Local Guide: ${assignedGuide.name}`
@@ -1132,7 +1134,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowOfflineModal(true)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2 rounded-xl bg-sand-100 hover:bg-sand-200 text-charcoal-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download Offline</span>
@@ -1213,12 +1215,17 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               exit={{ opacity: 0, scale: 0.95 }}
               className="w-full max-w-lg bg-white rounded-3xl p-6 md:p-8 shadow-floating border border-travion-100"
             >
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center justify-between pb-4 border-b border-charcoal-100 mb-4">
                 <div className="flex items-center gap-2.5">
-                  <CreditCard className="w-5 h-5 text-travion-600" />
-                  <h3 className="text-lg font-bold text-slate-900">Transparent Checkout</h3>
+                  <span className="w-9 h-9 rounded-2xl bg-travion-100 text-travion-700 flex items-center justify-center shrink-0">
+                    <CreditCard className="w-4.5 h-4.5" />
+                  </span>
+                  <div>
+                    <h3 className="text-[15px] font-extrabold text-charcoal-900 tracking-tight">Transparent Checkout</h3>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-charcoal-400 mt-0.5">Step 07 · Payment</p>
+                  </div>
                 </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-travion-100 text-travion-700">
+                <span className="text-[9px] font-black px-2.5 py-1 rounded-full bg-travion-100 text-travion-700">
                   {checkoutData?.live_checkout ? 'Razorpay · Test Mode' : 'Razorpay Verified'}
                 </span>
               </div>
@@ -1228,16 +1235,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet className="w-4 h-4 text-travion-600" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Estimated travel spend — paid locally as you travel</span>
+                  <span className="text-[11px] font-black uppercase tracking-wider text-charcoal-500">Estimated travel spend — paid locally as you travel</span>
                 </div>
-                <div className="space-y-2 text-xs text-slate-700 font-medium">
+                <div className="space-y-2 text-xs text-charcoal-700 font-medium">
                   {[
-                    { icon: TrainFront, color: '#0284c7', label: 'Transport (round trip)', value: checkoutView!.transport },
+                    { icon: TrainFront, color: '#267aa8', label: 'Transport (round trip)', value: checkoutView!.transport },
                     { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: checkoutView!.stay },
                     { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: checkoutView!.food },
                     { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: checkoutView!.activities }
                   ].map((row) => (
-                    <div key={row.label} className="flex justify-between py-1 border-b border-slate-100">
+                    <div key={row.label} className="flex justify-between py-1 border-b border-charcoal-100">
                       <span className="flex items-center gap-2">
                         <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: row.color }}>
                           <row.icon className="w-3.5 h-3.5" />
@@ -1247,7 +1254,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                       <span className="font-bold">₹{row.value.toLocaleString()}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between pt-1 text-[11px] text-slate-500">
+                  <div className="flex justify-between pt-1 text-[11px] text-charcoal-500">
                     <span>Travel spend estimate</span>
                     <span className="font-bold">₹{checkoutView!.travelSpend.toLocaleString()}</span>
                   </div>
@@ -1275,14 +1282,14 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     </span>
                     <span className="font-bold">₹{checkoutView!.platformFee.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
+                  <div className="flex justify-between pt-2 text-sm font-black text-charcoal-900">
                     <span>Amount payable to Travion</span>
                     <span className="text-travion-700">₹{checkoutView!.payable.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-4 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
+              <p className="text-[11px] text-charcoal-500 font-medium leading-relaxed mb-4 bg-ivory-50 border border-charcoal-100 rounded-xl px-3 py-2.5">
                 Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects {checkoutView!.guideFee > 0 ? 'only the guide and platform fees shown above' : 'only the platform fee shown above — on this trip no guide fee applies (no verified guide is assigned)'} — never your full travel budget.
               </p>
 
@@ -1296,7 +1303,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                     ? 'border-travion-300 bg-travion-50/60'
                     : paymentNote && !nonRefundableAcknowledged
                       ? 'border-amber-300 bg-amber-50/50'
-                      : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+                      : 'border-charcoal-200 bg-ivory-50/60 hover:border-charcoal-300'
                 }`}
               >
                 <input
@@ -1309,8 +1316,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   }}
                   className="mt-0.5 w-[18px] h-[18px] shrink-0 accent-travion-600 cursor-pointer"
                 />
-                <span className="text-[11.5px] leading-relaxed text-slate-700 font-medium">
-                  I understand that the applicable fee paid is <span className="font-bold text-slate-900">non-refundable</span> if a guide has not yet been assigned and the trip plan has not yet become active.
+                <span className="text-[11.5px] leading-relaxed text-charcoal-700 font-medium">
+                  I understand that the applicable fee paid is <span className="font-bold text-charcoal-900">non-refundable</span> if a guide has not yet been assigned and the trip plan has not yet become active.
                 </span>
               </label>
 
@@ -1331,7 +1338,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 ) : `Confirm & Pay ₹${checkoutView!.payable.toLocaleString()} · Activate Trip`}
               </button>
 
-              <p className="text-center text-[10px] text-slate-500 font-medium mt-3 flex items-center justify-center gap-1.5">
+              <p className="text-center text-[10px] text-charcoal-500 font-medium mt-3 flex items-center justify-center gap-1.5">
                 <Lock className="w-3 h-3 text-emerald-500" />
                 <span>
                   {checkoutData?.live_checkout

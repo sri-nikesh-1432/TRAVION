@@ -102,8 +102,8 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
           <div className="w-12 h-12 rounded-2xl bg-travion-100 text-travion-600 mx-auto flex items-center justify-center mb-3">
             <User className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Tell us a little about you</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <h2 className="text-2xl font-bold text-charcoal-900 tracking-tight">Tell us a little about you</h2>
+          <p className="text-xs text-charcoal-500 mt-1">
             This stable profile persists across all your trips so AI never asks repetitive questions.
           </p>
         </div>
@@ -111,47 +111,47 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">First Name *</label>
+              <label className="block text-xs font-bold text-charcoal-700 mb-1">First Name *</label>
               <input
                 type="text"
                 required
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="e.g. Kavya"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-charcoal-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Last Name *</label>
+              <label className="block text-xs font-bold text-charcoal-700 mb-1">Last Name *</label>
               <input
                 type="text"
                 required
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="e.g. Rao"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-charcoal-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">What should we call you? (Preferred Name)</label>
+            <label className="block text-xs font-bold text-charcoal-700 mb-1">What should we call you? (Preferred Name)</label>
             <input
               type="text"
               value={preferredName}
               onChange={(e) => setPreferredName(e.target.value)}
               placeholder="e.g. Kavya"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-charcoal-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Preferred Language</label>
+              <label className="block text-xs font-bold text-charcoal-700 mb-1">Preferred Language</label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none bg-white"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-charcoal-200 text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none bg-white"
               >
                 <option value="English">English</option>
                 <option value="Hindi">Hindi</option>
@@ -164,7 +164,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Home / Current City *</label>
+              <label className="block text-xs font-bold text-charcoal-700 mb-1">Home / Current City *</label>
               <input
                 type="text"
                 required
@@ -175,7 +175,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                 }}
                 placeholder="e.g. Chennai"
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-semibold focus:border-travion-500 focus:ring-2 focus:ring-travion-100 focus:outline-none ${
-                  homeCityError ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                  homeCityError ? 'border-red-300 bg-red-50/40' : 'border-charcoal-200'
                 }`}
               />
               {homeCityError && (
@@ -186,10 +186,10 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
 
           {/* Mobile number is mandatory for verification & safety coordination */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-charcoal-700 mb-1">
               Mobile Number *
             </label>
-            <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border transition-all ${phoneError ? 'border-red-300 bg-red-50/40' : 'border-slate-200 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
+            <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border transition-all ${phoneError ? 'border-red-300 bg-red-50/40' : 'border-charcoal-200 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
               <Phone className="w-4 h-4 text-travion-500 shrink-0" />
               <input
                 type="tel"
@@ -197,16 +197,16 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                 value={phone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
                 placeholder="+91 98765 43210"
-                className="w-full bg-transparent text-sm font-semibold focus:outline-none placeholder:text-slate-300"
+                className="w-full bg-transparent text-sm font-semibold focus:outline-none placeholder:text-charcoal-300"
               />
             </div>
-            <p className={`text-[11px] mt-1 font-medium ${phoneError ? 'text-red-600' : 'text-slate-400'}`}>
+            <p className={`text-[11px] mt-1 font-medium ${phoneError ? 'text-red-600' : 'text-charcoal-400'}`}>
               {phoneError || 'Used once for guide verification and safety coordination. Never shown publicly.'}
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Preferred Navigation Communication</label>
+            <label className="block text-xs font-bold text-charcoal-700 mb-1">Preferred Navigation Communication</label>
             <div className="grid grid-cols-3 gap-2">
               {(['Voice', 'Text', 'Both'] as const).map((pref) => (
                 <button
@@ -216,7 +216,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                   className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                     commPreference === pref
                       ? 'bg-travion-600 text-white border-travion-600 shadow-sm'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-travion-50'
+                      : 'bg-white text-charcoal-600 border-charcoal-200 hover:bg-travion-50'
                   }`}
                 >
                   {pref}
@@ -226,8 +226,8 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
           </div>
 
           {/* Emergency Contact */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-800">
+          <div className="p-4 rounded-2xl bg-ivory-50 border border-charcoal-200">
+            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-charcoal-800">
               <Shield className="w-4 h-4 text-travion-600" />
               <span>Emergency Contact (Safety Assurance)</span>
             </div>
@@ -237,7 +237,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                 value={emergencyName}
                 onChange={(e) => setEmergencyName(e.target.value)}
                 placeholder="Contact Name (e.g. Sunil)"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:border-travion-500 focus:outline-none bg-white"
+                className="w-full px-3 py-2 rounded-xl border border-charcoal-200 text-xs font-semibold focus:border-travion-500 focus:outline-none bg-white"
               />
               <input
                 type="tel"
@@ -246,7 +246,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                 onChange={(e) => handleEmergencyPhoneChange(e.target.value)}
                 placeholder="10-digit mobile (e.g. 9876543210)"
                 className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold focus:border-travion-500 focus:outline-none bg-white ${
-                  emergencyPhoneError ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                  emergencyPhoneError ? 'border-red-300 bg-red-50/40' : 'border-charcoal-200'
                 }`}
               />
             </div>

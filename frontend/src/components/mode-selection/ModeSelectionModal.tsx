@@ -83,7 +83,7 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
         onClick={() => !busy && onSelect(mode)}
         disabled={busy}
         className={`relative text-left p-6 md:p-7 rounded-3xl border-2 bg-white shadow-soft transition-all flex flex-col ${
-          active ? `${accentBorder} ${accentRing}` : 'border-slate-200 hover:border-slate-300'
+          active ? `${accentBorder} ${accentRing}` : 'border-charcoal-200 hover:border-charcoal-300'
         } ${busy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
       >
         <div className="flex items-start justify-between">
@@ -92,14 +92,14 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           </div>
           <span className="text-2xl" aria-hidden>{emoji}</span>
         </div>
-        <h3 className="mt-4 text-xl font-black text-slate-900 tracking-tight">{title}</h3>
+        <h3 className="mt-4 text-xl font-black text-charcoal-900 tracking-tight">{title}</h3>
         <p className="mt-0.5 text-[13px] font-bold text-travion-700">{subtitle}</p>
-        <p className="mt-3 text-[12.5px] font-medium text-slate-600 leading-relaxed">{description}</p>
+        <p className="mt-3 text-[12.5px] font-medium text-charcoal-600 leading-relaxed">{description}</p>
 
         <ul className="mt-4 space-y-2 flex-1">
           {features.map((f, i) => (
-            <li key={i} className="flex items-center gap-2.5 text-[12.5px] font-semibold text-slate-700">
-              <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+            <li key={i} className="flex items-center gap-2.5 text-[12.5px] font-semibold text-charcoal-700">
+              <span className="w-6 h-6 rounded-lg bg-sand-100 text-charcoal-600 flex items-center justify-center shrink-0">
                 {f.icon}
               </span>
               {f.text}
@@ -107,10 +107,10 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           ))}
         </ul>
 
-        <div className="mt-5 pt-4 border-t border-slate-100">{footer}</div>
+        <div className="mt-5 pt-4 border-t border-charcoal-100">{footer}</div>
 
         <span className={`mt-4 inline-flex items-center justify-center gap-2 w-full h-11 rounded-2xl text-[13px] font-black transition-colors ${
-          active ? 'bg-travion-600 text-white' : 'bg-slate-100 text-slate-700'
+          active ? 'bg-travion-600 text-white' : 'bg-sand-100 text-charcoal-700'
         }`}>
           {mode === 'GUIDE_MODE' ? 'Choose Guide Mode' : 'Choose Adventurous Mode'}
           <ArrowRight className="w-4 h-4" />
@@ -136,20 +136,20 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
               {s.done ? <Check className="w-3 h-3" /> : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
               {s.label}
             </span>
-            {i < arr.length - 1 && <span className="w-5 h-px bg-slate-200" />}
+            {i < arr.length - 1 && <span className="w-5 h-px bg-sand-200" />}
           </React.Fragment>
         ))}
       </div>
 
       <div className="text-center mb-4">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Final step before payment</span>
-        <h2 className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h2 className="mt-2 text-3xl font-extrabold text-charcoal-900 tracking-tight">
           How would you like to experience your trip?
         </h2>
-        <p className="mt-2 text-[14px] font-medium text-slate-500 max-w-2xl mx-auto">
+        <p className="mt-2 text-[14px] font-medium text-charcoal-500 max-w-2xl mx-auto">
           Your plan is ready
-          {typeof totalCost === 'number' && totalCost > 0 ? <span className="font-bold text-slate-700"> (base cost ₹{Math.round(totalCost).toLocaleString('en-IN')})</span> : null}
-          {destinationName ? <> in <span className="font-bold text-slate-700">{destinationName}</span></> : null}. Pick your experience — fees update instantly, your itinerary stays exactly as you built it.
+          {typeof totalCost === 'number' && totalCost > 0 ? <span className="font-bold text-charcoal-700"> (base cost ₹{Math.round(totalCost).toLocaleString('en-IN')})</span> : null}
+          {destinationName ? <> in <span className="font-bold text-charcoal-700">{destinationName}</span></> : null}. Pick your experience — fees update instantly, your itinerary stays exactly as you built it.
         </p>
         {(placeCount > 0 || foodCount > 0 || hasStay) && (
           <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2">
@@ -223,7 +223,7 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="text-[13px] font-bold text-slate-500 hover:text-slate-700 transition-colors"
+          className="text-[13px] font-bold text-charcoal-500 hover:text-charcoal-700 transition-colors"
         >
           Back to my plan
         </button>

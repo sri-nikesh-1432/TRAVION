@@ -116,13 +116,13 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
   return (
     <div className="relative">
       {/* Budget bar */}
-      <div className="mb-5 p-4 rounded-3xl bg-white border border-slate-200/80 shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="mb-5 p-4 rounded-3xl bg-white border border-charcoal-200/80 shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Itinerary budget</p>
-          <p className="text-lg font-extrabold text-slate-900 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-charcoal-400">Itinerary budget</p>
+          <p className="text-lg font-extrabold text-charcoal-900 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {inr(total)}
             {activeBudget != null && (
-              <span className="text-[12px] font-bold text-slate-400">/ {inr(activeBudget)}</span>
+              <span className="text-[12px] font-bold text-charcoal-400">/ {inr(activeBudget)}</span>
             )}
             {remaining != null && (
               <span className={`text-[13px] font-bold ${remaining >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -136,7 +136,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
             )}
           </p>
           {activeBudget != null && (
-            <div className="mt-2 h-1.5 w-full max-w-xs rounded-full bg-slate-100 overflow-hidden">
+            <div className="mt-2 h-1.5 w-full max-w-xs rounded-full bg-sand-100 overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                 style={{ width: `${pct}%` }}
@@ -145,7 +145,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-slate-400 hidden sm:inline">Drag cards between days · v{itinerary.version}</span>
+          <span className="text-[11px] font-bold text-charcoal-400 hidden sm:inline">Drag cards between days · v{itinerary.version}</span>
           <button
             type="button"
             onClick={openExplore}
@@ -183,7 +183,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
             className={`rounded-3xl border p-4 transition-colors ${
               dragOverDay === day.day
                 ? 'border-travion-400 bg-travion-50/60'
-                : 'border-slate-200/80 bg-white/60'
+                : 'border-charcoal-200/80 bg-white/60'
             } ${busy ? 'opacity-60 pointer-events-none' : ''}`}
           >
             <div className="flex items-center gap-2 mb-3">
@@ -191,20 +191,20 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
                 {day.day}
               </span>
               <div className="min-w-0">
-                <p className="text-[13px] font-extrabold text-slate-900 truncate">Day {day.day}</p>
-                <p className="text-[11px] font-semibold text-slate-400 truncate">{day.title}</p>
+                <p className="text-[13px] font-extrabold text-charcoal-900 truncate">Day {day.day}</p>
+                <p className="text-[11px] font-semibold text-charcoal-400 truncate">{day.title}</p>
               </div>
             </div>
 
             {(day.routes?.length ?? 0) > 0 && (
-              <div className="mb-2 px-3 py-2 rounded-2xl bg-slate-50 border border-slate-100">
-                <p className="text-[10.5px] font-bold text-slate-500 flex items-center gap-1.5 flex-wrap">
+              <div className="mb-2 px-3 py-2 rounded-2xl bg-ivory-50 border border-charcoal-100">
+                <p className="text-[10.5px] font-bold text-charcoal-500 flex items-center gap-1.5 flex-wrap">
                   <Route className="w-3.5 h-3.5 text-travion-600 shrink-0" />
                   <span className="text-travion-700">
                     {(Number(day.route_distance_km) || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km
                     {Number(day.route_duration_min) > 0 && <> · ~{Math.round(Number(day.route_duration_min) / 6) / 10} h on the road</>}
                   </span>
-                  <span className="text-slate-400 font-semibold">real road legs</span>
+                  <span className="text-charcoal-400 font-semibold">real road legs</span>
                 </p>
               </div>
             )}
@@ -217,23 +217,23 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
                   onDragStart={() => setDragStopId(stop.id)}
                   onDragEnd={() => { setDragStopId(null); setDragOverDay(null); dragCounter.current = 0; }}
                   className={`group p-3 rounded-2xl bg-white border shadow-sm transition-all ${
-                    dragStopId === stop.id ? 'opacity-40 border-travion-300' : 'border-slate-200 hover:border-travion-200'
+                    dragStopId === stop.id ? 'opacity-40 border-travion-300' : 'border-charcoal-200 hover:border-travion-200'
                   }`}
                 >
                   <div className="flex items-start gap-2">
-                    <GripVertical className="w-4 h-4 text-slate-300 group-hover:text-travion-500 mt-0.5 shrink-0 cursor-grab" />
+                    <GripVertical className="w-4 h-4 text-charcoal-300 group-hover:text-travion-500 mt-0.5 shrink-0 cursor-grab" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[11px] font-black text-slate-500 flex items-center gap-1">
+                        <span className="text-[11px] font-black text-charcoal-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />{stop.time}
                         </span>
-                        <span className={`text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md ${CATEGORY_STYLES[stop.category] || 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md ${CATEGORY_STYLES[stop.category] || 'bg-sand-100 text-charcoal-600'}`}>
                           {stop.category.replace('_', ' ')}
                         </span>
                       </div>
-                      <p className="text-[13px] font-extrabold text-slate-800 mt-0.5 leading-snug">{stop.title}</p>
-                      <p className="text-[11px] font-medium text-slate-400 truncate">{stop.location_name}</p>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-slate-400">
+                      <p className="text-[13px] font-extrabold text-charcoal-800 mt-0.5 leading-snug">{stop.title}</p>
+                      <p className="text-[11px] font-medium text-charcoal-400 truncate">{stop.location_name}</p>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-charcoal-400">
                         {stop.estimated_cost > 0 && <span>{inr(stop.estimated_cost)}</span>}
                         {stop.duration_minutes > 0 && <span>· {Math.round(stop.duration_minutes / 60 * 10) / 10}h</span>}
                       </div>
@@ -242,7 +242,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
                       type="button"
                       aria-label={`Remove ${stop.title}`}
                       onClick={() => void applyChange({ kind: 'remove', stop_id: stop.id })}
-                      className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                      className="p-1.5 rounded-lg text-charcoal-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -250,7 +250,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
                 </div>
               ))}
               {(day.stops || []).length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-center text-[11px] font-semibold text-slate-400">
+                <div className="rounded-2xl border border-dashed border-charcoal-200 p-4 text-center text-[11px] font-semibold text-charcoal-400">
                   Drag stops here or add from Explore more
                 </div>
               )}
@@ -263,36 +263,36 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
       {showExplore && (
         <div className="fixed inset-0 z-50 flex justify-end bg-travion-900/30 backdrop-blur-sm" onClick={() => setShowExplore(false)}>
           <div className="w-full max-w-md h-full bg-white shadow-floating overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-100 p-5 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-charcoal-100 p-5 flex items-center justify-between z-10">
               <div>
-                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <h3 className="text-base font-extrabold text-charcoal-900 flex items-center gap-2">
                   <Compass className="w-4 h-4 text-travion-600" />
                   Explore more places
                 </h3>
-                <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Verified spots you haven't added yet — tap ADD TO TRIP</p>
+                <p className="text-[11px] font-semibold text-charcoal-400 mt-0.5">Verified spots you haven't added yet — tap ADD TO TRIP</p>
               </div>
-              <button type="button" onClick={() => setShowExplore(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+              <button type="button" onClick={() => setShowExplore(false)} className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-sand-100">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-5 space-y-3">
               {exploreLoading && (
-                <div className="py-10 text-center text-[13px] font-bold text-slate-400">Finding verified places…</div>
+                <div className="py-10 text-center text-[13px] font-bold text-charcoal-400">Finding verified places…</div>
               )}
               {!exploreLoading && (exploreItems || []).length === 0 && (
-                <div className="py-10 text-center text-[13px] font-bold text-slate-400">
+                <div className="py-10 text-center text-[13px] font-bold text-charcoal-400">
                   You've added every verified place for this destination. 🎉
                 </div>
               )}
               {(exploreItems || []).map((place) => (
-                <div key={place.name} className="p-4 rounded-2xl border border-slate-200 bg-white">
+                <div key={place.name} className="p-4 rounded-2xl border border-charcoal-200 bg-white">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[13px] font-extrabold text-slate-800">{place.name}</p>
-                      <p className="text-[11px] font-medium text-slate-400 mt-0.5 line-clamp-2">{place.description}</p>
-                      <div className="flex items-center gap-2 mt-1.5 text-[10px] font-bold text-slate-400">
-                        <span className={`px-1.5 py-0.5 rounded-md ${CATEGORY_STYLES[place.category] || 'bg-slate-100 text-slate-600'}`}>
+                      <p className="text-[13px] font-extrabold text-charcoal-800">{place.name}</p>
+                      <p className="text-[11px] font-medium text-charcoal-400 mt-0.5 line-clamp-2">{place.description}</p>
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px] font-bold text-charcoal-400">
+                        <span className={`px-1.5 py-0.5 rounded-md ${CATEGORY_STYLES[place.category] || 'bg-sand-100 text-charcoal-600'}`}>
                           {place.category.replace('_', ' ')}
                         </span>
                         {place.entry_fee > 0 ? <span>{inr(place.entry_fee)}</span> : <span>Free</span>}

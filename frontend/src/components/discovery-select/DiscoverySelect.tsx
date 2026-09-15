@@ -258,7 +258,20 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     requestAnimationFrame(() => {
       if (mapRef.current) map.invalidateSize();
     });
+    // Responsive correctness: when the window resizes (or a panel reflows the
+    // grid), Leaflet keeps a stale canvas size — re-measure to avoid a
+    // half-rendered map on mobile rotation or desktop split-pane use.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (mapRef.current) map.invalidateSize();
+      }, 150);
+    };
+    window.addEventListener('resize', onResize);
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      window.removeEventListener('resize', onResize);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
@@ -610,9 +623,29 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     ];
     const byName = new Map<string, MapPlace>();
     for (const [, i] of allMap) if (!byName.has(i.name)) byName.set(i.name, i);
+    // Activities carry their own real coordinates (they are auto-selected when
+    // recommended): resolve them too so plan stops keep their lat/lng instead
+    // of falling back to a coordinate-less {name, source:'selected'} stub.
+    const activityItems = new Map<string, SelectedPlaceItem>();
+    for (const a of catalog?.activities ?? []) {
+      if (a.latitude == null || a.longitude == null) continue;
+      activityItems.set(a.name, {
+        id: a.id ?? null,
+        name: a.name,
+        latitude: a.latitude,
+        longitude: a.longitude,
+        entry_fee: a.entry_fee ?? null,
+        duration_minutes: a.duration_minutes ?? null,
+        rating: a.rating ?? null,
+        placement: a.placement ?? 'inside',
+        source: a.source ?? 'derived',
+      });
+    }
     const itemBySelection = (name: string): SelectedPlaceItem => {
       const mapHit = byName.get(name);
       if (mapHit) return toPlaceItemFromMap(mapHit);
+      const act = activityItems.get(name);
+      if (act) return act;
       const hit = allItems.find((p) => p.name === name);
       return hit ? toPlaceItem(hit) : { name, source: 'selected' };
     };
@@ -655,8 +688,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="text-center mb-6">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 3 · Destination discovery</span>
-        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">Explore {destinationName}</h2>
-        <p className="mt-1.5 text-[13px] font-medium text-slate-500">
+        <h2 className="mt-2 text-2xl font-extrabold text-charcoal-900 tracking-tight">Explore {destinationName}</h2>
+        <p className="mt-1.5 text-[13px] font-medium text-charcoal-500">
           The map is your planner: pan the real destination, tap any pin or card for details, and build your own plan.
           Travion pre-selects the best matches for your travel style — unselect or add freely;
           only your final picks shape the itinerary.
@@ -678,14 +711,14 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
       {!catalog && !loadError && (
         <div className="py-16 text-center">
-          <p className="text-[13px] font-bold text-slate-500">Exploring {destinationName}…</p>
-          <p className="mt-1 text-[12px] font-medium text-slate-400">Finding verified places · loading the destination map…</p>
+          <p className="text-[13px] font-bold text-charcoal-500">Exploring {destinationName}…</p>
+          <p className="mt-1 text-[12px] font-medium text-charcoal-400">Finding verified places · loading the destination map…</p>
           <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="p-4 rounded-2xl border border-slate-200 bg-white animate-pulse">
-                <div className="h-3.5 w-2/3 rounded bg-slate-200" />
-                <div className="mt-2 h-2.5 w-full rounded bg-slate-100" />
-                <div className="mt-1.5 h-2.5 w-4/5 rounded bg-slate-100" />
+              <div key={i} className="p-4 rounded-2xl border border-charcoal-200 bg-white animate-pulse">
+                <div className="h-3.5 w-2/3 rounded bg-sand-200" />
+                <div className="mt-2 h-2.5 w-full rounded bg-sand-100" />
+                <div className="mt-1.5 h-2.5 w-4/5 rounded bg-sand-100" />
               </div>
             ))}
           </div>
@@ -696,23 +729,23 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         <>
           {/* Data source — honest badge about where these places come from */}
           <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
+            <span className="inline-flex items-center gap-1 rounded-full bg-sand-100 border border-charcoal-200 px-3 py-1 text-[11px] font-bold text-charcoal-500">
               <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />
               All places verified, no invented entries
             </span>
             {catalog.discovery_source && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sand-100 border border-charcoal-200 px-3 py-1 text-[11px] font-bold text-charcoal-500">
                 <MapPin className="w-3.5 h-3.5 text-travion-600" />
                 Source: {catalog.discovery_source.replace(/_/g, ' ')}
               </span>
             )}
             {catalog.destination_radius_km != null ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sand-100 border border-charcoal-200 px-3 py-1 text-[11px] font-bold text-charcoal-500">
                 <Landmark className="w-3.5 h-3.5 text-travion-600" />
                 Whole {catalog.destination} area ({catalog.destination_radius_km} km map)
               </span>
             ) : catalog.core_radius_km != null ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sand-100 border border-charcoal-200 px-3 py-1 text-[11px] font-bold text-charcoal-500">
                 <Landmark className="w-3.5 h-3.5 text-travion-600" />
                 Destination-wide: {catalog.destination}
               </span>
@@ -755,27 +788,27 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             <div className="lg:w-[62%] lg:sticky lg:top-4 lg:self-start mb-6 lg:mb-0">
               {/* In-dataset search (spec §33) — real loaded POIs only */}
               <div className="relative mb-2.5">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-400 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Search places in ${destinationName}… (museum, hotel, park)`}
-                  className="w-full h-11 pl-10 pr-4 rounded-2xl border border-slate-200 bg-white text-[13px] font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300 shadow-soft"
+                  className="w-full h-11 pl-10 pr-4 rounded-2xl border border-charcoal-200 bg-white text-[13px] font-semibold text-charcoal-800 placeholder:text-charcoal-400 placeholder:font-medium focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300 shadow-soft"
                   aria-label={`Search places in ${destinationName}`}
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-charcoal-400 hover:text-charcoal-700 hover:bg-sand-100"
                     aria-label="Clear search"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 )}
                 {searchResults.length > 0 && (
-                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-slate-200 bg-white shadow-floating overflow-hidden">
+                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-charcoal-200 bg-white shadow-floating overflow-hidden">
                     {searchResults.map(({ key, item }) => (
                       <button
                         key={`sr_${key}_${item.name}`}
@@ -785,8 +818,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       >
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[key] ?? '#64748b' }} />
                         <span className="min-w-0 flex-1">
-                          <span className="block text-[13px] font-extrabold text-slate-900 truncate">{item.name}</span>
-                          {item.address && <span className="block text-[11px] font-medium text-slate-400 truncate">{item.address}</span>}
+                          <span className="block text-[13px] font-extrabold text-charcoal-900 truncate">{item.name}</span>
+                          {item.address && <span className="block text-[11px] font-medium text-charcoal-400 truncate">{item.address}</span>}
                         </span>
                         <span className="text-[10px] font-black uppercase tracking-wide text-travion-600 shrink-0">{MAP_LAYERS[key]?.label ?? key}</span>
                       </button>
@@ -794,7 +827,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   </div>
                 )}
                 {searchQuery.trim() && searchResults.length === 0 && (
-                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-slate-200 bg-white shadow-floating px-4 py-3 text-[12px] font-bold text-slate-500">
+                  <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-charcoal-200 bg-white shadow-floating px-4 py-3 text-[12px] font-bold text-charcoal-500">
                     No loaded place matches "{searchQuery.trim()}" — try panning the map to load more.
                   </div>
                 )}
@@ -808,7 +841,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   type="button"
                   onClick={() => setMapFilter('all')}
                   className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all ${
-                    mapFilter === 'all' ? 'text-white bg-travion-600 border-transparent shadow-sm' : 'bg-white text-slate-600 hover:border-slate-300'
+                    mapFilter === 'all' ? 'text-white bg-travion-600 border-transparent shadow-sm' : 'bg-white text-charcoal-600 hover:border-charcoal-300'
                   }`}
                 >
                   <Compass className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
@@ -829,21 +862,21 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       className={`h-8 px-3.5 rounded-full text-[12px] font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                         mapFilter === f
                           ? 'text-white border-transparent shadow-sm'
-                          : 'bg-white text-slate-600 hover:border-slate-300'
+                          : 'bg-white text-charcoal-600 hover:border-charcoal-300'
                       }`}
-                      style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#0f172a' } : undefined}
+                      style={mapFilter === f && color ? { backgroundColor: color } : mapFilter === f ? { backgroundColor: '#1b232c' } : undefined}
                     >
-                      {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-slate-400'}`}>{count ?? '—'}</span>
+                      {label} <span className={`ml-0.5 text-[10px] font-black ${mapFilter === f ? 'opacity-80' : 'text-charcoal-400'}`}>{count ?? '—'}</span>
                     </button>
                   );
                 })}
               </div>
 
               {/* THE MAP — dominates the viewport (spec §1/§18) */}
-              <div className="rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-soft">
+              <div className="rounded-3xl overflow-hidden border border-charcoal-200 bg-white shadow-soft">
                 <div ref={mapDiv} className="h-[360px] sm:h-[440px] lg:h-[560px] w-full z-0 relative" />
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-t border-slate-100">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-ivory-50 border-t border-charcoal-100">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-charcoal-500">
                     {(Object.entries(COLORS) as Array<[string, string]>).map(([k, c]) => (
                       <span key={k} className="inline-flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c }} />
@@ -860,7 +893,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     >
                       <LocateFixed className="w-3.5 h-3.5" /> Reset view
                     </button>
-                    <span className="inline-flex items-center gap-1 text-slate-400 font-medium text-[11px]">
+                    <span className="inline-flex items-center gap-1 text-charcoal-400 font-medium text-[11px]">
                       {vpLoading ? (
                         <>
                           <span className="w-1.5 h-1.5 rounded-full bg-travion-500 animate-pulse inline-block" />
@@ -888,17 +921,17 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   back to that exact place (spec §11). */}
               <div className="mb-6 rounded-3xl border border-travion-100 bg-travion-50/40 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-600">
+                  <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-600">
                     <ClipboardList className="w-4 h-4 text-travion-600" /> My Plan
                   </h3>
-                  <span className="text-[11px] font-bold text-slate-500">
+                  <span className="text-[11px] font-bold text-charcoal-500">
                     {totalSelected > 0
                       ? `${selected.size} place${selected.size === 1 ? '' : 's'} · ${selectedFood.size} food stop${selectedFood.size === 1 ? '' : 's'}${selectedStay ? ' · stay selected' : ''}`
                       : 'Nothing selected yet — tap pins or cards to add'}
                   </span>
                 </div>
                 {totalSelected === 0 && !selectedStay ? (
-                  <p className="text-[12px] font-medium text-slate-400">
+                  <p className="text-[12px] font-medium text-charcoal-400">
                     Places, activities and food stops you add will appear here before your itinerary is organized.
                   </p>
                 ) : (
@@ -909,7 +942,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         type="button"
                         title="Show on map"
                         onClick={() => flyToByName(name)}
-                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-travion-200 text-[11px] font-bold text-slate-700 hover:border-travion-400 transition-colors"
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-travion-200 text-[11px] font-bold text-charcoal-700 hover:border-travion-400 transition-colors"
                       >
                         {name}
                         <span
@@ -918,7 +951,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label={`Remove ${name} from plan`}
                           onClick={(e) => { e.stopPropagation(); toggle(selected, setSelected, name); }}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggle(selected, setSelected, name); } }}
-                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                          className="p-0.5 rounded-full text-charcoal-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <X className="w-3 h-3" />
                         </span>
@@ -930,7 +963,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         type="button"
                         title="Show on map"
                         onClick={() => flyToByName(name)}
-                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-orange-200 text-[11px] font-bold text-slate-700 hover:border-orange-400 transition-colors"
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-orange-200 text-[11px] font-bold text-charcoal-700 hover:border-orange-400 transition-colors"
                       >
                         {name}
                         <span
@@ -939,7 +972,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label={`Remove ${name} from plan`}
                           onClick={(e) => { e.stopPropagation(); toggle(selectedFood, setSelectedFood, name); }}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggle(selectedFood, setSelectedFood, name); } }}
-                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                          className="p-0.5 rounded-full text-charcoal-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <X className="w-3 h-3" />
                         </span>
@@ -950,7 +983,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         type="button"
                         title="Show on map"
                         onClick={() => flyToByName(selectedStay.name)}
-                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-violet-200 text-[11px] font-bold text-slate-700 hover:border-violet-400 transition-colors"
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-white border border-violet-200 text-[11px] font-bold text-charcoal-700 hover:border-violet-400 transition-colors"
                       >
                         {selectedStay.name}
                         <span
@@ -959,7 +992,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label="Remove stay"
                           onClick={(e) => { e.stopPropagation(); setSelectedStay(null); }}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setSelectedStay(null); } }}
-                          className="p-0.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50"
+                          className="p-0.5 rounded-full text-charcoal-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <X className="w-3 h-3" />
                         </span>
@@ -971,17 +1004,17 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
               {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <Mountain className="w-4 h-4 text-travion-600" /> Must visit
-                  <span className="text-slate-300">·</span>
+                  <span className="text-charcoal-300">·</span>
                   <span className="text-[11px] font-bold text-emerald-600 normal-case">✓ verified real places</span>
                 </h3>
                 {places.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center">
-                    <p className="text-[13px] font-bold text-slate-600">
+                  <div className="rounded-2xl border border-dashed border-charcoal-300 bg-ivory-50 px-5 py-6 text-center">
+                    <p className="text-[13px] font-bold text-charcoal-600">
                       No verified places found for {catalog.destination} right now.
                     </p>
-                    <p className="mt-1 text-[12px] font-medium text-slate-400">
+                    <p className="mt-1 text-[12px] font-medium text-charcoal-400">
                       We only show real, verified places — we never invent attractions. Check back later or try a nearby destination.
                     </p>
                   </div>
@@ -1005,7 +1038,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                               ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
                               : focused
                                 ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                                : 'bg-white border-slate-200 hover:border-travion-200'
+                                : 'bg-white border-charcoal-200 hover:border-travion-200'
                           }`}
                         >
                           <button
@@ -1016,17 +1049,17 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             aria-label={`Show ${place.name} on the map`}
                           >
                             <div className="min-w-0">
-                              <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{place.name}</p>
+                              <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{place.name}</p>
                               {place.description && (
-                                <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{place.description}</p>
+                                <p className="mt-1 text-[11px] font-medium text-charcoal-500 line-clamp-2">{place.description}</p>
                               )}
-                              <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                              <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                                 <span className="text-travion-600">{placementLabel(place.placement, place.distance_km)}</span>
                                 {(place.entry_fee ?? 0) > 0 ? <span>· ₹{place.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
                                 {place.rating != null && <span>· ★ {Number(place.rating).toFixed(1)}</span>}
                               </div>
                             </div>
-                            <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                            <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
                           </button>
                           <div className="mt-2.5 flex items-center justify-between gap-2">
                             <button
@@ -1076,9 +1109,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   inside the destination — never a nearby town (spec §4). */}
               {touristSpots.length > 0 && (
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <Camera className="w-4 h-4 text-travion-600" /> Best tourist spots
-                  <span className="text-slate-300">·</span>
+                  <span className="text-charcoal-300">·</span>
                   <span className="text-[11px] font-bold text-emerald-600 normal-case">most popular attractions in {destinationName}</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
@@ -1099,7 +1132,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
                             : focused
                               ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                              : 'bg-white border-slate-200 hover:border-travion-200'
+                              : 'bg-white border-charcoal-200 hover:border-travion-200'
                         }`}
                       >
                         <button
@@ -1110,17 +1143,17 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label={`Show ${spot.name} on the map`}
                         >
                           <div className="min-w-0">
-                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{spot.name}</p>
+                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{spot.name}</p>
                             {spot.description && (
-                              <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{spot.description}</p>
+                              <p className="mt-1 text-[11px] font-medium text-charcoal-500 line-clamp-2">{spot.description}</p>
                             )}
-                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                               <span className="text-travion-600">{placementLabel(spot.placement, spot.distance_km)}</span>
                               {(spot.entry_fee ?? 0) > 0 ? <span>· ₹{spot.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
                               {spot.rating != null && <span>· ★ {Number(spot.rating).toFixed(1)}</span>}
                             </div>
                           </div>
-                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
                           <button
@@ -1160,9 +1193,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   flies the map to the activity's exact real location (§8). */}
               {activities.length > 0 && (
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <Compass className="w-4 h-4 text-travion-600" /> Activities to do
-                  <span className="text-slate-300">·</span>
+                  <span className="text-charcoal-300">·</span>
                   <span className="text-[11px] font-bold text-emerald-600 normal-case">real experiences at real places</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
@@ -1192,7 +1225,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
                             : focused
                               ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                              : 'bg-white border-slate-200 hover:border-travion-200'
+                              : 'bg-white border-charcoal-200 hover:border-travion-200'
                         }`}
                       >
                         <button
@@ -1203,11 +1236,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label={`Show ${activity.location_name} on the map`}
                         >
                           <div className="min-w-0">
-                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{activity.action}</p>
+                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{activity.action}</p>
                             {activity.description && (
-                              <p className="mt-1 text-[11px] font-medium text-slate-500 line-clamp-2">{activity.description}</p>
+                              <p className="mt-1 text-[11px] font-medium text-charcoal-500 line-clamp-2">{activity.description}</p>
                             )}
-                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-slate-400">
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-charcoal-400">
                               <span className="inline-flex items-center gap-1 text-travion-700">
                                 <MapPin className="w-3 h-3" /> {activity.location_name}
                               </span>
@@ -1220,7 +1253,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                               {activity.rating != null && <span>· ★ {Number(activity.rating).toFixed(1)}</span>}
                             </div>
                           </div>
-                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
                           <button
@@ -1258,10 +1291,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   listings; the section disappears entirely when there are none. */}
               {events.length > 0 && (
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <CalendarDays className="w-4 h-4 text-travion-600" /> Live during your dates
-                  <span className="text-slate-300">·</span>
-                  <span className="text-[11px] font-bold text-slate-400 normal-case">tap to add to your trip</span>
+                  <span className="text-charcoal-300">·</span>
+                  <span className="text-[11px] font-bold text-charcoal-400 normal-case">tap to add to your trip</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
                   {events.map((ev) => {
@@ -1276,18 +1309,18 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         className={`text-left p-4 rounded-2xl border transition-all cursor-pointer ${
                           active
                             ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                            : 'bg-white border-slate-200 hover:border-travion-200'
+                            : 'bg-white border-charcoal-200 hover:border-travion-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{ev.name}</p>
+                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{ev.name}</p>
                             {ev.venue && (
-                              <p className="mt-0.5 text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                              <p className="mt-0.5 text-[11px] font-medium text-charcoal-500 flex items-center gap-1">
                                 <MapPin className="w-3 h-3" /> {ev.venue}
                               </p>
                             )}
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                               {ev.date && <span className="text-travion-600">{ev.date}{ev.time ? ` · ${ev.time}` : ''}</span>}
                               {ev.price != null && <span>· ₹{ev.price}</span>}
                               {ev.booking_url && (
@@ -1304,7 +1337,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             </div>
                           </div>
                           <span className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors ${
-                            active ? 'bg-travion-600 border-travion-600' : 'border-slate-300 bg-white'
+                            active ? 'bg-travion-600 border-travion-600' : 'border-charcoal-300 bg-white'
                           }`}>
                             {active && (
                               <svg viewBox="0 0 12 12" className="w-3 h-3 text-white"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
@@ -1321,7 +1354,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               {/* Food — hidden entirely when the source has none (never invented) */}
               {catalog.food.length > 0 && (
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <Utensils className="w-4 h-4 text-travion-600" /> Where to eat
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
@@ -1342,7 +1375,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100'
                             : focused
                               ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                              : 'bg-white border-slate-200 hover:border-orange-200'
+                              : 'bg-white border-charcoal-200 hover:border-orange-200'
                         }`}
                       >
                         <button
@@ -1353,15 +1386,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           aria-label={`Show ${food.name} on the map`}
                         >
                           <div className="min-w-0">
-                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug">{food.name}</p>
-                            <p className="mt-0.5 text-[11px] font-medium text-slate-500 truncate">{food.cuisine}</p>
-                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{food.name}</p>
+                            <p className="mt-0.5 text-[11px] font-medium text-charcoal-500 truncate">{food.cuisine}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                               {food.avg_cost_for_two != null && <span>₹{food.avg_cost_for_two} for two</span>}
                               {food.rating != null && <span>· ★ {Number(food.rating).toFixed(1)}</span>}
                               <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified</span>
                             </div>
                           </div>
-                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
                           <button
@@ -1398,10 +1431,10 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               {/* Stays — single-select radio. The chosen stay is used EVERY night of the trip. */}
               {catalog.stays.length > 0 && (
               <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-slate-500 mb-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <BedDouble className="w-4 h-4 text-travion-600" /> Pick your stay
-                  <span className="text-slate-300">·</span>
-                  <span className="text-[11px] font-bold text-slate-400 normal-case">use one stay for the whole trip</span>
+                  <span className="text-charcoal-300">·</span>
+                  <span className="text-[11px] font-bold text-charcoal-400 normal-case">use one stay for the whole trip</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
                   <button
@@ -1409,14 +1442,14 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     onClick={() => setSelectedStay(null)}
                     className={`text-left p-4 rounded-2xl border transition-all ${
                       selectedStay === null
-                        ? 'bg-slate-50 border-slate-400 ring-2 ring-slate-100'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
+                        ? 'bg-ivory-50 border-charcoal-400 ring-2 ring-charcoal-100'
+                        : 'bg-white border-charcoal-200 hover:border-charcoal-300'
                     }`}
                   >
-                    <p className="text-[13.5px] font-extrabold text-slate-900">Continue without a stay</p>
-                    <p className="mt-1 text-[11px] font-medium text-slate-500">Plans will be day-trip style — great for low budgets.</p>
+                    <p className="text-[13.5px] font-extrabold text-charcoal-900">Continue without a stay</p>
+                    <p className="mt-1 text-[11px] font-medium text-charcoal-500">Plans will be day-trip style — great for low budgets.</p>
                     <span className={`mt-2 inline-flex w-4 h-4 rounded-full border items-center justify-center ${
-                      selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-slate-300'
+                      selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-charcoal-300'
                     }`}>
                       {selectedStay === null && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                     </span>
@@ -1438,7 +1471,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
                             : focused
                               ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                              : 'bg-white border-slate-200 hover:border-travion-200'
+                              : 'bg-white border-charcoal-200 hover:border-travion-200'
                         }`}
                       >
                         <button
@@ -1450,8 +1483,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         >
                           <div className="min-w-0">
                             {stay.tier && <p className="text-[10px] font-black uppercase tracking-wide text-travion-700">{stay.tier}</p>}
-                            <p className="text-[13.5px] font-extrabold text-slate-900 leading-snug mt-0.5">{stay.name}</p>
-                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-slate-400">
+                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug mt-0.5">{stay.name}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                               {stay.price_per_night
                                 ? <span>₹{Number(stay.price_per_night).toLocaleString('en-IN')}/night</span>
                                 : <span>Price not available</span>}
@@ -1459,12 +1492,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                               {stay.distance_km != null && <span className="text-travion-600">· {stay.distance_km} km</span>}
                             </div>
                             {stay.budget_category && (
-                              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-sand-100 px-2 py-0.5 text-[10px] font-bold text-charcoal-500">
                                 {stay.budget_category}
                               </span>
                             )}
                           </div>
-                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-slate-300'}`} />
+                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
                         </button>
                         <div className="mt-2.5 flex items-center justify-between gap-2">
                           <button
@@ -1518,8 +1551,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
               {/* Live selection estimate — no hidden costs, updated as you pick */}
               {(totalSelected > 0 || selectedStay) && (
-                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-slate-600">
-                  <span className="text-slate-500">
+                <div className="mb-3 rounded-2xl border border-charcoal-200 bg-ivory-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-charcoal-600">
+                  <span className="text-charcoal-500">
                     Estimated add-on spend so far
                   </span>
                   <span className="text-travion-700">
@@ -1531,8 +1564,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
               {/* Sticky action bar (inside the scrollable panel on desktop) */}
               <div className="sticky bottom-4 z-10">
-                <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-slate-200 shadow-floating px-5 py-4">
-                  <button type="button" onClick={onBack} className="text-[13px] font-bold text-slate-500 hover:text-slate-700">
+                <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-charcoal-200 shadow-floating px-5 py-4">
+                  <button type="button" onClick={onBack} className="text-[13px] font-bold text-charcoal-500 hover:text-charcoal-700">
                     Back
                   </button>
                   {!hasNothing && (
@@ -1540,7 +1573,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       type="button"
                       disabled={busy || !!budgetTier?.impossible}
                       onClick={handleConfirm}
-                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
+                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-sand-200 disabled:text-charcoal-400 text-white text-sm font-extrabold transition-colors"
                     >
                       {budgetTier?.impossible ? 'Budget too low for plans'
                         : busy ? 'Generating your plans…' : 'Continue to Trip Planning'}
@@ -1551,7 +1584,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     <button
                       type="button"
                       disabled
-                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-slate-200 text-slate-400 text-sm font-extrabold cursor-not-allowed"
+                      className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-sand-200 text-charcoal-400 text-sm font-extrabold cursor-not-allowed"
                     >
                       No verified places to add yet
                     </button>
@@ -1586,7 +1619,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 initial={{ y: 24, opacity: 0, scale: 0.98 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: 24, opacity: 0, scale: 0.98 }}
-                className="w-full max-w-md bg-white rounded-3xl shadow-floating border border-slate-200 overflow-hidden"
+                className="w-full max-w-md bg-white rounded-3xl shadow-floating border border-charcoal-200 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start justify-between p-5 pb-3">
@@ -1597,22 +1630,22 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                     >
                       {MAP_LAYERS[popupPlace.key]?.label ?? popupPlace.key}
                     </span>
-                    <h3 className="mt-1.5 text-lg font-extrabold text-slate-900 leading-snug">{p.name}</h3>
+                    <h3 className="mt-1.5 text-lg font-extrabold text-charcoal-900 leading-snug">{p.name}</h3>
                     {(p as MapPlace).address && (
-                      <p className="mt-0.5 text-[11.5px] font-medium text-slate-500 line-clamp-2">{(p as MapPlace).address}</p>
+                      <p className="mt-0.5 text-[11.5px] font-medium text-charcoal-500 line-clamp-2">{(p as MapPlace).address}</p>
                     )}
                   </div>
                   <button
                     type="button"
                     onClick={() => setPopupPlace(null)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 shrink-0"
+                    className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-sand-100 shrink-0"
                     aria-label="Close"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
                 <div className="px-5 pb-5">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-charcoal-500">
                     {(p as MapPlace).rating != null && <span>★ {Number((p as MapPlace).rating).toFixed(1)}</span>}
                     {(p as MapPlace).opening_hours && <span>🕘 {(p as MapPlace).opening_hours}</span>}
                     {p.distance_km != null && <span>{p.distance_km} km from centre</span>}

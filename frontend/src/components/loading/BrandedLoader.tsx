@@ -86,7 +86,7 @@ export const BrandedLoader: React.FC<BrandedLoaderProps> = ({
       </div>
 
       {/* Headline */}
-      <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2 tracking-tight">
+      <h3 className="text-xl md:text-2xl font-bold text-charcoal-900 mb-2 tracking-tight">
         {headline}
       </h3>
 
@@ -96,7 +96,7 @@ export const BrandedLoader: React.FC<BrandedLoaderProps> = ({
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="text-sm font-medium text-slate-600 min-h-[44px] flex items-center justify-center"
+        className="text-sm font-medium text-charcoal-600 min-h-[44px] flex items-center justify-center"
       >
         {steps[currentStepIndex]}
       </motion.p>
@@ -110,7 +110,7 @@ export const BrandedLoader: React.FC<BrandedLoaderProps> = ({
           transition={{ duration: 0.4, ease: "easeInOut" }}
         />
       </div>
-      <span className="text-xs text-slate-400 font-semibold mt-2">{progressPercent}%</span>
+      <span className="text-xs text-charcoal-400 font-semibold mt-2">{progressPercent}%</span>
     </div>
   );
 

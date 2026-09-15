@@ -135,7 +135,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
           className="w-full max-w-xl text-center"
         >
           <Loader2 className="w-12 h-12 text-travion-500 animate-spin mx-auto" />
-          <p className="mt-4 text-slate-500 font-medium">Loading verification status...</p>
+          <p className="mt-4 text-charcoal-500 font-medium">Loading verification status...</p>
         </motion.div>
       </div>
     );
@@ -146,8 +146,8 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
       <div className="min-h-screen bg-white flex items-center justify-center px-4 py-20">
         <div className="w-full max-w-xl text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-          <h1 className="mt-4 text-2xl font-bold text-slate-900">Unable to Load Status</h1>
-          <p className="mt-2 text-slate-500">{error}</p>
+          <h1 className="mt-4 text-2xl font-bold text-charcoal-900">Unable to Load Status</h1>
+          <p className="mt-2 text-charcoal-500">{error}</p>
           <button
             onClick={() => window.location.reload()}
             className="mt-6 inline-flex items-center gap-2 h-12 px-6 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors"
@@ -182,10 +182,10 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
           </div>
 
           <Eyebrow>Guide Status</Eyebrow>
-          <h1 className="mt-3 text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="mt-3 text-3xl md:text-4xl font-extrabold text-charcoal-900 tracking-tight">
             {config.title}
           </h1>
-          <p className="mt-3 text-slate-500 leading-relaxed max-w-lg mx-auto">
+          <p className="mt-3 text-charcoal-500 leading-relaxed max-w-lg mx-auto">
             {config.description}
           </p>
         </motion.div>
@@ -197,7 +197,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
           transition={{ duration: 0.6, delay: 0.1, ease: EASE }}
           className={`rounded-2xl border ${config.borderColor} ${config.bgColor} p-6 mb-8`}
         >
-          <h2 className="text-sm font-bold text-slate-700 mb-5">Verification Progress</h2>
+          <h2 className="text-sm font-bold text-charcoal-700 mb-5">Verification Progress</h2>
           <div className="space-y-4">
             {config.progressItems.map((item, index) => (
               <div
@@ -207,22 +207,22 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
                 } ${item.current ? 'pb-2' : ''}`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  item.done ? 'bg-emerald-500' : 'bg-slate-200'
+                  item.done ? 'bg-emerald-500' : 'bg-sand-200'
                 }`}>
                   {item.done ? (
                     <Check className="w-3.5 h-3.5 text-white" />
                   ) : (
-                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    <span className="w-2 h-2 rounded-full bg-sand-400" />
                   )}
                 </div>
                 <div>
                   <p className={`text-sm font-bold ${
-                    item.done ? 'text-slate-900' : 'text-slate-500'
+                    item.done ? 'text-charcoal-900' : 'text-charcoal-500'
                   } ${item.current ? 'text-amber-600' : ''}`}>
                     {item.label}
                   </p>
                   {item.current && (
-                    <p className="text-xs text-slate-400">Current status</p>
+                    <p className="text-xs text-charcoal-400">Current status</p>
                   )}
                 </div>
               </div>
@@ -236,27 +236,27 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2, ease: EASE }}
-            className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+            className="rounded-2xl border border-charcoal-200 bg-ivory-50 p-6"
           >
-            <h2 className="text-sm font-bold text-slate-700 mb-4">Your Profile Summary</h2>
+            <h2 className="text-sm font-bold text-charcoal-700 mb-4">Your Profile Summary</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs font-medium text-slate-400 mb-1">Experience</p>
-                <p className="text-sm font-bold text-slate-900">{verification.experience_years} years</p>
+                <p className="text-xs font-medium text-charcoal-400 mb-1">Experience</p>
+                <p className="text-sm font-bold text-charcoal-900">{verification.experience_years} years</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-400 mb-1">Profile Complete</p>
+                <p className="text-xs font-medium text-charcoal-400 mb-1">Profile Complete</p>
                 <p className={`text-sm font-bold ${verification.profile_completed ? 'text-emerald-600' : 'text-amber-600'}`}>
                   {verification.profile_completed ? 'Yes' : 'Pending'}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-400 mb-1">Languages</p>
-                <p className="text-sm font-bold text-slate-900">{verification.languages.join(', ') || 'Not set'}</p>
+                <p className="text-xs font-medium text-charcoal-400 mb-1">Languages</p>
+                <p className="text-sm font-bold text-charcoal-900">{verification.languages.join(', ') || 'Not set'}</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-400 mb-1">Destinations</p>
-                <p className="text-sm font-bold text-slate-900">{verification.destinations.join(', ') || 'Not set'}</p>
+                <p className="text-xs font-medium text-charcoal-400 mb-1">Destinations</p>
+                <p className="text-sm font-bold text-charcoal-900">{verification.destinations.join(', ') || 'Not set'}</p>
               </div>
             </div>
           </motion.div>
@@ -286,7 +286,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
                 Update and Resubmit Profile
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <p className="text-center text-xs text-slate-400">
+              <p className="text-center text-xs text-charcoal-400">
                 You'll be notified once your updated profile is reviewed.
               </p>
             </>
@@ -299,7 +299,7 @@ export const GuideVerification: React.FC<GuideVerificationProps> = ({ onDashboar
                 Update Profile Details
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <p className="text-center text-xs text-slate-400">
+              <p className="text-center text-xs text-charcoal-400">
                 You can update your profile details while waiting for verification.
               </p>
             </>

@@ -7,7 +7,7 @@ export function KpiCard({ label, value, sub, tone = 'default' }: {
   label: string; value: React.ReactNode; sub?: string; tone?: 'default' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'sky';
 }) {
   const tones: Record<string, string> = {
-    default: 'text-slate-900',
+    default: 'text-charcoal-900',
     indigo: 'text-travion-600',
     emerald: 'text-emerald-600',
     amber: 'text-amber-600',
@@ -15,10 +15,10 @@ export function KpiCard({ label, value, sub, tone = 'default' }: {
     sky: 'text-sky-600',
   };
   return (
-    <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-soft">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">{label}</span>
+    <div className="p-5 rounded-3xl bg-white border border-charcoal-200 shadow-soft">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-charcoal-400 block">{label}</span>
       <div className={`mt-1 text-2xl font-black tabular-nums ${tones[tone]}`}>{value}</div>
-      {sub && <span className="text-[10.5px] font-semibold text-slate-400 mt-1 block">{sub}</span>}
+      {sub && <span className="text-[10.5px] font-semibold text-charcoal-400 mt-1 block">{sub}</span>}
     </div>
   );
 }
@@ -38,15 +38,15 @@ const STATUS_STYLES: Record<string, string> = {
   PENDING: 'bg-amber-100 text-amber-800',
   ACCEPTED: 'bg-amber-100 text-amber-800',
   BUSY: 'bg-amber-100 text-amber-800',
-  DUTY_OFF: 'bg-slate-200 text-slate-600',
+  DUTY_OFF: 'bg-sand-200 text-charcoal-600',
   REJECTED: 'bg-rose-100 text-rose-800',
   FAILED: 'bg-rose-100 text-rose-800',
-  DRAFT: 'bg-slate-200 text-slate-600',
+  DRAFT: 'bg-sand-200 text-charcoal-600',
 };
 
 export function StatusPill({ status }: { status?: string | null }) {
-  if (!status) return <span className="text-[10px] font-bold text-slate-300">—</span>;
-  const style = STATUS_STYLES[String(status).toUpperCase()] || 'bg-slate-100 text-slate-600';
+  if (!status) return <span className="text-[10px] font-bold text-charcoal-300">—</span>;
+  const style = STATUS_STYLES[String(status).toUpperCase()] || 'bg-sand-100 text-charcoal-600';
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${style}`}>
       {status}
@@ -58,7 +58,7 @@ export function ModePill({ mode }: { mode?: string | null }) {
   if (!mode) return null;
   const guide = mode === 'GUIDE_MODE';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap ${guide ? 'bg-travion-100 text-travion-700' : 'bg-slate-100 text-slate-600'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap ${guide ? 'bg-travion-100 text-travion-700' : 'bg-sand-100 text-charcoal-600'}`}>
       {guide ? 'Guide' : 'Adventurous'}
     </span>
   );
@@ -68,11 +68,11 @@ export function ModePill({ mode }: { mode?: string | null }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
-      <div className="w-11 h-11 rounded-2xl bg-slate-100 text-slate-300 flex items-center justify-center mb-3">
+      <div className="w-11 h-11 rounded-2xl bg-sand-100 text-charcoal-300 flex items-center justify-center mb-3">
         <Inbox className="w-5 h-5" />
       </div>
-      <p className="text-sm font-extrabold text-slate-500">{title}</p>
-      {hint && <p className="mt-1 text-[11px] font-semibold text-slate-400 max-w-sm">{hint}</p>}
+      <p className="text-sm font-extrabold text-charcoal-500">{title}</p>
+      {hint && <p className="mt-1 text-[11px] font-semibold text-charcoal-400 max-w-sm">{hint}</p>}
     </div>
   );
 }
@@ -82,12 +82,12 @@ export function SectionCard({ title, subtitle, actions, children, className = ''
   title?: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <div className={`p-5 md:p-6 rounded-3xl bg-white border border-slate-200 shadow-soft ${className}`}>
+    <div className={`p-5 md:p-6 rounded-3xl bg-white border border-charcoal-200 shadow-soft ${className}`}>
       {(title || actions) && (
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            {title && <h3 className="text-[15px] font-extrabold text-slate-900">{title}</h3>}
-            {subtitle && <p className="mt-0.5 text-[11.5px] font-semibold text-slate-400">{subtitle}</p>}
+            {title && <h3 className="text-[15px] font-extrabold text-charcoal-900">{title}</h3>}
+            {subtitle && <p className="mt-0.5 text-[11.5px] font-semibold text-charcoal-400">{subtitle}</p>}
           </div>
           {actions}
         </div>
@@ -103,12 +103,12 @@ export function SearchBox({ value, onChange, placeholder }: {
 }) {
   return (
     <div className="relative">
-      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      <Search className="w-3.5 h-3.5 text-charcoal-400 absolute left-3 top-1/2 -translate-y-1/2" />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'Search…'}
-        className="w-full sm:w-64 pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300"
+        className="w-full sm:w-64 pl-9 pr-3 py-2 rounded-xl border border-charcoal-200 bg-white text-xs font-semibold text-charcoal-700 placeholder:text-charcoal-400 focus:outline-none focus:ring-2 focus:ring-travion-200 focus:border-travion-300"
       />
     </div>
   );
@@ -122,7 +122,7 @@ export function IconBtn({ children, onClick, title, tone = 'indigo' }: {
     indigo: 'text-travion-600 hover:bg-travion-50',
     emerald: 'text-emerald-600 hover:bg-emerald-50',
     rose: 'text-rose-600 hover:bg-rose-50',
-    slate: 'text-slate-500 hover:bg-slate-100',
+    slate: 'text-charcoal-500 hover:bg-sand-100',
   };
   return (
     <button
@@ -149,10 +149,10 @@ export function BarChart({ data, valueKey = 'value', labelKey = 'label', height 
           const h = Math.max(v > 0 ? 6 : 1, (v / max) * (height - 26));
           return (
             <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-              <span className="text-[9.5px] font-bold text-slate-500 tabular-nums whitespace-nowrap">{fmt(v)}</span>
+              <span className="text-[9.5px] font-bold text-charcoal-500 tabular-nums whitespace-nowrap">{fmt(v)}</span>
               <div className="w-full max-w-[42px] rounded-t-lg bg-gradient-to-t from-indigo-600 to-indigo-400 transition-all"
                 style={{ height: h }} title={`${String(d[labelKey])}: ${fmt(v)}`} />
-              <span className="text-[9px] font-bold text-slate-400 truncate w-full text-center">{String(d[labelKey])}</span>
+              <span className="text-[9px] font-bold text-charcoal-400 truncate w-full text-center">{String(d[labelKey])}</span>
             </div>
           );
         })}
@@ -232,15 +232,15 @@ export function DonutChart({ data, size = 150, money = false }: {
               strokeDasharray={`${dash} ${C - dash}`} strokeDashoffset={offset} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
           );
         })}
-        <text x="50%" y="48%" textAnchor="middle" fontSize={size * 0.11} fontWeight={800} fill="#0f172a">{fmt(total)}</text>
+        <text x="50%" y="48%" textAnchor="middle" fontSize={size * 0.11} fontWeight={800} fill="#1b232c">{fmt(total)}</text>
         <text x="50%" y="60%" textAnchor="middle" fontSize={8} fontWeight={700} fill="#94a3b8">TOTAL</text>
       </svg>
       <div className="space-y-1.5">
         {data.map((d, i) => (
           <div key={i} className="flex items-center gap-2 text-[11px] font-bold">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }} />
-            <span className="text-slate-600">{d.label}</span>
-            <span className="text-slate-900 tabular-nums ml-auto">{fmt(Number(d.value))}</span>
+            <span className="text-charcoal-600">{d.label}</span>
+            <span className="text-charcoal-900 tabular-nums ml-auto">{fmt(Number(d.value))}</span>
           </div>
         ))}
       </div>
@@ -259,7 +259,7 @@ export function ResponsiveTable({ loading, error, onRetry, columns, rows, empty 
     return (
       <div className="space-y-2.5 py-2">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-12 rounded-xl bg-slate-100 animate-pulse" />
+          <div key={i} className="h-12 rounded-xl bg-sand-100 animate-pulse" />
         ))}
       </div>
     );
@@ -281,15 +281,15 @@ export function ResponsiveTable({ loading, error, onRetry, columns, rows, empty 
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase">
+          <tr className="border-b border-charcoal-200 text-charcoal-400 font-bold uppercase">
             {columns.map((c) => (
               <th key={c.key} className="pb-3 pr-3 whitespace-nowrap">{c.label}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+        <tbody className="divide-y divide-charcoal-100 font-medium text-charcoal-700">
           {rows.map((row, i) => (
-            <tr key={i} className="hover:bg-slate-50/70">
+            <tr key={i} className="hover:bg-ivory-50/70">
               {columns.map((c) => (
                 <td key={c.key} className="py-3 pr-3 align-middle">
                   {c.render ? c.render(row) : String(row[c.key] ?? '—')}
@@ -321,9 +321,9 @@ export function Drawer({ open, onClose, title, children, wide = false }: {
             transition={{ type: 'tween', duration: 0.28, ease: 'easeOut' }}
             className={`fixed right-0 top-0 h-full z-50 bg-white shadow-floating flex flex-col ${wide ? 'w-full max-w-3xl' : 'w-full max-w-xl'}`}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
-              <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-charcoal-100">
+              <h3 className="text-sm font-extrabold text-charcoal-900">{title}</h3>
+              <button onClick={onClose} className="p-2 rounded-xl hover:bg-sand-100 text-charcoal-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -351,19 +351,19 @@ export function ConfirmDialog({ open, onCancel, onConfirm, title, body, confirmL
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md p-6 bg-white rounded-3xl shadow-floating border border-slate-100"
+            className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md p-6 bg-white rounded-3xl shadow-floating border border-charcoal-100"
           >
             <div className="flex items-start gap-3">
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${danger ? 'bg-rose-100 text-rose-600' : 'bg-travion-100 text-travion-600'}`}>
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-[15px] font-extrabold text-slate-900">{title}</h3>
-                <div className="mt-1.5 text-xs font-semibold text-slate-500 leading-relaxed">{body}</div>
+                <h3 className="text-[15px] font-extrabold text-charcoal-900">{title}</h3>
+                <div className="mt-1.5 text-xs font-semibold text-charcoal-500 leading-relaxed">{body}</div>
               </div>
             </div>
             <div className="mt-5 flex items-center justify-end gap-2">
-              <button onClick={onCancel} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50">
+              <button onClick={onCancel} className="px-4 py-2 rounded-xl border border-charcoal-200 text-charcoal-600 text-xs font-bold hover:bg-ivory-50">
                 Cancel
               </button>
               <button
@@ -393,8 +393,8 @@ export function Funnel({ steps }: { steps: { label: string; value: number }[] })
     <div className="space-y-2.5">
       {steps.map((s, i) => (
         <div key={i} className="flex items-center gap-3">
-          <span className="w-36 shrink-0 text-[11px] font-bold text-slate-600 text-right">{s.label}</span>
-          <div className="flex-1 h-7 rounded-lg bg-slate-100 overflow-hidden">
+          <span className="w-36 shrink-0 text-[11px] font-bold text-charcoal-600 text-right">{s.label}</span>
+          <div className="flex-1 h-7 rounded-lg bg-sand-100 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${(s.value / max) * 100}%` }}

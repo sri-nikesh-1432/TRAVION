@@ -38,7 +38,7 @@ export const HeroTyping: React.FC<HeroTypingProps> = ({
 
   return (
     <div className={`inline-flex items-center gap-3 ${className}`}>
-      <span className="relative font-bold tracking-tight text-slate-900">
+      <span className="relative font-bold tracking-tight text-charcoal-900">
         {displayedText}
         <span
           className={`inline-block w-[3px] h-[0.9em] ml-1 bg-travion-500 align-middle transition-opacity duration-300 ${
@@ -49,7 +49,7 @@ export const HeroTyping: React.FC<HeroTypingProps> = ({
       {showReplay && isTypingComplete && (
         <button
           onClick={() => setKey(prev => prev + 1)}
-          className="p-1.5 rounded-full text-slate-400 hover:text-travion-600 hover:bg-travion-50 transition-all focus:outline-none"
+          className="p-1.5 rounded-full text-charcoal-400 hover:text-travion-600 hover:bg-travion-50 transition-all focus:outline-none"
           title="Replay animation"
         >
           <RotateCcw className="w-4 h-4" />

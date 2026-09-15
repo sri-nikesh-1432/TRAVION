@@ -192,8 +192,8 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
   return (
     <div className="space-y-6">
       {/* Step 5 header + Confirm to Payment */}
-      <div className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-soft flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-        style={{ background: 'linear-gradient(120deg,#0f172a 0%,#1e3a5f 60%,#0f766e 130%)' }}>
+      <div className="p-5 rounded-3xl bg-white border border-charcoal-200/80 shadow-soft flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+        style={{ background: 'linear-gradient(120deg,#1b232c 0%,#1e3a5f 60%,#0f766e 130%)' }}>
         <div className="flex items-center gap-3 text-white">
           <span className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center">
             <Compass className="w-5 h-5" />
@@ -201,14 +201,14 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-travion-200">Step 5 · Interactive Trip Planner</p>
             <h2 className="text-lg font-black tracking-tight text-white">Perfect your day-by-day plan before you pay</h2>
-            <p className="text-[12px] font-medium text-slate-200/90 mt-0.5">
+            <p className="text-[12px] font-medium text-charcoal-200/90 mt-0.5">
               Drag stops between days, add real places, optimize routing — every change is versioned. Next: choose how to experience this trip.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-black px-3 py-2 rounded-xl bg-white/10 text-slate-100">
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-black px-3 py-2 rounded-xl bg-white/10 text-charcoal-100">
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             v{itinerary.version}
           </span>
@@ -234,8 +234,8 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
       {/* Plan-change audit trail (version history) */}
       {changes.length > 0 && (
-        <details className="rounded-2xl bg-white border border-slate-200/80 shadow-sm px-4 py-3">
-          <summary className="flex items-center gap-2 text-[12.5px] font-extrabold text-slate-700 cursor-pointer select-none">
+        <details className="rounded-2xl bg-white border border-charcoal-200/80 shadow-sm px-4 py-3">
+          <summary className="flex items-center gap-2 text-[12.5px] font-extrabold text-charcoal-700 cursor-pointer select-none">
             <History className="w-4 h-4 text-travion-600" />
             Plan version history
             <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-travion-50 text-travion-700">{changes.length}</span>
@@ -247,13 +247,13 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                   v{c.version}
                 </span>
                 <div className="min-w-0">
-                  <p className="font-bold text-slate-700">
+                  <p className="font-bold text-charcoal-700">
                     {changeTypeLabel[c.change_type] || c.change_type}
-                    <span className="ml-2 text-[10px] font-semibold text-slate-400">
+                    <span className="ml-2 text-[10px] font-semibold text-charcoal-400">
                       {new Date(c.created_at).toLocaleString()}
                     </span>
                   </p>
-                  <p className="text-slate-500 font-medium">{c.summary}</p>
+                  <p className="text-charcoal-500 font-medium">{c.summary}</p>
                 </div>
               </li>
             ))}
@@ -311,12 +311,12 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
       {/* Action bar: optimize a day / add a place */}
       <div className="flex flex-wrap items-center gap-2.5">
-        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white border border-charcoal-200/80 shadow-sm">
           <Route className="w-4 h-4 text-travion-600 ml-2" />
           <select
             value={optimizeFor}
             onChange={(e) => setOptimizeFor(Number(e.target.value))}
-            className="text-[12.5px] font-bold text-slate-700 bg-transparent outline-none cursor-pointer pr-1"
+            className="text-[12.5px] font-bold text-charcoal-700 bg-transparent outline-none cursor-pointer pr-1"
           >
             {daysWithStops.map((d) => (
               <option key={d.day} value={d.day}>
@@ -338,7 +338,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
         <button
           type="button"
           onClick={() => setShowSearch(true)}
-          className="inline-flex items-center gap-1.5 h-11 px-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm text-slate-700 text-[12.5px] font-extrabold hover:border-travion-300"
+          className="inline-flex items-center gap-1.5 h-11 px-4 rounded-2xl bg-white border border-charcoal-200/80 shadow-sm text-charcoal-700 text-[12.5px] font-extrabold hover:border-travion-300"
         >
           <Plus className="w-4 h-4" />
           Add a Real Place
@@ -347,7 +347,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
         <button
           type="button"
           onClick={onBackToPlans}
-          className="inline-flex items-center gap-1.5 h-11 px-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm text-slate-600 text-[12.5px] font-extrabold hover:border-slate-300"
+          className="inline-flex items-center gap-1.5 h-11 px-4 rounded-2xl bg-white border border-charcoal-200/80 shadow-sm text-charcoal-600 text-[12.5px] font-extrabold hover:border-charcoal-300"
         >
           <ArrowLeft className="w-4 h-4" />
           Choose a different plan
@@ -383,13 +383,13 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
               className="w-full max-w-md h-full bg-white shadow-floating overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-100 p-5 z-10">
+              <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-charcoal-100 p-5 z-10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Search className="w-4 h-4 text-travion-600" />
-                    <h3 className="text-base font-extrabold text-slate-900">Add a real place</h3>
+                    <h3 className="text-base font-extrabold text-charcoal-900">Add a real place</h3>
                   </div>
-                  <button type="button" onClick={() => setShowSearch(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                  <button type="button" onClick={() => setShowSearch(false)} className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-sand-100">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -399,7 +399,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') runSearch(query); }}
                     placeholder="Search verifying real places…"
-                    className="flex-1 h-11 px-4 rounded-2xl border border-slate-200 bg-slate-50 text-[13px] font-semibold outline-none focus:border-travion-400 focus:bg-white"
+                    className="flex-1 h-11 px-4 rounded-2xl border border-charcoal-200 bg-ivory-50 text-[13px] font-semibold outline-none focus:border-travion-400 focus:bg-white"
                   />
                   <button
                     type="button"
@@ -411,12 +411,12 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                   </button>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-[11px] font-bold text-slate-500">Add to</span>
+                  <MapPin className="w-3.5 h-3.5 text-charcoal-400" />
+                  <span className="text-[11px] font-bold text-charcoal-500">Add to</span>
                   <select
                     value={addDay}
                     onChange={(e) => setAddDay(Number(e.target.value))}
-                    className="text-[12px] font-bold text-slate-700 bg-transparent outline-none cursor-pointer"
+                    className="text-[12px] font-bold text-charcoal-700 bg-transparent outline-none cursor-pointer"
                   >
                     {daysWithStops.map((d) => (
                       <option key={d.day} value={d.day}>Day {d.day}</option>
@@ -427,23 +427,23 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
               <div className="p-5 space-y-3">
                 {searching && (
-                  <div className="py-10 text-center text-[13px] font-bold text-slate-400">Searching verified sources…</div>
+                  <div className="py-10 text-center text-[13px] font-bold text-charcoal-400">Searching verified sources…</div>
                 )}
                 {!searching && results && results.length === 0 && (
-                  <div className="py-10 text-center text-[13px] font-bold text-slate-400">
+                  <div className="py-10 text-center text-[13px] font-bold text-charcoal-400">
                     No other real places match “{query}” for this destination. Try a spot name, food place or activity.
                   </div>
                 )}
                 {(results || []).map((place) => (
-                  <div key={place.name} className="p-4 rounded-2xl border border-slate-200 bg-white">
+                  <div key={place.name} className="p-4 rounded-2xl border border-charcoal-200 bg-white">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-[13px] font-extrabold text-slate-800">{place.name}</p>
-                        <p className="text-[11px] font-medium text-slate-400 mt-0.5 line-clamp-2">
+                        <p className="text-[13px] font-extrabold text-charcoal-800">{place.name}</p>
+                        <p className="text-[11px] font-medium text-charcoal-400 mt-0.5 line-clamp-2">
                           {place.description || place.address || place.category.replace('_', ' ')}
                         </p>
-                        <div className="flex items-center gap-2 mt-1.5 text-[10px] font-bold text-slate-400">
-                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                        <div className="flex items-center gap-2 mt-1.5 text-[10px] font-bold text-charcoal-400">
+                          <span className="px-1.5 py-0.5 rounded-md bg-sand-100 text-charcoal-600">
                             {place.category.replace('_', ' ')}
                           </span>
                           {place.estimated_cost > 0 ? <span>{inr(place.estimated_cost)}</span> : <span>Free</span>}
@@ -463,7 +463,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                   </div>
                 ))}
                 {!searching && !results && (
-                  <p className="text-center text-[11.5px] font-semibold text-slate-400 pt-6">
+                  <p className="text-center text-[11.5px] font-semibold text-charcoal-400 pt-6">
                     Only real places from verified sources are offered — nothing is invented.
                   </p>
                 )}
@@ -482,20 +482,20 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
               className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-floating"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5 pb-4 border-b border-charcoal-100 mb-4">
                 <Route className="w-5 h-5 text-travion-600" />
-                <h3 className="text-lg font-extrabold text-slate-900">Optimize Day {proposal.day}?</h3>
+                <h3 className="text-lg font-extrabold text-charcoal-900">Optimize Day {proposal.day}?</h3>
               </div>
-              <p className="text-[13px] font-medium text-slate-600 leading-relaxed">
+              <p className="text-[13px] font-medium text-charcoal-600 leading-relaxed">
                 Travion re-routed Day {proposal.day} so the places follow a real geographic line — less backtracking, more time at each spot.
                 You can apply this or keep your current order.
               </p>
               <ol className="mt-4 space-y-1.5">
                 {(proposal.days.find((d) => d.day === proposal.day)?.stops || []).map((s: ItineraryStop, i: number) => (
-                  <li key={`${s.id}-${i}`} className="flex items-center gap-2.5 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-[12.5px] font-bold text-slate-700">
+                  <li key={`${s.id}-${i}`} className="flex items-center gap-2.5 rounded-xl bg-ivory-50 border border-charcoal-100 px-3 py-2 text-[12.5px] font-bold text-charcoal-700">
                     <span className="w-6 h-6 rounded-lg bg-travion-100 text-travion-700 text-[10px] font-black flex items-center justify-center">{i + 1}</span>
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-slate-500">{s.time}</span>
+                    <Clock className="w-3.5 h-3.5 text-charcoal-400" />
+                    <span className="text-charcoal-500">{s.time}</span>
                     <span className="truncate">{s.title}</span>
                   </li>
                 ))}
@@ -504,7 +504,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                 <button
                   type="button"
                   onClick={() => applyOptimized(false)}
-                  className="flex-1 h-11 rounded-2xl border border-slate-200 text-slate-700 font-extrabold text-[13px] hover:border-slate-300"
+                  className="flex-1 h-11 rounded-2xl border border-charcoal-200 text-charcoal-700 font-extrabold text-[13px] hover:border-charcoal-300"
                 >
                   Keep My Plan
                 </button>
@@ -533,19 +533,19 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 16 }}
-              className="w-full max-w-3xl bg-white rounded-3xl shadow-floating border border-slate-200 my-6 overflow-hidden"
+              className="w-full max-w-3xl bg-white rounded-3xl shadow-floating border border-charcoal-200 my-6 overflow-hidden"
             >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur z-10">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-charcoal-100 sticky top-0 bg-white/95 backdrop-blur z-10">
                 <div className="flex items-center gap-2.5">
                   <span className="w-9 h-9 rounded-xl bg-travion-100 text-travion-700 flex items-center justify-center">
                     <FileText className="w-4.5 h-4.5" />
                   </span>
                   <div>
-                    <h3 className="text-lg font-extrabold text-slate-900">Review Your Trip</h3>
-                    <p className="text-[11px] font-semibold text-slate-400">Your edited plan — the final source of truth</p>
+                    <h3 className="text-lg font-extrabold text-charcoal-900">Review Your Trip</h3>
+                    <p className="text-[11px] font-semibold text-charcoal-400">Your edited plan — the final source of truth</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => setShowReview(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close review">
+                <button type="button" onClick={() => setShowReview(false)} className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-sand-100" aria-label="Close review">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -553,23 +553,23 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
               <div className="px-6 py-5 space-y-6 max-h-[75vh] overflow-y-auto">
                 {/* Trip details */}
                 <section>
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Trip details</h4>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-charcoal-400 mb-2">Trip details</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Destination</p>
-                      <p className="text-[12.5px] font-extrabold text-slate-800">{tripInfo?.destination || '—'}</p>
+                    <div className="rounded-xl bg-ivory-50 border border-charcoal-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-charcoal-400">Destination</p>
+                      <p className="text-[12.5px] font-extrabold text-charcoal-800">{tripInfo?.destination || '—'}</p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Travel dates</p>
-                      <p className="text-[12.5px] font-extrabold text-slate-800 flex items-center gap-1">
+                    <div className="rounded-xl bg-ivory-50 border border-charcoal-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-charcoal-400">Travel dates</p>
+                      <p className="text-[12.5px] font-extrabold text-charcoal-800 flex items-center gap-1">
                         <CalendarDays className="w-3 h-3 text-travion-600" />
                         {tripInfo?.start ? new Date(tripInfo.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
                         {tripInfo?.end ? ` – ${new Date(tripInfo.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
                       </p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                      <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">Travellers</p>
-                      <p className="text-[12.5px] font-extrabold text-slate-800 flex items-center gap-1">
+                    <div className="rounded-xl bg-ivory-50 border border-charcoal-100 px-3 py-2">
+                      <p className="text-[9.5px] font-black uppercase tracking-wider text-charcoal-400">Travellers</p>
+                      <p className="text-[12.5px] font-extrabold text-charcoal-800 flex items-center gap-1">
                         <Users className="w-3 h-3 text-travion-600" />
                         {tripInfo?.travellers != null ? `${tripInfo.travellers}${tripInfo.children ? ` (${tripInfo.adults ?? tripInfo.travellers - tripInfo.children}A · ${tripInfo.children}C)` : ''}` : '—'}
                       </p>
@@ -579,31 +579,31 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
                 {/* Day-by-day FINAL edited plan */}
                 <section>
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Day-by-day plan — your final edited itinerary</h4>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-charcoal-400 mb-2">Day-by-day plan — your final edited itinerary</h4>
                   <div className="space-y-3">
                     {daysWithStops.map((day) => (
-                      <div key={day.day} className="rounded-2xl border border-slate-200 overflow-hidden">
-                        <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                      <div key={day.day} className="rounded-2xl border border-charcoal-200 overflow-hidden">
+                        <div className="px-3.5 py-2 bg-ivory-50 border-b border-charcoal-100 flex items-center gap-2">
                           <span className="w-6 h-6 rounded-lg bg-travion-600 text-white text-[10px] font-black flex items-center justify-center">{day.day}</span>
-                          <span className="text-[12px] font-extrabold text-slate-700">Day {day.day}</span>
+                          <span className="text-[12px] font-extrabold text-charcoal-700">Day {day.day}</span>
                         </div>
-                        <ul className="divide-y divide-slate-50">
+                        <ul className="divide-y divide-charcoal-50">
                           {(day.stops || []).map((s) => (
                             <li key={s.id} className="px-3.5 py-2 flex items-start gap-2.5 text-[12.5px]">
-                              <span className="text-[11px] font-black text-slate-500 w-16 shrink-0 flex items-center gap-1">
+                              <span className="text-[11px] font-black text-charcoal-500 w-16 shrink-0 flex items-center gap-1">
                                 <Clock className="w-3 h-3" />{s.time}
                               </span>
                               <span className="min-w-0">
-                                <span className="font-extrabold text-slate-800">{s.title}</span>
-                                <span className="ml-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{s.category.replace('_', ' ')}</span>
+                                <span className="font-extrabold text-charcoal-800">{s.title}</span>
+                                <span className="ml-1.5 text-[10px] font-black uppercase tracking-wide text-charcoal-400">{s.category.replace('_', ' ')}</span>
                                 {s.location_name && s.location_name !== s.title && (
-                                  <span className="block text-[11px] font-medium text-slate-400">{s.location_name}</span>
+                                  <span className="block text-[11px] font-medium text-charcoal-400">{s.location_name}</span>
                                 )}
                               </span>
                             </li>
                           ))}
                           {(day.stops || []).length === 0 && (
-                            <li className="px-3.5 py-2 text-[11.5px] font-semibold text-slate-400">No stops scheduled</li>
+                            <li className="px-3.5 py-2 text-[11.5px] font-semibold text-charcoal-400">No stops scheduled</li>
                           )}
                         </ul>
                       </div>
@@ -613,8 +613,8 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
                 {/* Complete budget breakdown — every line visible, fees NEVER hidden */}
                 <section>
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Budget breakdown</h4>
-                  <div className="rounded-2xl border border-slate-200 px-4 py-3 space-y-1.5 text-[12.5px] font-semibold text-slate-700">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-charcoal-400 mb-2">Budget breakdown</h4>
+                  <div className="rounded-2xl border border-charcoal-200 px-4 py-3 space-y-1.5 text-[12.5px] font-semibold text-charcoal-700">
                     {(() => {
                       const bd = (itinerary.cost_breakdown || {}) as Record<string, any>;
                       const rows: Array<[string, number, boolean?]> = [
@@ -633,7 +633,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                               <span>{label}</span><span>{inr(value)}</span>
                             </div>
                           ))}
-                          <div className="flex justify-between border-t border-slate-100 pt-1.5 font-extrabold text-slate-900">
+                          <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-extrabold text-charcoal-900">
                             <span>Base trip cost</span><span>{inr(base)}</span>
                           </div>
                           {tripInfo?.mode === 'GUIDE_MODE' && (
@@ -644,7 +644,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                           <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
                             <span>Platform fee (3%)</span><span>{inr(platformFee)}</span>
                           </div>
-                          <div className="flex justify-between border-t border-slate-100 pt-1.5 text-[14px] font-black text-slate-900">
+                          <div className="flex justify-between border-t border-charcoal-100 pt-1.5 text-[14px] font-black text-charcoal-900">
                             <span>Final payable</span>
                             <span>{inr(feePreview?.amount_payable ?? base + guideFee + platformFee)}</span>
                           </div>
@@ -653,7 +653,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                     })()}
                   </div>
                   {tripInfo?.mode !== 'GUIDE_MODE' && (
-                    <p className="mt-1.5 text-[11px] font-semibold text-slate-400">
+                    <p className="mt-1.5 text-[11px] font-semibold text-charcoal-400">
                       Adventurous Mode — no guide fee. You pay only the 3% platform fee; travel spend is settled locally.
                     </p>
                   )}

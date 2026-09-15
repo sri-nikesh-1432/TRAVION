@@ -497,18 +497,18 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
           {geoState === 'locating' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
         </span>
         <span>
-          <span className="block font-bold text-slate-800 text-sm">
+          <span className="block font-bold text-charcoal-800 text-sm">
             {geoState === 'locating' ? 'Detecting your location…' : geoState === 'denied' ? 'Location permission denied' : geoState === 'error' ? 'Unable to determine your current location' : 'Use my current location'}
           </span>
-          <span className="block text-[11px] text-slate-400 font-medium">
+          <span className="block text-[11px] text-charcoal-400 font-medium">
             {geoState === 'denied' ? 'Search your starting place manually below' : geoState === 'error' ? 'Try again, or search your starting place below' : 'Auto-detect your real starting point via GPS'}
           </span>
         </span>
       </button>
 
       {recent.length > 0 && (
-        <div className="border-t border-slate-50 pt-1">
-          <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-400">Recent searches</div>
+        <div className="border-t border-charcoal-50 pt-1">
+          <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-400">Recent searches</div>
           {recent.map((r, i) => (
             <button
               key={`${r.place_id || r.name}-${i}`}
@@ -516,17 +516,17 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
               onClick={() => selectRecent(r, 'source')}
               className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
             >
-              <Clock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+              <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
               <span>
-                <span className="font-semibold text-slate-800 block">{r.name}</span>
-                <span className="text-[11px] text-slate-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
+                <span className="font-semibold text-charcoal-800 block">{r.name}</span>
+                <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
               </span>
             </button>
           ))}
         </div>
       )}
 
-      <div className="px-4 py-3 border-t border-slate-50 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+      <div className="px-4 py-3 border-t border-charcoal-50 flex items-center gap-2 text-[11px] font-semibold text-charcoal-400">
         <Globe className="w-3.5 h-3.5 text-travion-400" />
         <span>Search any city, region, landmark or place — the world is searchable</span>
       </div>
@@ -537,7 +537,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     <>
       {recent.length > 0 && (
         <div className="pt-1">
-          <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-400">Recent searches</div>
+          <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-400">Recent searches</div>
           {recent.map((r, i) => (
             <button
               key={`${r.place_id || r.name}-${i}`}
@@ -545,16 +545,16 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
               onClick={() => selectRecent(r, 'destination')}
               className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
             >
-              <Clock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+              <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
               <span>
-                <span className="font-semibold text-slate-800 block">{r.name}</span>
-                <span className="text-[11px] text-slate-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
+                <span className="font-semibold text-charcoal-800 block">{r.name}</span>
+                <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
               </span>
             </button>
           ))}
         </div>
       )}
-      <div className="px-4 py-3 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+      <div className="px-4 py-3 flex items-center gap-2 text-[11px] font-semibold text-charcoal-400">
         <Globe className="w-3.5 h-3.5 text-travion-400" />
         <span>{recent.length > 0 ? 'Start typing for live worldwide results' : 'Search any city, region, landmark or place — the world is searchable'}</span>
       </div>
@@ -582,7 +582,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     const any = hasLocal || hasWorld;
     return (
       <>
-        <div className="px-4 pt-2 pb-1.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl">
+        <div className="px-4 pt-2 pb-1.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-charcoal-400 border-b border-charcoal-100 sticky top-0 bg-white rounded-t-2xl">
           <span>Search results</span>
           <span className="text-[10px] font-bold text-travion-400 flex items-center gap-1">
             <MapPin className="w-3 h-3" /> {(hasLocal ? 'India + ' : '')}{mapsReady ? 'Worldwide' : 'Bundled index'}
@@ -592,21 +592,21 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
         {!any && loading && (
           <div className="px-4 py-6 text-center">
             <Loader2 className="w-5 h-5 text-travion-400 animate-spin mx-auto mb-2" />
-            <p className="text-xs font-semibold text-slate-500">Searching the world…</p>
+            <p className="text-xs font-semibold text-charcoal-500">Searching the world…</p>
           </div>
         )}
         {!any && !loading && (
           <div className="px-4 py-6 text-center">
-            <MapPin className="w-5 h-5 text-slate-300 mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-600">No matching place found for “{query}”</p>
-            <p className="text-[10px] text-slate-400 font-medium mt-1">Check the spelling, or try a broader name — a city, town, state or landmark.{!mapsReady ? ' (Live worldwide results need the Google Places key; the full India index is available now.)' : ''}</p>
+            <MapPin className="w-5 h-5 text-charcoal-300 mx-auto mb-2" />
+            <p className="text-xs font-bold text-charcoal-600">No matching place found for “{query}”</p>
+            <p className="text-[10px] text-charcoal-400 font-medium mt-1">Check the spelling, or try a broader name — a city, town, state or landmark.{!mapsReady ? ' (Live worldwide results need the Google Places key; the full India index is available now.)' : ''}</p>
           </div>
         )}
 
         {/* India & bundled index results — instant, always available */}
         {hasLocal && (
           <>
-            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-300">
+            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-300">
               {query.length >= 2 ? 'India — cities, towns, districts & states' : 'Places in India'}
             </div>
             {local.map(p => {
@@ -622,10 +622,10 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                     <Icon className="w-4 h-4" />
                   </span>
                   <span className="min-w-0">
-                    <span className="font-bold text-slate-800 block truncate">{p.name}</span>
-                    <span className="text-[11px] text-slate-400 block truncate">{sub}</span>
+                    <span className="font-bold text-charcoal-800 block truncate">{p.name}</span>
+                    <span className="text-[11px] text-charcoal-400 block truncate">{sub}</span>
                   </span>
-                  <span className="ml-auto shrink-0 self-center text-[9px] font-black uppercase tracking-wide text-slate-300">{tag}</span>
+                  <span className="ml-auto shrink-0 self-center text-[9px] font-black uppercase tracking-wide text-charcoal-300">{tag}</span>
                 </button>
               );
             })}
@@ -635,7 +635,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
         {/* Live worldwide results (Google Places when the key is configured) */}
         {hasWorld && (
           <>
-            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-300 border-t border-slate-50">
+            <div className="px-4 pt-2.5 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-300 border-t border-charcoal-50">
               Worldwide — live places
             </div>
             {results.map(s => {
@@ -647,14 +647,14 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   onClick={() => selectSuggestion(s, field)}
                   className="w-full text-left px-4 py-2.5 hover:bg-sky-50 flex items-start gap-3 text-sm transition-colors"
                 >
-                  <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="w-8 h-8 rounded-xl bg-sand-100 text-charcoal-500 flex items-center justify-center shrink-0 mt-0.5">
                     <Icon className="w-4 h-4" />
                   </span>
                   <span className="min-w-0">
-                    <span className="font-bold text-slate-800 block truncate">{s.name}</span>
-                    <span className="text-[11px] text-slate-400 block truncate">{s.subtitle}</span>
+                    <span className="font-bold text-charcoal-800 block truncate">{s.name}</span>
+                    <span className="text-[11px] text-charcoal-400 block truncate">{s.subtitle}</span>
                   </span>
-                  <span className="ml-auto shrink-0 self-center text-slate-300">
+                  <span className="ml-auto shrink-0 self-center text-charcoal-300">
                     <Check className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100" />
                   </span>
                 </button>
@@ -677,10 +677,10 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
 
           {/* 1. Source — live worldwide location search */}
           <div ref={sourceRef} className="relative md:col-span-3">
-            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'source' ? 'border-red-400 bg-red-50/40' : 'border-slate-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
+            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'source' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
               <MapPin className="w-5 h-5 text-travion-500 shrink-0" />
               <div className="w-full min-w-0">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Where are you starting?</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Where are you starting?</label>
                 <input
                   type="text"
                   value={sourceQuery}
@@ -688,7 +688,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   onFocus={() => setShowSourceDropdown(true)}
                   placeholder="Search any location"
                   autoComplete="off"
-                  className="w-full font-semibold text-slate-800 text-sm focus:outline-none bg-transparent placeholder:text-slate-300"
+                  className="w-full font-semibold text-charcoal-800 text-sm focus:outline-none bg-transparent placeholder:text-charcoal-300"
                 />
               </div>
             </div>
@@ -698,7 +698,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
-                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-slate-100 py-1.5 z-50 max-h-80 overflow-y-auto"
+                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-charcoal-100 py-1.5 z-50 max-h-80 overflow-y-auto"
                 >
                   {sourceQuery.trim().length < 1 ? renderSourceEmpty() : renderResults('source', sourceResults)}
                 </motion.div>
@@ -722,10 +722,10 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
 
           {/* 2. Destination — live worldwide location search */}
           <div ref={destRef} className="relative md:col-span-3">
-            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'destination' ? 'border-red-400 bg-red-50/40' : 'border-slate-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
+            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'destination' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
               <MapPin className="w-5 h-5 text-red-500 shrink-0" />
               <div className="w-full min-w-0">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Where are you going?</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Where are you going?</label>
                 <input
                   type="text"
                   value={destQuery}
@@ -733,7 +733,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   onFocus={() => setShowDestDropdown(true)}
                   placeholder="Search any city, region, landmark or place"
                   autoComplete="off"
-                  className="w-full font-semibold text-slate-800 text-sm focus:outline-none bg-transparent placeholder:text-slate-300"
+                  className="w-full font-semibold text-charcoal-800 text-sm focus:outline-none bg-transparent placeholder:text-charcoal-300"
                 />
               </div>
             </div>
@@ -743,7 +743,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
-                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-slate-100 py-1.5 z-50 max-h-80 overflow-y-auto"
+                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-charcoal-100 py-1.5 z-50 max-h-80 overflow-y-auto"
                 >
                   {destQuery.trim().length < 1 ? renderDestinationEmpty() : renderResults('destination', destResults)}
                 </motion.div>
@@ -753,16 +753,16 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
 
           {/* 3. Start Datetime */}
           <div className="md:col-span-2">
-            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'start' ? 'border-red-400 bg-red-50/40' : 'border-slate-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
+            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'start' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
               <Calendar className="w-4 h-4 text-travion-500 shrink-0" />
               <div className="w-full overflow-hidden">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Start date & time</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Start date & time</label>
                 <input
                   type="datetime-local"
                   min={minDateTimeStr}
                   value={startDateTime}
                   onChange={(e) => setStartDateTime(e.target.value)}
-                  className="w-full text-xs font-semibold text-slate-700 focus:outline-none bg-transparent"
+                  className="w-full text-xs font-semibold text-charcoal-700 focus:outline-none bg-transparent"
                 />
               </div>
             </div>
@@ -770,16 +770,16 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
 
           {/* 4. End Datetime */}
           <div className="md:col-span-2">
-            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'end' ? 'border-red-400 bg-red-50/40' : 'border-slate-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
+            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'end' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
               <Calendar className="w-4 h-4 text-travion-500 shrink-0" />
               <div className="w-full overflow-hidden">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">End date & time</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">End date & time</label>
                 <input
                   type="datetime-local"
                   min={startDateTime || minDateTimeStr}
                   value={endDateTime}
                   onChange={(e) => setEndDateTime(e.target.value)}
-                  className="w-full text-xs font-semibold text-slate-700 focus:outline-none bg-transparent"
+                  className="w-full text-xs font-semibold text-charcoal-700 focus:outline-none bg-transparent"
                 />
               </div>
             </div>
@@ -826,12 +826,12 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
             <span>{errorMessage}</span>
           </motion.div>
         ) : (
-          <div className="text-slate-500 font-medium flex items-center gap-2">
+          <div className="text-charcoal-500 font-medium flex items-center gap-2">
             <span>{getDurationHint() || "Every Indian state, district, city and town — plus live worldwide places"}</span>
           </div>
         )}
 
-        <div className="hidden sm:flex items-center gap-2 text-slate-400 text-[11px]">
+        <div className="hidden sm:flex items-center gap-2 text-charcoal-400 text-[11px]">
           <Globe className="w-3 h-3 text-travion-400" />
           <span>{mapsReady ? 'Full India index · live worldwide search' : 'Full India index loaded · worldwide live search unavailable'}</span>
         </div>

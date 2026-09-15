@@ -1,85 +1,148 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════
+   TRAVION — Design system · "Ivory · Soft Sky · Deep Charcoal"
+   Premium, editorial, calm. Warm-window light; no neon, no cyber.
+   Token names keep legacy aliases (travion/cream/beige/cognac) so
+   every existing screen re-themes automatically when values change.
+   ═══════════════════════════════════════════════════════════════ */
+
 @theme {
-  /* Sky · Blue — primary */
-  --color-travion-50: #eef8ff;
-  --color-travion-100: #d9efff;
-  --color-travion-200: #b9e2fe;
-  --color-travion-300: #7ecbfc;
-  --color-travion-400: #3badf7;
-  --color-travion-500: #0f93e8;
-  --color-travion-600: #0273c6;
-  --color-travion-700: #025ba0;
-  --color-travion-800: #064d84;
-  --color-travion-900: #0b416d;
+  /* Soft sky — the primary brand channel */
+  --color-travion-50: #f3f9fd;
+  --color-travion-100: #e4f2fa;
+  --color-travion-200: #c9e6f5;
+  --color-travion-300: #9bd1ec;
+  --color-travion-400: #64b4dc;
+  --color-travion-500: #3d94c4;
+  --color-travion-600: #267aa8;
+  --color-travion-700: #1e6287;
+  --color-travion-800: #1a4b68;
+  --color-travion-900: #14374e;
 
-  /* Cream · off-white surfaces */
-  --color-cream-50: #fdfbf5;
-  --color-cream-100: #faf6ec;
-  --color-cream-200: #f4eddd;
-  --color-cream-300: #ecdfc5;
+  /* Ivory · warm white surfaces */
+  --color-ivory-50: #fffdf8;
+  --color-ivory-100: #fdf9f1;
+  --color-ivory-200: #f8f0e2;
+  --color-ivory-300: #f0e4cd;
 
-  /* Beige · warm neutral */
-  --color-beige-100: #f4ede0;
-  --color-beige-200: #eadfc9;
-  --color-beige-300: #ddd0ac;
-  --color-beige-400: #cdb78d;
+  /* cream — legacy alias for ivory surfaces */
+  --color-cream-50: #fffdf8;
+  --color-cream-100: #fdf9f1;
+  --color-cream-200: #f8f0e2;
+  --color-cream-300: #f0e4cd;
 
-  /* Cognac · warm luxury accent */
-  --color-cognac-50: #fbf1ef;
-  --color-cognac-100: #f4e0db;
-  --color-cognac-200: #e8c3ba;
-  --color-cognac-300: #d69f92;
-  --color-cognac-400: #bf7a6a;
-  --color-cognac-500: #a2574f;
-  --color-cognac-600: #8a453d;
-  --color-cognac-700: #6e362f;
+  /* Sand · muted warm neutral */
+  --color-sand-50: #faf6ee;
+  --color-sand-100: #f3ecE0;
+  --color-sand-200: #e9dbc2;
+  --color-sand-300: #d9c49d;
+  --color-sand-400: #c3a978;
 
-  --shadow-soft: 0 4px 22px -2px rgba(2, 115, 198, 0.10), 0 2px 6px -1px rgba(111, 54, 47, 0.05);
-  --shadow-soft-lg: 0 12px 32px -6px rgba(2, 115, 198, 0.14), 0 4px 12px -2px rgba(111, 54, 47, 0.06);
-  --shadow-floating: 0 22px 44px -10px rgba(2, 91, 160, 0.22);
+  /* beige — legacy alias for sand */
+  --color-beige-100: #f5eee3;
+  --color-beige-200: #ecdfcb;
+  --color-beige-300: #ddc9a9;
+  --color-beige-400: #c8ab7e;
+
+  /* Gold · warm soft accent (never brash) */
+  --color-gold-50: #fbf7ec;
+  --color-gold-100: #f5ecd4;
+  --color-gold-200: #ead8a8;
+  --color-gold-300: #dbbe76;
+  --color-gold-400: #c69e4c;
+  --color-gold-500: #a97f33;
+
+  /* cognac — warm bronze accent (kept warm, never red) */
+  --color-cognac-50: #fbf7f2;
+  --color-cognac-100: #f3eadd;
+  --color-cognac-200: #e6d4bc;
+  --color-cognac-300: #d3b890;
+  --color-cognac-400: #bd986b;
+  --color-cognac-500: #a27c4e;
+  --color-cognac-600: #84633d;
+  --color-cognac-700: #654b2e;
+
+  /* Charcoal · deep neutrals for type + structure */
+  --color-charcoal-50: #f5f7f8;
+  --color-charcoal-100: #e7ebee;
+  --color-charcoal-200: #cdd5db;
+  --color-charcoal-300: #a7b3bd;
+  --color-charcoal-400: #7f8d99;
+  --color-charcoal-500: #5f6f7c;
+  --color-charcoal-600: #47545f;
+  --color-charcoal-700: #36414b;
+  --color-charcoal-800: #27303a;
+  --color-charcoal-900: #1b232c;
+  --color-charcoal-950: #11181f;
+
+  /* A refined editorial serif for the italic accent words */
+  --font-editorial: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+
+  /* Neutral-tinted soft shadows (no neon tint) */
+  --shadow-soft: 0 2px 6px -1px rgba(27, 35, 44, 0.05), 0 12px 28px -12px rgba(27, 35, 44, 0.12);
+  --shadow-soft-lg: 0 4px 12px -2px rgba(27, 35, 44, 0.08), 0 24px 48px -16px rgba(27, 35, 44, 0.16);
+  --shadow-floating: 0 18px 40px -14px rgba(20, 55, 78, 0.24), 0 6px 16px -6px rgba(27, 35, 44, 0.10);
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    background-color: #faf7f0;
-    background-image: radial-gradient(1200px 600px at 15% -10%, rgba(185, 226, 254, 0.35), transparent 60%),
-      radial-gradient(1000px 500px at 95% 0%, rgba(234, 223, 201, 0.45), transparent 55%),
-      linear-gradient(#faf7f0, #fdfbf5);
+    background-color: #fbf7ef;
+    background-image:
+      radial-gradient(1100px 560px at 12% -8%, rgba(155, 209, 236, 0.28), transparent 58%),
+      radial-gradient(900px 520px at 98% 4%, rgba(240, 228, 205, 0.55), transparent 52%),
+      linear-gradient(#fbf7ef, #fffdf8);
     background-attachment: fixed;
-    color: #16233a;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1b232c;
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+  }
+
+  section[id] {
+    scroll-margin-top: 84px;
+  }
+
+  :focus-visible {
+    outline: 2px solid #3d94c4;
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: #c9e6f5;
+    color: #14374e;
   }
 }
 
-/* Custom smooth scrollbar */
+/* Custom smooth scrollbar — warm ivory track, bronzed thumb */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f4eddd;
+  background: #f0e4cd;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cdb78d;
+  background: #c3a978;
   border-radius: 9999px;
+  border: 2px solid #f8f0e2;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a2574f;
-}
-
-::selection {
-  background: #b9e2fe;
-  color: #0b416d;
+  background: #a97f33;
 }
 
 /* Leaflet map styles */
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  z-index: 1;
+@layer components {
+  .leaflet-container {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    z-index: 1;
+  }
 }
 
 /* Custom Marker Pulse */

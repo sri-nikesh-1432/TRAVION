@@ -192,35 +192,35 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
             </motion.div>
 
             <Eyebrow>Registration Complete</Eyebrow>
-            <h1 className="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="mt-4 text-3xl font-extrabold text-charcoal-900 tracking-tight">
               Your Guide Profile Has Been Submitted
             </h1>
 
-            <p className="mt-4 text-slate-500 leading-relaxed">
+            <p className="mt-4 text-charcoal-500 leading-relaxed">
               Thank you for applying to become a TRAVION Guide. Our team will review your profile
               and notify you once the verification process is complete.
             </p>
 
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
+            <div className="mt-8 rounded-2xl border border-charcoal-200 bg-ivory-50 p-6">
               <div className="flex items-center gap-3 mb-4">
                 <Clock className="w-5 h-5 text-travion-500" />
-                <span className="text-sm font-semibold text-slate-700">Verification Status</span>
+                <span className="text-sm font-semibold text-charcoal-700">Verification Status</span>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                   <div>
-                    <p className="text-sm font-bold text-slate-900">Account Created</p>
-                    <p className="text-xs text-slate-500">Your guide account has been created successfully</p>
+                    <p className="text-sm font-bold text-charcoal-900">Account Created</p>
+                    <p className="text-xs text-charcoal-500">Your guide account has been created successfully</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                   <div>
-                    <p className="text-sm font-bold text-slate-900">Profile Submitted</p>
-                    <p className="text-xs text-slate-500">Your information has been received</p>
+                    <p className="text-sm font-bold text-charcoal-900">Profile Submitted</p>
+                    <p className="text-xs text-charcoal-500">Your information has been received</p>
                   </div>
                 </div>
 
@@ -229,30 +229,30 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-900">Verification Pending</p>
-                    <p className="text-xs text-slate-500">Awaiting manager review</p>
+                    <p className="text-sm font-bold text-charcoal-900">Verification Pending</p>
+                    <p className="text-xs text-charcoal-500">Awaiting manager review</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 opacity-40">
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-300" />
+                  <div className="w-5 h-5 rounded-full border-2 border-charcoal-300" />
                   <div>
-                    <p className="text-sm font-bold text-slate-400">Manager Review</p>
-                    <p className="text-xs text-slate-400">Not yet started</p>
+                    <p className="text-sm font-bold text-charcoal-400">Manager Review</p>
+                    <p className="text-xs text-charcoal-400">Not yet started</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 opacity-40">
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-300" />
+                  <div className="w-5 h-5 rounded-full border-2 border-charcoal-300" />
                   <div>
-                    <p className="text-sm font-bold text-slate-400">Guide Approved</p>
-                    <p className="text-xs text-slate-400">Pending approval</p>
+                    <p className="text-sm font-bold text-charcoal-400">Guide Approved</p>
+                    <p className="text-xs text-charcoal-400">Pending approval</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-4 text-sm text-charcoal-500">
               We'll send you an email notification when your profile has been reviewed.
             </p>
 
@@ -311,82 +311,82 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
           initial={{ opacity: 0, y: 30, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.8, ease: EASE }}
-          className="rounded-3xl bg-white shadow-soft-lg border border-slate-200 p-8 md:p-10"
+          className="rounded-3xl bg-white shadow-soft-lg border border-charcoal-200 p-8 md:p-10"
         >
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Full Name */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Full Name <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter your full name"
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
                 />
               </div>
             </div>
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Email Address <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
                 />
               </div>
             </div>
 
             {/* Phone */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Phone Number <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+91 98765 43210"
-                  className={`w-full h-12 pl-12 pr-4 rounded-xl border ${phoneValid ? 'border-slate-200' : 'border-red-300'} bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all`}
+                  className={`w-full h-12 pl-12 pr-4 rounded-xl border ${phoneValid ? 'border-charcoal-200' : 'border-red-300'} bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all`}
                 />
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
+              <p className="mt-1.5 text-xs text-charcoal-500">
                 A valid Indian mobile number is required. This will not be shown publicly.
               </p>
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Password <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimum 8 characters"
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all"
                 />
               </div>
               {password.length > 0 && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                    <div className="flex-1 h-1.5 rounded-full bg-sand-200 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${strengthBar[strengthIndex]}`}
                         style={{ width: `${((strengthIndex + 1) / 4) * 100}%` }}
@@ -397,16 +397,16 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                    <label className={`flex items-center gap-1.5 ${passwordChecks.length ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <label className={`flex items-center gap-1.5 ${passwordChecks.length ? 'text-emerald-600' : 'text-charcoal-400'}`}>
                       <Check className="w-3.5 h-3.5" /> 8+ characters
                     </label>
-                    <label className={`flex items-center gap-1.5 ${passwordChecks.upper ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <label className={`flex items-center gap-1.5 ${passwordChecks.upper ? 'text-emerald-600' : 'text-charcoal-400'}`}>
                       <Check className="w-3.5 h-3.5" /> Uppercase letter
                     </label>
-                    <label className={`flex items-center gap-1.5 ${passwordChecks.lower ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <label className={`flex items-center gap-1.5 ${passwordChecks.lower ? 'text-emerald-600' : 'text-charcoal-400'}`}>
                       <Check className="w-3.5 h-3.5" /> Lowercase letter
                     </label>
-                    <label className={`flex items-center gap-1.5 ${passwordChecks.number ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <label className={`flex items-center gap-1.5 ${passwordChecks.number ? 'text-emerald-600' : 'text-charcoal-400'}`}>
                       <Check className="w-3.5 h-3.5" /> Number
                     </label>
                   </div>
@@ -416,17 +416,17 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Confirm Password <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter your password"
-                  className={`w-full h-12 pl-12 pr-4 rounded-xl border ${confirmPassword && password === confirmPassword ? 'border-emerald-300' : 'border-slate-200'} bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all`}
+                  className={`w-full h-12 pl-12 pr-4 rounded-xl border ${confirmPassword && password === confirmPassword ? 'border-emerald-300' : 'border-charcoal-200'} bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all`}
                 />
               </div>
               {confirmPassword && password !== confirmPassword && (
@@ -438,15 +438,15 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* City */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Primary Operating Location <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <select
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
                 >
                   <option value="">Select your city</option>
                   {cities.map(city => (
@@ -458,11 +458,11 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* Languages */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Languages Spoken <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Languages className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Languages className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <select
                   multiple
                   value={selectedLanguages}
@@ -470,25 +470,25 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     const options = Array.from(e.target.selectedOptions, o => o.value);
                     setSelectedLanguages(options);
                   }}
-                  className="w-full h-32 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
+                  className="w-full h-32 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
                 >
                   {languages.map(lang => (
                     <option key={lang} value={lang}>{lang}</option>
                   ))}
                 </select>
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
+              <p className="mt-1.5 text-xs text-charcoal-500">
                 Select all languages you can guide in (Ctrl+Click to select multiple)
               </p>
             </div>
 
             {/* Destinations */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Areas / Destinations Covered <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <select
                   multiple
                   value={selectedDestinations}
@@ -496,29 +496,29 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     const options = Array.from(e.target.selectedOptions, o => o.value);
                     setSelectedDestinations(options);
                   }}
-                  className="w-full h-32 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
+                  className="w-full h-32 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
                 >
                   {cities.map(city => (
                     <option key={city} value={city}>{city}</option>
                   ))}
                 </select>
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
+              <p className="mt-1.5 text-xs text-charcoal-500">
                 Select the destinations you can guide travellers in (Ctrl+Click to select multiple)
               </p>
             </div>
 
             {/* Experience Years */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Years of Experience <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
                 <select
                   value={experienceYears}
                   onChange={(e) => setExperienceYears(Number(e.target.value))}
-                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl border border-charcoal-200 bg-ivory-50 text-charcoal-900 text-sm font-medium focus:border-travion-400 focus:ring-2 focus:ring-travion-100 outline-none transition-all appearance-none"
                 >
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(y => (
                     <option key={y} value={y}>{y} {y === 1 ? 'year' : 'years'}</option>
@@ -530,7 +530,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* Guide Type */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Guide Type <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -542,7 +542,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     className={`h-11 px-4 rounded-xl border text-sm font-semibold transition-all ${
                       guideType === type.value
                         ? 'bg-travion-600 border-travion-600 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-travion-300'
+                        : 'bg-white border-charcoal-200 text-charcoal-600 hover:border-travion-300'
                     }`}
                   >
                     {type.label}
@@ -553,7 +553,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* Availability */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
+              <label className="block text-sm font-bold text-charcoal-700 mb-2">
                 Availability <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -565,7 +565,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
                     className={`h-11 px-3 rounded-xl border text-sm font-semibold transition-all ${
                       availability === opt.value
                         ? 'bg-travion-600 border-travion-600 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-travion-300'
+                        : 'bg-white border-charcoal-200 text-charcoal-600 hover:border-travion-300'
                     }`}
                   >
                     {opt.label}
@@ -605,7 +605,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
             {/* Switch to Sign In */}
             <div className="text-center">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-charcoal-500">
                 Already a TRAVION Guide?
               </p>
               <button
@@ -622,7 +622,7 @@ export const GuideRegistration: React.FC<GuideRegistrationProps> = ({ onRegister
 
       {/* Footer note */}
       <div className="max-w-2xl mx-auto px-5 mt-8 text-center">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-charcoal-400">
           By registering, you agree to TRAVION's guide terms and verification process.
           Your phone number will remain private and only used for verification purposes.
         </p>

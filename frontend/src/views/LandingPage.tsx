@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion, useInView } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion, useInView, useScroll, useTransform } from 'framer-motion';
 import {
-  ArrowRight, ArrowUpRight, BadgeCheck, BedDouble, Bell, BookOpen, BrainCircuit,
-  Check, CheckCircle2, ChevronDown, Clock, CloudRain, Compass,
+  ArrowRight, ArrowUpRight, BadgeCheck, BedDouble, BookOpen, BrainCircuit,
+  Check, CheckCircle2, ChevronDown, Clock, Compass,
   Eye, EyeOff, Globe2, HeartHandshake, IndianRupee, Key, Landmark,
-  Layers, Lock, Mail, MapPin, Menu, Mountain, Navigation, Phone,
-  RefreshCw, Route, ShieldCheck, Sparkles, Train, Users, Utensils,
-  Wallet, X
+  Lock, Mail, MapPin, Menu, Mountain, Navigation, Phone,
+  RefreshCw, Route, ShieldCheck, Sparkles, Users, Utensils,
+  Wallet, X, MessagesSquare
 } from 'lucide-react';
 import { LocationItem } from '../types';
 import { api, authStorage, resolveApiBaseUrl } from '../services/api';
@@ -21,35 +21,7 @@ interface LandingPageProps {
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-/* ─── Hero extras: rotating words, count-up, aurora ─── */
-const ROTATING_WORDS = ['Your way.', 'With a guide.', 'On a whim.', 'For the views.', 'Your pace.'] as const;
-
-const RotatingWord: React.FC = () => {
-  const reduce = useReducedMotion();
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    if (reduce) return;
-    const t = setInterval(() => setI((v) => (v + 1) % ROTATING_WORDS.length), 2600);
-    return () => clearInterval(t);
-  }, [reduce]);
-  return (
-    <span className="relative inline-block align-baseline min-w-[5.2ch]">
-      <AnimatePresence mode="wait">
-        <motion.span
-          key={ROTATING_WORDS[i]}
-          initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: -18, filter: 'blur(6px)' }}
-          transition={{ duration: 0.45, ease: EASE }}
-          className="inline-block text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-travion-200 to-white"
-        >
-          {ROTATING_WORDS[i]}
-        </motion.span>
-      </AnimatePresence>
-    </span>
-  );
-};
-
+/* ─── Hero extras: count-up ─── */
 const CountUp: React.FC<{ to: number; suffix?: string; duration?: number }> = ({ to, suffix = '', duration = 1600 }) => {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: '-40px' });
@@ -62,7 +34,7 @@ const CountUp: React.FC<{ to: number; suffix?: string; duration?: number }> = ({
     const start = performance.now();
     const tick = (now: number) => {
       const p = Math.min(1, (now - start) / duration);
-      setVal(Math.round(to * (1 - Math.pow(1 - p, 3)))); // ease-out cubic
+      setVal(Math.round(to * (1 - Math.pow(1 - p, 3))));
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -82,14 +54,14 @@ const MarqueeRibbon: React.FC = () => {
   const reduce = useReducedMotion();
   const row = [...MARQUEE_ITEMS, ...MARQUEE_ITEMS];
   return (
-    <div className="relative overflow-hidden border-y border-white/10 bg-travion-900/60 backdrop-blur">
+    <div className="relative overflow-hidden border-y border-travion-900/10 bg-travion-900">
       <div
-        className="flex w-max items-center gap-8 py-3"
-        style={reduce ? undefined : { animation: 'travion-marquee 36s linear infinite' }}
+        className="flex w-max items-center gap-10 py-3.5"
+        style={reduce ? undefined : { animation: 'travion-marquee 38s linear infinite' }}
       >
         {row.map((item, i) => (
-          <span key={`${item}-${i}`} className="inline-flex items-center gap-2 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">
-            <Sparkles className="w-3 h-3 text-sky-300" />
+          <span key={`${item}-${i}`} className="inline-flex items-center gap-2 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.2em] text-ivory-200/80">
+            <Sparkles className="w-3 h-3 text-gold-300" />
             {item}
           </span>
         ))}
@@ -109,52 +81,68 @@ const MarqueeRibbon: React.FC = () => {
 ───────────────────────────────────────────────────────────── */
 
 const Eyebrow: React.FC<{ children: React.ReactNode; light?: boolean }> = ({ children, light }) => (
-  <span className={`inline-flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.22em] ${light ? 'text-white/90' : 'text-travion-600'}`}>
-    <span className={`h-px w-7 ${light ? 'bg-white/60' : 'bg-travion-300'}`} />
+  <span className={`inline-flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.26em] ${light ? 'text-ivory-200/90' : 'text-travion-600'}`}>
+    <span className={`h-px w-8 ${light ? 'bg-ivory-200/50' : 'bg-gold-400'}`} />
     {children}
   </span>
 );
 
-const Reveal: React.FC<{ children: React.ReactNode; delay?: number; y?: number; className?: string }> = ({ children, delay = 0, y = 28, className }) => (
+const Reveal: React.FC<{ children: React.ReactNode; delay?: number; y?: number; className?: string }> = ({ children, delay = 0, y = 26, className }) => (
   <motion.div
     initial={{ opacity: 0, y }}
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true, margin: '-60px' }}
-    transition={{ duration: 0.8, delay, ease: EASE }}
+    transition={{ duration: 0.7, delay, ease: EASE }}
     className={className}
   >
     {children}
   </motion.div>
 );
 
+/* Image with graceful fallback (spec: image strategy — no broken tiles) */
+const SafeImg: React.FC<{ src: string; alt: string; className?: string; loading?: 'lazy' | 'eager' }> = ({ src, alt, className = '', loading = 'lazy' }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div role="img" aria-label={alt} className={`${className} bg-gradient-to-br from-sand-200 via-ivory-200 to-sand-300 flex items-center justify-center`}>
+        <MapPin className="w-8 h-8 text-sand-400" aria-hidden />
+      </div>
+    );
+  }
+  return <img src={src} alt={alt} loading={loading} onError={() => setFailed(true)} className={className} />;
+};
+
 const NAV_LINKS = [
+  { href: '#explore', label: 'Explore' },
+  { href: '#how-it-works', label: 'How It Works' },
+  { href: '#features', label: 'Features' },
   { href: '#about', label: 'About' },
-  { href: '#discover', label: 'Discover' },
-  { href: '#how', label: 'How It Works' },
-  { href: '#modes', label: 'Modes' },
-  { href: '#guides', label: 'Guides' }
+  { href: '#contact', label: 'Contact' }
 ];
 
 /* Every footer link resolves to a real section on this page — no dead anchors. */
 const FOOTER_HREFS: Record<string, string> = {
-  'How it works': '#how',
-  'Modes': '#modes',
-  'Destinations': '#discover',
-  'Pricing': '#fees',
-  'Verified hubs': '#discover',
+  'Explore': '#explore',
+  'Destinations': '#explore',
   'Live trip map': '#live',
-  'Offline mode': '#adapt',
-  'Trip assistant': '#assistant',
-  'Guide network': '#guide-network',
-  'Verification': '#guide-network',
+  'How It Works': '#how-it-works',
+  'Features': '#features',
   'Guide Mode': '#modes',
+  'Adventurous Mode': '#modes',
+  'Guide network': '#guide-network',
   'About': '#about',
   'Contact': '#contact',
+  'FAQ': '#faq',
   'Help': '#faq'
 };
 
 const HERO_IMAGE =
   'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=2200&q=80';
+const IMG_GUIDE = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=1200&q=80';
+const IMG_ADVENTURE = 'https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?auto=format&fit=crop&w=1200&q=80';
+const IMG_COAST = 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2200&q=80';
+const IMG_PLANNERS = 'https://images.unsplash.com/photo-1506003094589-53954a26283f?auto=format&fit=crop&w=1200&q=80';
+const IMG_ROAD = 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=2200&q=80';
 
 /* ─────────────────────────────────────────────────────────────
    Landing page
@@ -162,6 +150,9 @@ const HERO_IMAGE =
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExploreDemo, onOpenGuideRegistration, onOpenGuideSignIn }) => {
   const reduceMotion = useReducedMotion();
+  const { scrollY } = useScroll();
+  const heroParallax = useTransform(scrollY, [0, 900], [0, 170]);
+  const heroFade = useTransform(scrollY, [0, 720], [1, 0.94]);
 
   /* Auth modal state */
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -234,7 +225,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   /* Nav scrollspy: highlight the section currently in view */
   const [activeSection, setActiveSection] = useState('top');
   useEffect(() => {
-    const SECTION_IDS = ['top', 'about', 'discover', 'personalize', 'features', 'live', 'guides', 'guide-network', 'adapt', 'assistant', 'modes', 'preferences', 'how', 'fees', 'trust', 'faq', 'contact'];
+    const SECTION_IDS = ['top', 'explore', 'features', 'how-it-works', 'live', 'modes', 'assistant', 'today', 'trust', 'guide-network', 'about', 'faq', 'contact'];
     let raf = 0;
     const compute = () => {
       const probe = window.scrollY + 150;
@@ -278,20 +269,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     return () => window.removeEventListener('keydown', onKey);
   }, [secretKeyBuffer]);
 
-  const [dotClickCount, setDotClickCount] = useState(0);
+  const dotClickCount = useRef(0);
   const dotClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleDotClick = () => {
-    setDotClickCount((c) => {
-      const next = c + 1;
-      if (next >= 7) {
-        setShowElevateModal(true);
-        if (dotClickTimer.current) clearTimeout(dotClickTimer.current);
-        return 0;
-      }
+    const next = dotClickCount.current + 1;
+    dotClickCount.current = next;
+    if (next >= 7) {
+      setShowElevateModal(true);
       if (dotClickTimer.current) clearTimeout(dotClickTimer.current);
-      dotClickTimer.current = setTimeout(() => setDotClickCount(0), 2000);
-      return next;
-    });
+      dotClickCount.current = 0;
+      return;
+    }
+    if (dotClickTimer.current) clearTimeout(dotClickTimer.current);
+    dotClickTimer.current = setTimeout(() => {
+      dotClickCount.current = 0;
+    }, 2000);
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -405,35 +397,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     }
   };
 
-  /* Personalization concept demo */
-  const preferenceDims = [
-    { key: 'budget', label: 'Budget', icon: <Wallet className="w-4 h-4" />, note: 'Bands from backpacker to premium reshape stays, dining and pacing.' },
-    { key: 'pace', label: 'Pace', icon: <Clock className="w-4 h-4" />, note: 'Relaxed mornings or sunrise-to-sunset days become actual stop durations.' },
-    { key: 'stay', label: 'Stay', icon: <BedDouble className="w-4 h-4" />, note: 'Homestays, heritage cottages and star-rated resorts are matched to budget.' },
-    { key: 'food', label: 'Food', icon: <Utensils className="w-4 h-4" />, note: 'Pure veg, regional specialities and street food filter every dining pick.' },
-    { key: 'transport', label: 'Transport', icon: <Train className="w-4 h-4" />, note: 'Train, road or a mix — the routing engine follows your choice.' },
-    { key: 'adventure', label: 'Adventure', icon: <Mountain className="w-4 h-4" />, note: 'Adventure level decides treks, trails and thrill activities.' },
-    { key: 'interests', label: 'Interests', icon: <HeartHandshake className="w-4 h-4" />, note: 'History, wildlife, food trails — interests curate each day.' }
-  ] as const;
-  const [activePref, setActivePref] = useState<(typeof preferenceDims)[number]['key']>('budget');
-  const activePrefDim = preferenceDims.find((d) => d.key === activePref)!;
-
-  /* Live journey visualization state */
-  const [activeStop, setActiveStop] = useState(0);
-  const journeyStops = [
-    { label: 'Departure', place: 'Your location', sub: 'Live GPS · resolved', icon: <Compass className="w-4 h-4" /> },
-    { label: 'Transport', place: 'Nilgiri Express', sub: 'Overnight · reserved seat', icon: <Train className="w-4 h-4" /> },
-    { label: 'Stay', place: 'Tea-estate cottage', sub: 'Checked in · Day 1', icon: <BedDouble className="w-4 h-4" /> },
-    { label: 'Dining', place: 'Local plantation café', sub: 'Near your stay · 10 min walk', icon: <Utensils className="w-4 h-4" /> },
-    { label: 'Attraction', place: 'Tea museum & viewpoints', sub: 'Next stop · 2.1 km', icon: <Landmark className="w-4 h-4" /> },
-    { label: 'Destination', place: 'Munnar', sub: 'Trip complete', icon: <MapPin className="w-4 h-4" /> }
-  ];
-  useEffect(() => {
-    if (reduceMotion) return;
-    const t = setInterval(() => setActiveStop((s) => (s + 1) % journeyStops.length), 2400);
-    return () => clearInterval(t);
-  }, [reduceMotion]);
-
   /* FAQ */
   const faqs: { q: string; a: string }[] = [
     { q: 'What is Travion?', a: 'Travion is an adaptive AI travel orchestration platform. It learns how you travel, plans the complete journey from transport and stays to dining and activities, coordinates verified local guides when you want one, handles only the applicable Travion service payment, then stays with you during the trip with live navigation, trip-scoped AI assistance and dynamic replanning.' },
@@ -451,58 +414,67 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   ];
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  const modeBullets = (guide: boolean) =>
-    guide
-      ? ['Verified local guide matched to your route', 'On-ground assistance through the whole journey', 'Direct chat with your guide after assignment', 'Local knowledge layered onto your AI plan']
-      : ['Full AI-planned journey, no guide fee', 'Live map, navigation and AI assistant included', 'Dynamic replanning whenever conditions change', 'Local discovery and safety information built in'];
+  /* How Travion works — the six steps */
+  const howSteps = [
+    { n: '01', icon: <Compass className="w-5 h-5" />, title: 'Tell us your trip', text: 'Choose the destination, dates and budget, then answer a short adaptive interview. Every answer becomes a real planning constraint.', tag: 'Your brief' },
+    { n: '02', icon: <MapPin className="w-5 h-5" />, title: 'Explore real places', text: 'Open the live destination map with verified POIs — attractions, food, stays, shopping, healthcare, transport and more. Pick the exact spots you want.', tag: 'Live map' },
+    { n: '03', icon: <Route className="w-5 h-5" />, title: 'Build your itinerary', text: 'Drag and drop your picks into day-by-day plans. Every date and time comes from the validated itinerary engine — impossible schedules never appear.', tag: 'Your itinerary' },
+    { n: '04', icon: <Users className="w-5 h-5" />, title: 'Choose Guide or Adventurous', text: 'Travel with a verified local guide for on-ground support, or go independently with AI planning, navigation and replanning by your side.', tag: 'Your mode' },
+    { n: '05', icon: <ShieldCheck className="w-5 h-5" />, title: 'Confirm & pay', text: 'Review the full breakdown — guide fee where applicable, platform fee, total. Pay securely through Razorpay with server-verified signatures.', tag: 'Transparent' },
+    { n: '06', icon: <Navigation className="w-5 h-5" />, title: 'Travel with Travion', text: 'Live map, voice navigation, trip-scoped AI assistant, adaptive replanning and an offline package stay with you from departure to arrival.', tag: 'Live trip' }
+  ] as const;
 
-  const sampleStops = [
-    { icon: <Train className="w-4 h-4" />, text: 'Reserved transport to your destination' },
-    { icon: <BedDouble className="w-4 h-4" />, text: 'Verified stay matched to your style' },
-    { icon: <Utensils className="w-4 h-4" />, text: 'Dining picked from local cuisine data' },
-    { icon: <Mountain className="w-4 h-4" />, text: 'Activities within your adventure level' }
-  ];
+  /* Before/after story for the problem narrative */
+  const beforeJourney = ['Too many tabs', 'Too many decisions', 'Uncertain places', 'Uncertain schedules', 'Unclear costs'];
+  const travionJourney = [
+    { label: 'Planning', text: 'A journey shaped around you', icon: <Compass className="w-4 h-4" /> },
+    { label: 'Discovery', text: 'Real, verified places on a live map', icon: <MapPin className="w-4 h-4" /> },
+    { label: 'Human support', text: 'Verified local guides when you want them', icon: <HeartHandshake className="w-4 h-4" /> },
+    { label: 'Adaptive itinerary', text: 'A plan that respects time, budget and pace', icon: <Route className="w-4 h-4" /> },
+    { label: 'Live trip', text: 'Navigation, replanning and offline packages', icon: <Navigation className="w-4 h-4" /> },
+    { label: 'AI assistance', text: 'Memory-scoped help throughout the trip', icon: <BrainCircuit className="w-4 h-4" /> }
+  ] as const;
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-ivory-50 text-charcoal-900 antialiased overflow-x-hidden">
       {/* ══════════════════ NAVBAR ══════════════════ */}
       <header
         className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
           scrolled || mobileOpen
-            ? 'bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_6px_24px_-12px_rgba(15,23,42,0.12)]'
+            ? 'bg-ivory-50/90 backdrop-blur-xl border-b border-charcoal-100/90 shadow-[0_10px_30px_-18px_rgba(27,35,44,0.18)]'
             : 'bg-transparent'
         }`}
       >
         <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <div className="flex items-center justify-between h-[72px]">
+          <div className="flex items-center justify-between h-[74px]">
             {/* Brand */}
             <a href="#top" className="flex items-center gap-2.5 group" aria-label="Travion home">
-              <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center shadow-soft">
+              <span className="w-9.5 h-9.5 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center shadow-soft">
                 <Compass className="w-5 h-5 text-white" />
               </span>
-              <span className={`text-[17px] font-extrabold tracking-tight ${scrolled || mobileOpen ? 'text-slate-900' : 'text-white'}`}>
+              <span className={`text-[17px] font-extrabold tracking-[0.08em] ${scrolled || mobileOpen ? 'text-charcoal-900' : 'text-white'}`}>
                 TRAVION
               </span>
             </a>
 
             {/* Desktop nav */}
-            <nav className="hidden lg:flex items-center gap-8" aria-label="Primary">
+            <nav className="hidden lg:flex items-center gap-9" aria-label="Primary">
               {NAV_LINKS.map((l) => {
                 const active = activeSection === l.href.slice(1);
                 return (
                   <span key={l.href} className="relative">
                     <a
                       href={l.href}
-                      className={`text-[13px] font-semibold transition-colors ${
+                      className={`text-[13.5px] font-semibold transition-colors ${
                         active
                           ? scrolled ? 'text-travion-700' : 'text-white'
-                          : scrolled ? 'text-slate-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
+                          : scrolled ? 'text-charcoal-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
                       }`}
                     >
                       {l.label}
                     </a>
                     {active && (
-                      <span className={`absolute -bottom-2 left-0 right-0 h-0.5 rounded-full ${scrolled ? 'bg-travion-500' : 'bg-white/80'}`} />
+                      <span className={`absolute -bottom-2 left-0 right-0 h-0.5 rounded-full ${scrolled ? 'bg-travion-500' : 'bg-gold-300'}`} />
                     )}
                   </span>
                 );
@@ -513,7 +485,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               <button
                 onClick={() => openAuth(true)}
                 className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
-                  scrolled ? 'text-slate-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
+                  scrolled ? 'text-charcoal-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
                 }`}
               >
                 Sign In
@@ -521,16 +493,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               <button
                 onClick={() => openGuideRegistration()}
                 className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
-                  scrolled ? 'text-slate-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
+                  scrolled ? 'text-charcoal-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
                 }`}
               >
                 Become a Guide
               </button>
               <button
                 onClick={() => openAuth(false)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-4.5 h-10 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[13px] font-bold shadow-soft transition-all hover:-translate-y-px"
+                className="hidden sm:inline-flex items-center gap-1.5 px-5 h-10 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[13px] font-bold shadow-soft transition-all hover:-translate-y-px"
               >
                 Plan My Trip
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
               {/* Mobile trigger */}
               <button
@@ -538,7 +511,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 aria-label="Toggle menu"
                 aria-expanded={mobileOpen}
                 className={`lg:hidden inline-flex w-10 h-10 items-center justify-center rounded-xl transition-colors ${
-                  scrolled || mobileOpen ? 'text-slate-700 hover:bg-slate-100' : 'text-white hover:bg-white/10'
+                  scrolled || mobileOpen ? 'text-charcoal-700 hover:bg-ivory-200' : 'text-white hover:bg-white/10'
                 }`}
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -555,7 +528,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.35, ease: EASE }}
-              className="lg:hidden overflow-hidden bg-white/98 border-t border-slate-100"
+              className="lg:hidden overflow-hidden bg-ivory-50/98 border-t border-charcoal-100"
               aria-label="Mobile"
             >
               <div className="px-5 py-4 flex flex-col gap-1">
@@ -567,7 +540,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                     className={`px-3 py-3 rounded-xl text-[15px] font-semibold transition-colors ${
                       activeSection === l.href.slice(1)
                         ? 'bg-travion-50 text-travion-700'
-                        : 'text-slate-700 hover:bg-travion-50 hover:text-travion-700'
+                        : 'text-charcoal-700 hover:bg-travion-50 hover:text-travion-700'
                     }`}
                   >
                     {l.label}
@@ -576,7 +549,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <button
                     onClick={() => { setMobileOpen(false); openAuth(true); }}
-                    className="h-11 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm"
+                    className="h-11 rounded-xl border border-charcoal-200 text-charcoal-700 font-bold text-sm"
                   >
                     Sign In
                   </button>
@@ -600,140 +573,134 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       </header>
 
       {/* ══════════════════ HERO ══════════════════ */}
-      <section id="top" className="relative min-h-[100svh] flex flex-col overflow-hidden bg-travion-800">
-        {/* Cinematic imagery */}
+      <section id="top" className="relative min-h-[100svh] flex flex-col overflow-hidden bg-travion-900">
+        {/* Cinematic imagery — subtle parallax */}
         <div className="absolute inset-0">
           <motion.div
-            initial={{ scale: 1.12, opacity: 0 }}
+            initial={{ scale: 1.1, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 2.4, ease: EASE }}
+            transition={{ duration: 2.2, ease: EASE }}
             className="absolute inset-0 bg-cover bg-center will-change-transform"
-            style={{ backgroundImage: `url(${HERO_IMAGE})` }}
+            style={{ backgroundImage: `url(${HERO_IMAGE})`, y: reduceMotion ? 0 : heroParallax }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-travion-900/85 via-slate-950/55 to-travion-800/20" />
-          <div className="absolute inset-0 bg-gradient-to-t from-travion-900/90 via-transparent to-travion-800/40" />
-          {/* Aurora glows — slow drifting color fields behind the copy */}
+          <div className="absolute inset-0 bg-gradient-to-r from-travion-900/90 via-charcoal-950/45 to-travion-800/25" />
+          <div className="absolute inset-0 bg-gradient-to-t from-travion-900/95 via-transparent to-travion-900/40" />
           {!reduceMotion && (
             <>
               <motion.div
                 aria-hidden
-                animate={{ x: [0, 40, -20, 0], y: [0, -30, 20, 0], opacity: [0.5, 0.75, 0.5] }}
-                transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute -top-24 -left-24 w-[480px] h-[480px] rounded-full blur-[110px]"
-                style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.35), transparent 65%)' }}
+                animate={{ x: [0, 36, -18, 0], y: [0, -24, 16, 0], opacity: [0.5, 0.7, 0.5] }}
+                transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute -top-24 -left-24 w-[460px] h-[460px] rounded-full blur-[110px]"
+                style={{ background: 'radial-gradient(circle, rgba(100,180,220,0.28), transparent 65%)' }}
               />
               <motion.div
                 aria-hidden
-                animate={{ x: [0, -50, 30, 0], y: [0, 25, -25, 0], opacity: [0.4, 0.65, 0.4] }}
-                transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute bottom-0 right-[-120px] w-[520px] h-[520px] rounded-full blur-[120px]"
-                style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.28), transparent 65%)' }}
-              />
-              <motion.div
-                aria-hidden
-                animate={{ x: [0, 30, -30, 0], scale: [1, 1.15, 1] }}
-                transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute top-1/3 left-1/2 w-[420px] h-[420px] rounded-full blur-[130px]"
-                style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.22), transparent 65%)' }}
+                animate={{ x: [0, -40, 24, 0], y: [0, 20, -20, 0], opacity: [0.4, 0.6, 0.4] }}
+                transition={{ duration: 24, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute bottom-0 right-[-120px] w-[500px] h-[500px] rounded-full blur-[120px]"
+                style={{ background: 'radial-gradient(circle, rgba(219,190,118,0.18), transparent 65%)' }}
               />
             </>
           )}
         </div>
 
-        <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[120px] pb-16 grid lg:grid-cols-[1.05fr_0.95fr] items-end gap-12">
+        <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[130px] pb-16 grid lg:grid-cols-[1.06fr_0.94fr] items-end gap-12">
           {/* Editorial copy */}
           <div>
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.25, ease: EASE }}>
-              <Eyebrow light>Travion — travel without the uncertainty</Eyebrow>
-            </motion.div>
+            <motion.div style={reduceMotion ? undefined : { opacity: heroFade }}>
+              <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.2, ease: EASE }}>
+                <Eyebrow light>Plans · adapts · supports · throughout</Eyebrow>
+              </motion.div>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 26 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, delay: 0.4, ease: EASE }}
-              className="mt-5 text-white text-[clamp(2.6rem,6.2vw,4.9rem)] font-extrabold leading-[1.02] tracking-[-0.03em]"
-            >
-              Plan your trip.
-              <br />
-              <RotatingWord />
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, delay: 0.6, ease: EASE }}
-              className="mt-6 max-w-xl text-white/75 text-base md:text-lg leading-relaxed font-medium"
-            >
-              Explore the destination on a live map, pick the exact places, activities, food and
-              stays you want, edit your day-by-day plan — and choose a verified local guide or
-              travel independently with AI by your side.
-            </motion.p>
-
-            {/* Flow pills — the product story in one glance: user chooses WHAT
-                (Step 3), user chooses HOW (mode), Travion organizes. */}
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, delay: 0.68, ease: EASE }}
-              className="mt-5 flex flex-wrap items-center gap-2"
-            >
-              {[
-                'Explore the map',
-                'Choose your places',
-                'Pick your experience',
-                'Edit your plan',
-                'Pay transparently',
-              ].map((step, i) => (
-                <span key={step} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 backdrop-blur px-3 py-1.5 text-[11px] font-bold text-white/85">
-                  <span className="w-4 h-4 rounded-full bg-sky-400/90 text-travion-900 text-[9px] font-black flex items-center justify-center">{i + 1}</span>
-                  {step}
-                </span>
-              ))
-              }
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, delay: 0.75, ease: EASE }}
-              className="mt-8 flex flex-wrap items-center gap-3.5"
-            >
-              <button
-                onClick={() => openAuth(false)}
-                className="group inline-flex items-center gap-2 h-12 px-6 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
+              <motion.h1
+                initial={{ opacity: 0, y: 26 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, delay: 0.35, ease: EASE }}
+                className="mt-6 text-white text-[clamp(2.5rem,6vw,4.7rem)] font-extrabold leading-[1.04] tracking-[-0.03em]"
               >
-                Plan My Trip
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-              </button>
-              <button
-                onClick={() => openGuideRegistration()}
-                className="inline-flex items-center gap-2 h-12 px-6 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
-              >
-                Become a Guide
-                <ArrowUpRight className="w-4 h-4" />
-              </button>
-            </motion.div>
+                Travel without
+                <br />
+                <em className="font-editorial font-normal italic tracking-[-0.01em] bg-clip-text text-transparent bg-gradient-to-r from-ivory-200 via-sky-200 to-gold-200">
+                  the uncertainty.
+                </em>
+              </motion.h1>
 
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1, delay: 1 }}
-              className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl"
-            >
-              {[
-                { icon: <MapPin className="w-4 h-4" />, value: 5000, suffix: '+', label: 'Real places on live maps' },
-                { icon: <ShieldCheck className="w-4 h-4" />, value: 100, suffix: '%', label: 'Verified guides only' },
-                { icon: <Navigation className="w-4 h-4" />, value: 3, suffix: ' steps', label: 'To your final plan' },
-                { icon: <Wallet className="w-4 h-4" />, value: 0, suffix: '', label: 'Hidden fees. Ever.' },
-              ].map((t) => (
-                <div key={t.label} className="rounded-2xl bg-white/10 border border-white/15 backdrop-blur px-3.5 py-3">
-                  <span className="text-sky-300">{t.icon}</span>
-                  <p className="mt-1 text-lg font-black text-white leading-tight">
-                    <CountUp to={t.value} suffix={t.suffix} />
-                  </p>
-                  <p className="text-[10.5px] font-semibold text-white/60">{t.label}</p>
-                </div>
-              ))}
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, delay: 0.55, ease: EASE }}
+                className="mt-6 max-w-xl text-white/80 text-base md:text-lg leading-relaxed font-medium"
+              >
+                TRAVION plans, adapts and supports you through the entire journey — from the first
+                search to the last stop. Explore real places on a live map, build your itinerary,
+                and choose a verified local guide or travel independently with AI by your side.
+              </motion.p>
+
+              {/* Flow pills — the product story in one glance */}
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, delay: 0.65, ease: EASE }}
+                className="mt-6 flex flex-wrap items-center gap-2"
+              >
+                {[
+                  'Explore the map',
+                  'Choose your places',
+                  'Pick your experience',
+                  'Edit your plan',
+                  'Pay transparently',
+                ].map((step, i) => (
+                  <span key={step} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 backdrop-blur px-3 py-1.5 text-[11px] font-semibold text-white/90">
+                    <span className="w-4 h-4 rounded-full bg-gold-300/90 text-travion-900 text-[9px] font-black flex items-center justify-center">{i + 1}</span>
+                    {step}
+                  </span>
+                ))}
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, delay: 0.72, ease: EASE }}
+                className="mt-8 flex flex-wrap items-center gap-3.5"
+              >
+                <button
+                  onClick={() => openAuth(false)}
+                  className="group inline-flex items-center gap-2 h-13 px-7 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
+                >
+                  Plan My Trip
+                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+                <button
+                  onClick={() => openGuideRegistration()}
+                  className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
+                >
+                  Become a Guide
+                  <ArrowUpRight className="w-4 h-4" />
+                </button>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 1, delay: 0.95 }}
+                className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl"
+              >
+                {[
+                  { icon: <MapPin className="w-4 h-4" />, value: 5000, suffix: '+', label: 'Real places on live maps' },
+                  { icon: <ShieldCheck className="w-4 h-4" />, value: 100, suffix: '%', label: 'Verified guides only' },
+                  { icon: <Navigation className="w-4 h-4" />, value: 3, suffix: ' steps', label: 'To your final plan' },
+                  { icon: <Wallet className="w-4 h-4" />, value: 0, suffix: '', label: 'Hidden fees. Ever.' },
+                ].map((t) => (
+                  <div key={t.label} className="rounded-2xl bg-white/10 border border-white/15 backdrop-blur px-3.5 py-3">
+                    <span className="text-sky-200">{t.icon}</span>
+                    <p className="mt-1 text-lg font-black text-white leading-tight">
+                      <CountUp to={t.value} suffix={t.suffix} />
+                    </p>
+                    <p className="text-[10.5px] font-semibold text-white/60">{t.label}</p>
+                  </div>
+                ))}
+              </motion.div>
             </motion.div>
           </div>
 
@@ -744,9 +711,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
             transition={{ duration: 1, delay: 0.7, ease: EASE }}
             className="w-full max-w-2xl lg:ml-auto"
           >
-            <TripSearchBar
-              onSearch={() => openAuth(false)}
-            />
+            <div className="rounded-[28px] border border-white/10 bg-white/95 backdrop-blur-xl shadow-floating p-2 md:p-3">
+              <TripSearchBar onSearch={() => openAuth(false)} />
+            </div>
             <p className="mt-3 text-center text-[11px] font-medium text-white/55">
               Real hubs only — plans are grounded in verified routes and stays. Sign in to plan your trip.
             </p>
@@ -755,7 +722,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
 
         {/* Scroll cue */}
         <motion.a
-          href="#discover"
+          href="#explore"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1.6 }}
@@ -770,595 +737,320 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
       {/* ══════════════════ MARQUEE RIBBON ══════════════════ */}
       <MarqueeRibbon />
 
-      {/* ══════════════════ DESTINATION DISCOVERY ══════════════════ */}
-      <section id="discover" className="relative py-24 md:py-32 bg-sky-50/60">
+      {/* ══════════════════ DESTINATION STORY ══════════════════ */}
+      <section id="explore" className="relative py-24 md:py-32 bg-ivory-50">
         <div className="max-w-7xl mx-auto px-5 md:px-8">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
             <Reveal>
-              <Eyebrow>Destination discovery</Eyebrow>
-              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              <Eyebrow>Explore · Destination stories</Eyebrow>
+              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
                 Where will you go next?
               </h2>
-              <p className="mt-4 max-w-lg text-slate-500 font-medium leading-relaxed">
-                Tell Travion how you want to travel. It will build the journey around you — from the
-                first search to the last stop.
+              <p className="mt-4 max-w-lg text-charcoal-500 font-medium leading-relaxed">
+                Journey through the places TRAVION knows how to plan — then open the live map and
+                build the trip around you.
               </p>
             </Reveal>
             <Reveal delay={0.15} className="shrink-0">
               <button
                 onClick={() => openAuth(false)}
-                className="inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-white border border-slate-200 text-slate-700 text-sm font-bold shadow-soft hover:border-travion-300 hover:text-travion-700 transition-all"
+                className="inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-white border border-charcoal-200 text-charcoal-700 text-sm font-bold shadow-soft hover:border-travion-300 hover:text-travion-700 transition-all"
               >
                 Start planning
                 <ArrowUpRight className="w-4 h-4" />
               </button>
             </Reveal>
           </div>
-        </div>
 
-        <div className="mt-12">
-          {hubsLoading ? (
-            <div className="max-w-7xl mx-auto px-5 md:px-8 grid grid-cols-2 md:grid-cols-4 gap-5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-80 rounded-3xl bg-slate-100 animate-pulse" />
-              ))}
-            </div>
-          ) : hubsError ? (
-            <div className="max-w-7xl mx-auto px-5 md:px-8">
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center">
-                <p className="text-sm font-bold text-slate-600">{hubsError}</p>
-                <p className="mt-1.5 text-xs text-slate-400 font-medium">Please try again in a moment.</p>
-              </div>
-            </div>
-          ) : hubs.length === 0 ? (
-            <div className="max-w-7xl mx-auto px-5 md:px-8">
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center">
-                <Globe2 className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm font-bold text-slate-600">Verified hubs are being onboarded</p>
-                <p className="mt-1.5 text-xs text-slate-400 font-medium">Plans are published per destination as their data is verified.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth [scrollbar-width:thin]">
-              <div className="flex gap-5 px-5 md:px-[max(2rem,calc((100vw-80rem)/2+2rem))] w-max">
-                {hubs.map((hub, i) => (
-                  <motion.button
-                    key={hub.id}
-                    initial={{ opacity: 0, y: 26 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, margin: '-40px' }}
-                    transition={{ duration: 0.7, delay: Math.min(i * 0.06, 0.4), ease: EASE }}
-                    onClick={() => openAuth(false)}
-                    className="snap-start group relative w-[270px] md:w-[320px] h-[380px] md:h-[430px] rounded-[28px] overflow-hidden text-left shrink-0 bg-slate-200 shadow-soft hover:shadow-floating transition-shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-travion-200"
-                    aria-label={`Plan a trip to ${hub.name}`}
-                  >
-                    {hub.hero_image ? (
-                      <img
-                        src={hub.hero_image}
-                        alt={`${hub.name}, ${hub.state}`}
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.4s] ease-out group-hover:scale-[1.07]"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-travion-100 to-travion-200">
-                        <MapPin className="w-10 h-10 text-travion-500/60" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-travion-900/85 via-slate-950/25 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="px-2.5 py-1 rounded-full bg-white/15 backdrop-blur text-[10px] font-bold uppercase tracking-wider text-white border border-white/20">
-                          {hub.country === 'India' ? 'India' : hub.country}
-                        </span>
-                        {hub.popular_season && (
-                          <span className="px-2.5 py-1 rounded-full bg-travion-500/80 backdrop-blur text-[10px] font-bold text-white">
-                            {hub.popular_season}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-2xl font-extrabold text-white tracking-tight">{hub.name}</h3>
-                      <p className="text-[13px] font-semibold text-white/70 mt-0.5">{hub.state}</p>
-                      {hub.description && (
-                        <p className="mt-2.5 text-[12px] leading-relaxed text-white/75 line-clamp-2">{hub.description}</p>
-                      )}
-                      <span className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-bold text-sky-200 opacity-0 translate-y-1.5 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
-                        Plan this route <ArrowRight className="w-3.5 h-3.5" />
-                      </span>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ══════════════════ PERSONALIZATION ══════════════════ */}
-      <section id="personalize" className="py-24 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <div className="grid lg:grid-cols-[1fr_1.1fr] gap-14 items-center">
-            <Reveal>
-              <Eyebrow>Personalization</Eyebrow>
-              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-                Your trip should feel like yours.
-              </h2>
-              <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
-                Budget, pace, stay, food, transport, adventure, interests — every answer is a real
-                constraint. The planner uses them to choose verified transport, accommodation and
-                experiences for your route.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-2.5">
-                {preferenceDims.map((dim) => {
-                  const active = activePref === dim.key;
-                  return (
-                    <button
-                      key={dim.key}
-                      onMouseEnter={() => setActivePref(dim.key)}
-                      onClick={() => setActivePref(dim.key)}
-                      className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold border transition-all ${
-                        active
-                          ? 'bg-travion-600 border-travion-600 text-white shadow-soft'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-travion-300 hover:text-travion-700'
-                      }`}
-                    >
-                      {dim.icon}
-                      {dim.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-5 min-h-[70px]">
-                <AnimatePresence mode="wait">
-                  <motion.p
-                    key={activePrefDim.key}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.35 }}
-                    className="max-w-md text-sm text-slate-500 font-medium leading-relaxed"
-                  >
-                    <span className="font-bold text-slate-800">{activePrefDim.label} · </span>
-                    {activePrefDim.note}
-                  </motion.p>
-                </AnimatePresence>
-              </div>
-            </Reveal>
-
-            {/* Evolving plan preview */}
-            <Reveal delay={0.15}>
-              <div className="relative">
-                <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-sky-50 to-transparent blur-xl" />
-                <div className="relative rounded-[28px] border border-slate-200/90 bg-white shadow-soft-lg p-6 md:p-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-8 h-8 rounded-lg bg-travion-600 text-white flex items-center justify-center">
-                        <Compass className="w-4 h-4" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-extrabold text-slate-900">Your journey preview</p>
-                        <p className="text-[11px] font-semibold text-slate-400">Day 1 · Your location to Munnar</p>
-                      </div>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-lg bg-travion-50 text-travion-700 text-[10px] font-bold uppercase tracking-wider">
-                      Concept preview
-                    </span>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {sampleStops.map((stop, i) => {
-                      const dimmed = i === 0;
-                      return (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            backgroundColor: dimmed ? 'rgba(14,165,233,0.07)' : 'rgba(255,255,255,1)',
-                            borderColor: dimmed ? 'rgba(2,132,199,0.35)' : 'rgba(226,232,240,1)'
-                          }}
-                          transition={{ duration: 0.5 }}
-                          className="flex items-center gap-3.5 rounded-2xl border px-4 py-3.5"
-                        >
-                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${dimmed ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-600'}`}>
-                            {stop.icon}
-                          </span>
-                          <span className="flex-1 text-sm font-bold text-slate-800">{stop.text}</span>
-                          <motion.span
-                            key={`${activePref}-${i}`}
-                            initial={{ opacity: 0, x: 4 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.4, delay: i * 0.05 }}
-                            className="text-[11px] font-semibold text-slate-400"
-                          >
-                            {activePref === 'budget' ? 'within budget' :
-                             activePref === 'pace' ? 'your pace' :
-                             activePref === 'stay' ? 'your stay style' :
-                             activePref === 'food' ? 'your food rules' :
-                             activePref === 'transport' ? 'your transport' :
-                             activePref === 'adventure' ? 'your adventure level' : 'your interests'}
-                          </motion.span>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
-                    <span className="text-[12px] font-semibold text-slate-500">Estimated travel spend for this route</span>
-                    <span className="text-sm font-extrabold text-slate-900">Calculated at planning</span>
-                  </div>
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ WHAT TRAVION CAN DO ══════════════════ */}
-      <section id="features" className="py-24 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>What Travion can do</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              More than an itinerary generator.
-            </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              From AI-powered planning to verified human guides — Travion orchestrates your entire journey.
-            </p>
-          </Reveal>
-
-          <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {/* Editorial showcase — inspiration imagery (visual only, never trip data) */}
+          <div className="mt-12 grid md:grid-cols-3 gap-5">
             {[
-              { icon: <BrainCircuit className="w-6 h-6" />, title: 'AI Trip Planning', text: 'Travion understands your preferences and builds a personalized journey — not a generic template. Every answer you give becomes a real constraint.' },
-              { icon: <Utensils className="w-6 h-6" />, title: 'Smart Food Discovery', text: 'Choose restaurants that fit your preferences, budget, and cuisine interests. Your selections are distributed across your trip days intelligently.' },
-              { icon: <BedDouble className="w-6 h-6" />, title: 'Stay Selection', text: 'Choose accommodation that matches your budget. Your selected stay remains constant throughout the trip — no random rotating.' },
-              { icon: <Landmark className="w-6 h-6" />, title: 'Real Attractions', text: 'Discover verified tourist places and attractions near your destination. Select the ones you want, and Travion optimizes the route around them.' },
-              { icon: <Route className="w-6 h-6" />, title: 'Smart Itineraries', text: 'Travion organizes your selected places, food, and activities day by day — grouping nearby locations and respecting opening hours.' },
-              { icon: <Users className="w-6 h-6" />, title: 'Verified Guide Connection', text: 'Get connected with a verified local guide when you want human support. Guides are onboarded, assessed, and manager-approved before they operate.' }
-            ].map((item, i) => (
-              <Reveal key={item.title} delay={Math.min(i * 0.06, 0.3)}>
-                <div className="group h-full rounded-2xl border border-slate-200 bg-slate-50/50 p-6 hover:bg-white hover:border-travion-200 hover:shadow-soft transition-all duration-300">
-                  <span className="w-12 h-12 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft group-hover:bg-travion-700 transition-colors duration-300">
-                    {item.icon}
-                  </span>
-                  <h3 className="mt-4 text-[15px] font-extrabold text-slate-900">{item.title}</h3>
-                  <p className="mt-1.5 text-[12.5px] font-medium text-slate-500 leading-relaxed">{item.text}</p>
+              { img: HERO_IMAGE, label: 'Misty highlands', sub: 'Forests · trails · viewpoints', tall: true },
+              { img: IMG_COAST, label: 'Sun-drenched coast', sub: 'Beaches · tides · slow days', tall: false },
+              { img: IMG_ROAD, label: 'Winding mountain roads', sub: 'Drives · towns · ghats', tall: false },
+            ].map((card, i) => (
+              <Reveal key={card.label} delay={Math.min(i * 0.1, 0.3)} className={card.tall ? 'md:row-span-1' : ''}>
+                <div className={`group relative overflow-hidden rounded-[28px] ${card.tall ? 'h-[420px] md:h-[560px]' : 'h-[420px]'}`}>
+                  <SafeImg
+                    src={card.img}
+                    alt={card.label}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.4s] ease-out group-hover:scale-[1.05]"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-charcoal-950/75 via-charcoal-950/10 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-6">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-gold-200">Inspiration</p>
+                    <h3 className="mt-1.5 text-2xl font-extrabold text-white tracking-tight">{card.label}</h3>
+                    <p className="mt-0.5 text-[13px] font-medium text-white/70">{card.sub}</p>
+                  </div>
                 </div>
               </Reveal>
             ))}
           </div>
-        </div>
-      </section>
+          <p className="mt-4 text-[11px] font-medium text-charcoal-400">
+            Imagery is illustrative. Trip planning always uses verified destination data from the live map.
+          </p>
 
-      {/* ══════════════════ LIVE TRIP VISUALIZATION ══════════════════ */}
-      <section id="live" className="py-24 md:py-32 bg-slate-50/90">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Live journey</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Planning is only the beginning.
-            </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              Once your trip begins, the itinerary becomes a live workspace — route, pins, next stop
-              and navigation all in one place, adapting as you move.
-            </p>
-          </Reveal>
+          {/* Real verified hubs */}
+          <div className="mt-14">
+            <Reveal>
+              <p className="text-[13px] font-bold uppercase tracking-[0.2em] text-charcoal-400 mb-5">
+                Verified hubs · real data
+              </p>
+            </Reveal>
 
-          <Reveal delay={0.15} className="mt-14">
-            <div className="relative rounded-[32px] border border-slate-200 bg-white shadow-soft-lg overflow-hidden">
-              {/* Window chrome */}
-              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-white">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-200" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-200" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-200" />
-                <span className="ml-3 flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
-                  <Navigation className="w-3.5 h-3.5 text-travion-500" />
-                  Live Trip · Your location → Munnar
-                </span>
-                <span className="ml-auto px-2.5 py-1 rounded-lg bg-travion-50 text-travion-700 text-[10px] font-bold uppercase tracking-wider">
-                  Product preview
-                </span>
+            {hubsLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-80 rounded-3xl bg-ivory-200 animate-pulse" />
+                ))}
               </div>
-
-              <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
-                {/* Map canvas */}
-                <div className="relative h-[360px] md:h-[460px] bg-gradient-to-br from-sky-100/80 via-emerald-50/60 to-slate-100 overflow-hidden">
-                  {/* Contour bands */}
-                  <div className="absolute inset-0 opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(14,165,233,0.08), transparent 40%), radial-gradient(circle at 80% 20%, rgba(16,185,129,0.07), transparent 35%), radial-gradient(circle at 60% 85%, rgba(2,132,199,0.06), transparent 45%)' }} />
-                  <div className="absolute inset-x-0 top-0 h-px bg-slate-200/70" />
-
-                  <svg viewBox="0 0 760 460" className="absolute inset-0 w-full h-full" aria-hidden="true">
-                    <defs>
-                      <linearGradient id="routeGrad" x1="0" y1="1" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#0284c7" />
-                        <stop offset="100%" stopColor="#10b981" />
-                      </linearGradient>
-                    </defs>
-                    {/* Route */}
-                    <motion.path
-                      d="M 96 350 C 210 344, 238 214, 340 200 S 500 160, 560 118 S 656 84, 686 78"
-                      fill="none"
-                      stroke="url(#routeGrad)"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                      initial={{ pathLength: 0 }}
-                      whileInView={{ pathLength: 1 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 2.2, ease: 'easeInOut', delay: 0.3 }}
-                    />
-                    <motion.path
-                      d="M 96 350 C 210 344, 238 214, 340 200 S 500 160, 560 118 S 656 84, 686 78"
-                      fill="none"
-                      stroke="rgba(2,132,199,0.18)"
-                      strokeWidth="10"
-                      strokeLinecap="round"
-                      initial={{ pathLength: 0 }}
-                      whileInView={{ pathLength: 1 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 2.2, ease: 'easeInOut', delay: 0.3 }}
-                    />
-                  </svg>
-
-                  {/* Traveller marker moving along route */}
-                  <motion.div
-                    className="absolute z-10"
-                    style={{
-                      offsetPath: "path('M 96 350 C 210 344, 238 214, 340 200 S 500 160, 560 118 S 656 84, 686 78')",
-                      offsetRotate: '0deg'
-                    }}
-                    animate={{ offsetDistance: reduceMotion ? '100%' : ['6%', '96%'] }}
-                    transition={{ duration: 16, repeat: reduceMotion ? 0 : Infinity, ease: 'linear', repeatDelay: 1.2 }}
-                  >
-                    <span className="relative flex w-7 h-7 items-center justify-center">
-                      <span className="absolute inset-0 rounded-full bg-travion-500/30 travion-avatar-pulse" />
-                      <span className="relative w-6 h-6 rounded-full bg-gradient-to-br from-travion-500 to-travion-700 border-2 border-white shadow-floating flex items-center justify-center">
-                        <Navigation className="w-3 h-3 text-white" />
-                      </span>
-                    </span>
-                  </motion.div>
-
-                  {/* Stop pins */}
-                  {journeyStops.map((stop, i) => {
-                    const pos = [
-                      { left: '7.5%', top: '72%' },
-                      { left: '30%', top: '40%' },
-                      { left: '46%', top: '37%' },
-                      { left: '66%', top: '28%' },
-                      { left: '81%', top: '17%' },
-                      { left: '91%', top: '13%' }
-                    ][i];
-                    const active = i === activeStop;
-                    return (
-                      <div
-                        key={stop.label}
-                        className="absolute -translate-x-1/2 -translate-y-1/2"
-                        style={{ left: pos.left, top: pos.top }}
-                      >
-                        <motion.span
-                          animate={{ scale: active ? 1.18 : 1 }}
-                          transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-                          className={`relative flex items-center justify-center rounded-full border-2 shadow-soft transition-colors duration-300 ${
-                            i === 0
-                              ? 'w-9 h-9 bg-travion-600 border-white text-white'
-                              : i === journeyStops.length - 1
-                                ? 'w-9 h-9 bg-emerald-500 border-white text-white'
-                                : active
-                                  ? 'w-9 h-9 bg-travion-600 border-white text-white'
-                                  : 'w-8 h-8 bg-white border-travion-200 text-travion-600'
-                          }`}
-                        >
-                          {stop.icon}
-                        </motion.span>
-                        {active && (
-                          <motion.span
-                            layoutId="mapPulse"
-                            className="absolute inset-0 rounded-full border-2 border-travion-400"
-                            animate={{ scale: [1, 1.7], opacity: [0.7, 0] }}
-                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut' }}
-                          />
+            ) : hubsError ? (
+              <div className="rounded-3xl border border-dashed border-charcoal-200 bg-white p-10 text-center">
+                <p className="text-sm font-bold text-charcoal-600">{hubsError}</p>
+                <p className="mt-1.5 text-xs text-charcoal-400 font-medium">Please try again in a moment.</p>
+              </div>
+            ) : hubs.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-charcoal-200 bg-white p-10 text-center">
+                <Globe2 className="w-8 h-8 text-charcoal-300 mx-auto mb-3" />
+                <p className="text-sm font-bold text-charcoal-600">Verified hubs are being onboarded</p>
+                <p className="mt-1.5 text-xs text-charcoal-400 font-medium">Plans are published per destination as their data is verified.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth [scrollbar-width:thin]">
+                <div className="flex gap-5 w-max">
+                  {hubs.map((hub, i) => (
+                    <motion.button
+                      key={hub.id}
+                      initial={{ opacity: 0, y: 26 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: '-40px' }}
+                      transition={{ duration: 0.7, delay: Math.min(i * 0.06, 0.4), ease: EASE }}
+                      onClick={() => openAuth(false)}
+                      className="snap-start group relative w-[270px] md:w-[310px] h-[380px] md:h-[420px] rounded-[28px] overflow-hidden text-left shrink-0 bg-ivory-200 shadow-soft hover:shadow-floating transition-shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-travion-200"
+                      aria-label={`Plan a trip to ${hub.name}`}
+                    >
+                      {hub.hero_image ? (
+                        <SafeImg
+                          src={hub.hero_image}
+                          alt={`${hub.name}, ${hub.state}`}
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.4s] ease-out group-hover:scale-[1.06]"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-travion-100 to-travion-200">
+                          <MapPin className="w-10 h-10 text-travion-500/60" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-charcoal-950/80 via-charcoal-950/20 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2.5 py-1 rounded-full bg-white/15 backdrop-blur text-[10px] font-bold uppercase tracking-wider text-white border border-white/20">
+                            {hub.country === 'India' ? 'India' : hub.country}
+                          </span>
+                          {hub.popular_season && (
+                            <span className="px-2.5 py-1 rounded-full bg-travion-500/80 backdrop-blur text-[10px] font-bold text-white">
+                              {hub.popular_season}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-2xl font-extrabold text-white tracking-tight">{hub.name}</h3>
+                        <p className="text-[13px] font-semibold text-white/70 mt-0.5">{hub.state}</p>
+                        {hub.description && (
+                          <p className="mt-2.5 text-[12px] leading-relaxed text-white/75 line-clamp-2">{hub.description}</p>
                         )}
-                        <span className={`absolute left-1/2 -translate-x-1/2 top-full mt-1.5 whitespace-nowrap text-[10px] font-bold ${active ? 'text-travion-700' : 'text-slate-500'} transition-colors`}>
-                          {stop.place}
+                        <span className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-bold text-sky-200 opacity-0 translate-y-1.5 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
+                          Plan this route <ArrowRight className="w-3.5 h-3.5" />
                         </span>
                       </div>
-                    );
-                  })}
-
-                  {/* Destination chip */}
-                  <div className="absolute left-4 top-4 flex items-center gap-2 rounded-xl bg-white/90 backdrop-blur border border-slate-200 px-3 py-2 shadow-soft">
-                    <Navigation className="w-3.5 h-3.5 text-travion-600" />
-                    <span className="text-[11px] font-bold text-slate-700">
-                      {activeStop < journeyStops.length - 1 ? `Next: ${journeyStops[activeStop + 1].place}` : 'You have arrived'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Itinerary rail */}
-                <div className="border-t lg:border-t-0 lg:border-l border-slate-100 bg-white p-6 md:p-8">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400 mb-5">Today's route</p>
-                  <ol className="relative space-y-1">
-                    {journeyStops.map((stop, i) => {
-                      const active = i === activeStop;
-                      const done = i < activeStop;
-                      return (
-                        <li key={stop.label} className="relative flex gap-4 pb-5 last:pb-0">
-                          {i < journeyStops.length - 1 && (
-                            <span className={`absolute left-[15px] top-8 bottom-0 w-px ${done || active ? 'bg-travion-200' : 'bg-slate-200'}`} />
-                          )}
-                          <span
-                            className={`relative z-10 w-8 h-8 shrink-0 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                              done
-                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                : active
-                                  ? 'bg-travion-600 border-travion-600 text-white shadow-floating'
-                                  : 'bg-white border-slate-200 text-slate-400'
-                            }`}
-                          >
-                            {done ? <Check className="w-3.5 h-3.5" /> : stop.icon}
-                          </span>
-                          <div className="pt-1">
-                            <p className={`text-[11px] font-bold uppercase tracking-wider ${active ? 'text-travion-600' : 'text-slate-400'}`}>{stop.label}</p>
-                            <p className={`text-sm font-extrabold ${done || active ? 'text-slate-900' : 'text-slate-500'}`}>{stop.place}</p>
-                            <p className="text-[11px] font-medium text-slate-400">{stop.sub}</p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  <button
-                    onClick={() => openAuth(false)}
-                    className="mt-6 w-full h-11 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors"
-                  >
-                    Experience it live
-                  </button>
+                    </motion.button>
+                  ))}
                 </div>
               </div>
-            </div>
-          </Reveal>
+            )}
+          </div>
         </div>
       </section>
 
-      {/* ══════════════════ GUIDE CTA ══════════════════ */}
-      <section id="guides" className="py-24 md:py-32 bg-travion-800 text-white">
-        <div className="max-w-4xl mx-auto px-5 md:px-8 text-center">
-          <Reveal>
-            <Eyebrow light>For Local Guides</Eyebrow>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Know Your Destination Better?
+      {/* ══════════════════ WHY TRAVION / FEATURES ══════════════════ */}
+      <section id="features" className="py-24 md:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <div className="flex justify-center"><Eyebrow>Why TRAVION</Eyebrow></div>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              One continuous journey.
             </h2>
-            <p className="mt-4 text-xl text-white/80 font-medium max-w-2xl mx-auto">
-              Become a TRAVION Guide and help travellers discover the places, food, culture and
-experiences you know best.
+            <p className="mt-4 text-charcoal-500 font-medium leading-relaxed">
+              Travel planning is fragmented. TRAVION was built to connect every piece of it — so
+              nothing falls through the gaps.
             </p>
           </Reveal>
 
-          <Reveal delay={0.2} className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button
-              onClick={() => onOpenGuideRegistration()}
-              className="group inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
-            >
-              Become a Guide
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-            </button>
-            <button
-              onClick={() => onOpenGuideSignIn()}
-              className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl border border-white/20 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
-            >
-              Guide Sign In
-            </button>
-          </Reveal>
+          <div className="mt-14 grid lg:grid-cols-2 gap-10 items-stretch">
+            {/* Before */}
+            <Reveal>
+              <div className="h-full rounded-[28px] border border-charcoal-100 bg-ivory-50 p-8 md:p-10">
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-charcoal-400">Before the journey</p>
+                <h3 className="mt-2 text-2xl font-extrabold text-charcoal-800 tracking-tight">Fragmented. Uncertain. Exhausting.</h3>
+                <ul className="mt-7 space-y-4">
+                  {beforeJourney.map((item) => (
+                    <li key={item} className="flex items-center gap-3.5">
+                      <span className="w-7 h-7 rounded-full bg-charcoal-100 text-charcoal-400 flex items-center justify-center shrink-0">
+                        <X className="w-3.5 h-3.5" />
+                      </span>
+                      <span className="text-[15px] font-semibold text-charcoal-600">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </Reveal>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.5 }}
-            className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[12px] font-semibold text-white/50"
-          >
-            {['Verified local guides', 'Fair trip assignments', 'Secure payments', 'Professional support'].map((t) => (
-              <span key={t} className="inline-flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-travion-400" />
-                {t}
-              </span>
-            ))}
-          </motion.div>
+            {/* After — one continuous timeline */}
+            <Reveal delay={0.15}>
+              <div className="relative h-full rounded-[28px] bg-charcoal-900 p-8 md:p-10 overflow-hidden">
+                <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-[100px]" style={{ background: 'radial-gradient(circle, rgba(61,148,196,0.35), transparent 65%)' }} />
+                <div className="relative">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gold-300">With TRAVION</p>
+                  <h3 className="mt-2 text-2xl font-extrabold text-white tracking-tight">Planned. Verified. Supported.</h3>
+                  <div className="mt-8 space-y-0">
+                    {travionJourney.map((step, i) => (
+                      <div key={step.label} className="relative flex gap-5 pb-8 last:pb-0">
+                        {i < travionJourney.length - 1 && (
+                          <span className="absolute left-[17px] top-9 bottom-0 w-px bg-white/15" />
+                        )}
+                        <span className="relative w-9 h-9 rounded-xl bg-travion-500/20 border border-travion-400/30 text-travion-200 flex items-center justify-center shrink-0">
+                          {step.icon}
+                        </span>
+                        <div className="pt-1">
+                          <p className="text-[15px] font-extrabold text-white">{step.label}</p>
+                          <p className="mt-0.5 text-[12.5px] font-medium text-white/60">{step.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Reveal>
+          </div>
         </div>
       </section>
 
-      {/* ══════════════════ ADAPTIVE AI ══════════════════ */}
-      <section id="adapt" className="py-24 md:py-32 bg-white">
+      {/* ══════════════════ HOW IT WORKS ══════════════════ */}
+      <section id="how-it-works" className="py-24 md:py-32 bg-ivory-50">
         <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <div className="grid lg:grid-cols-2 gap-14 items-center">
-            <Reveal>
-              <Eyebrow>Adaptive AI</Eyebrow>
-              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-                When plans change,
-                <br />
-                Travion changes with them.
-              </h2>
-              <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
-                Weather, tired legs, a closed viewpoint or a change of heart — Travion detects the
-                trigger, finds a verified alternative, recalculates the route and budget, and tells
-                you exactly why the plan changed.
-              </p>
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <div className="flex justify-center"><Eyebrow>How it works</Eyebrow></div>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              From first idea to the open road.
+            </h2>
+            <p className="mt-4 text-charcoal-500 font-medium leading-relaxed">
+              Six steps. One continuous journey. Every screen connected to real functionality.
+            </p>
+          </Reveal>
 
-              <div className="mt-9 space-y-2.5">
-                {[
-                  { icon: <CloudRain className="w-4 h-4" />, title: 'Trigger detected', text: 'Heavy rain forecast for tomorrow afternoon at your viewpoint stop.' },
-                  { icon: <RefreshCw className="w-4 h-4" />, title: 'Verified alternative found', text: 'An indoor cultural experience near your stay, checked for distance and hours.' },
-                  { icon: <Route className="w-4 h-4" />, title: 'Route and budget recalculated', text: 'The day reorders around the change while locked bookings stay fixed.' },
-                  { icon: <Bell className="w-4 h-4" />, title: 'You are notified with the reason', text: 'A plain-language explanation is logged with the new itinerary version.' }
-                ].map((step, i) => (
-                  <motion.div
-                    key={step.title}
-                    initial={{ opacity: 0, x: 20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.6, delay: i * 0.1, ease: EASE }}
-                    className="flex gap-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3.5"
-                  >
-                    <span className="w-9 h-9 shrink-0 rounded-xl bg-travion-600 text-white flex items-center justify-center">
-                      {step.icon}
-                    </span>
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-900">{step.title}</p>
-                      <p className="text-[12px] font-medium text-slate-500 leading-relaxed mt-0.5">{step.text}</p>
+          <div className="relative mt-16">
+            <span className="absolute left-5 md:left-1/2 top-0 bottom-0 w-px bg-charcoal-200 hidden md:block" aria-hidden />
+            <div className="space-y-8">
+              {howSteps.map((s, i) => (
+                <Reveal key={s.n} delay={Math.min(i * 0.05, 0.25)}>
+                  <div className={`md:grid md:grid-cols-2 md:gap-14 items-center ${i % 2 === 1 ? 'md:text-right' : ''}`}>
+                    <div className={`md:relative flex items-center gap-5 ${i % 2 === 1 ? 'md:order-2' : ''}`}>
+                      <span className="relative z-10 shrink-0 w-11 h-11 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft">
+                        {s.icon}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">{s.n}</p>
+                        <h3 className="mt-1 text-xl md:text-2xl font-extrabold text-charcoal-900 tracking-tight">{s.title}</h3>
+                        <p className={`mt-2 text-[13.5px] font-medium text-charcoal-500 leading-relaxed ${i % 2 === 1 ? 'md:ml-auto' : ''} max-w-md`}>{s.text}</p>
+                        <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-travion-50 border border-travion-200 px-3 py-1 text-[10.5px] font-bold uppercase tracking-wider text-travion-700">
+                          {s.tag}
+                        </span>
+                      </div>
                     </div>
-                  </motion.div>
+                    <div className={`hidden md:block ${i % 2 === 1 ? 'md:order-1' : ''}`}>
+                      <div className={`flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-charcoal-400 ${i % 2 === 1 ? 'md:justify-end' : ''}`}>
+                        <span className="font-editorial italic normal-case text-lg text-charcoal-300">step</span>
+                        <span className="text-5xl font-extrabold text-charcoal-200/60 leading-none">{s.n}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ MAP EXPERIENCE PREVIEW ══════════════════ */}
+      <section id="live" className="py-24 md:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <div className="grid lg:grid-cols-[1fr_1fr] gap-12 items-center">
+            <Reveal>
+              <Eyebrow>Live map · Product preview</Eyebrow>
+              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+                TRAVION doesn't just recommend places.
+                <br />
+                <span className="text-travion-700">It builds a real journey.</span>
+              </h2>
+              <p className="mt-5 text-charcoal-500 font-medium leading-relaxed max-w-md">
+                Verified markers for every category, card-to-map sync, and an itinerary timeline that
+                respects real times. This is the same map you use to plan — with the same real places.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-2.5">
+                {['Attractions', 'Food & cafés', 'Stays', 'Shopping', 'Transport', 'Healthcare', 'Education', 'More'].map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1.5 rounded-full border border-charcoal-200 bg-ivory-50 px-3.5 py-1.5 text-[11px] font-bold text-charcoal-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-travion-500" />
+                    {c}
+                  </span>
                 ))}
               </div>
             </Reveal>
 
-            {/* Replanning notice visual */}
             <Reveal delay={0.15}>
               <div className="relative">
-                <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-amber-100/60 via-sky-50 to-transparent blur-xl" />
-                <div className="relative space-y-4">
-                  <div className="rounded-3xl border border-slate-200 bg-white shadow-soft-lg p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-500">
-                          <RefreshCw className="w-5 h-5" />
-                        </span>
-                        <div>
-                          <p className="text-sm font-extrabold text-slate-900">Your itinerary was updated</p>
-                          <p className="text-[12px] font-semibold text-slate-400 mt-0.5">Day 2 · just now</p>
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-600 text-[10px] font-bold uppercase tracking-wider">
-                        Replanned
-                      </span>
-                    </div>
-                    <p className="mt-4 text-[13px] font-medium text-slate-600 leading-relaxed">
-                      Rain is expected near the open-air viewpoint tomorrow afternoon. It was swapped for
-                      a tea-tasting and plantation walk at a nearby estate — indoors, short travel time and
-                      within your remaining budget.
-                    </p>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-white shadow-soft-lg overflow-hidden">
-                    <button
-                      className="w-full flex items-center justify-between px-6 py-4 text-left"
-                    >
-                      <span className="text-sm font-extrabold text-slate-900">Why did my plan change?</span>
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
-                    </button>
-                    <div className="border-t border-slate-100 px-6 py-4 grid grid-cols-3 gap-3">
+                <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-gold-100/40 to-transparent blur-xl" />
+                <div className="relative rounded-[28px] border border-charcoal-100 bg-ivory-50 shadow-soft-lg overflow-hidden">
+                  {/* Map canvas mock */}
+                  <div className="relative h-[300px] bg-[#dcebf2] overflow-hidden">
+                    <div className="absolute inset-0 opacity-60" style={{
+                      backgroundImage: 'linear-gradient(#ffffff55 1px, transparent 1px), linear-gradient(90deg, #ffffff55 1px, transparent 1px), linear-gradient(#bcd3e3 1px, transparent 1px), linear-gradient(90deg, #bcd3e3 1px, transparent 1px)',
+                      backgroundSize: '80px 80px, 80px 80px, 16px 16px, 16px 16px'
+                    }} />
+                    {/* Route line */}
+                    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 600 300" fill="none" aria-hidden>
+                      <path d="M70 230 C 150 190, 220 250, 300 160 S 460 120, 530 90" stroke="#267aa8" strokeWidth="3" strokeDasharray="1 8" strokeLinecap="round" strokeOpacity="0.6" />
                       {[
-                        { icon: <CloudRain className="w-4 h-4 text-sky-500" />, label: 'Before', value: 'Open-air viewpoint' },
-                        { icon: <Mountain className="w-4 h-4 text-emerald-500" />, label: 'After', value: 'Plantation estate' },
-                        { icon: <Wallet className="w-4 h-4 text-amber-500" />, label: 'Budget', value: 'Reallocated' }
-                      ].map((c) => (
-                        <div key={c.label} className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-center">
-                          <span className="inline-flex w-8 h-8 rounded-xl bg-white border border-slate-200 items-center justify-center mb-1.5">
-                            {c.icon}
-                          </span>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{c.label}</p>
-                          <p className="text-[11px] font-extrabold text-slate-800 mt-0.5 leading-snug">{c.value}</p>
+                        [70, 230], [190, 208], [300, 160], [430, 132], [530, 90]
+                      ].map(([x, y], i) => (
+                        <g key={i}>
+                          <circle cx={x} cy={y} r="7" fill="#fffdf8" stroke="#267aa8" strokeWidth="3" />
+                          <circle cx={x} cy={y} r="7" fill={i === 2 ? '#a97f33' : '#267aa8'} />
+                        </g>
+                      ))}
+                    </svg>
+                    <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-white/90 backdrop-blur px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-charcoal-600 shadow-soft">
+                      <MapPin className="w-3 h-3 text-travion-600" /> Live map · Product preview
+                    </span>
+                  </div>
+                  {/* Timeline card */}
+                  <div className="p-5 border-t border-charcoal-100 bg-white/70">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-charcoal-400">Marrying the itinerary to the map</p>
+                    <div className="mt-4 space-y-2.5">
+                      {[
+                        { time: '04:00 pm', title: 'Hotel check-in', icon: <BedDouble className="w-4 h-4" /> },
+                        { time: '05:00 pm', title: 'Heritage exploration', icon: <Landmark className="w-4 h-4" /> },
+                        { time: '06:30 pm', title: 'Sunset viewpoint', icon: <Mountain className="w-4 h-4" /> },
+                        { time: '07:45 pm', title: 'Dinner · local café', icon: <Utensils className="w-4 h-4" /> }
+                      ].map((row) => (
+                        <div key={row.title} className="flex items-center gap-3 rounded-2xl border border-charcoal-100 bg-white px-3.5 py-2.5">
+                          <span className="w-8 h-8 rounded-xl bg-travion-50 text-travion-700 flex items-center justify-center">{row.icon}</span>
+                          <div className="flex-1">
+                            <p className="text-[13px] font-bold text-charcoal-800">{row.title}</p>
+                            <p className="text-[10.5px] font-semibold text-charcoal-400">{row.time}</p>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-charcoal-300" />
                         </div>
                       ))}
                     </div>
                   </div>
-
-                  <p className="text-center text-[11px] font-semibold text-slate-400">
-                    Concept preview · In your app, replans use your trip's verified data and real budgets.
-                  </p>
                 </div>
               </div>
             </Reveal>
@@ -1366,563 +1058,337 @@ experiences you know best.
         </div>
       </section>
 
-      {/* ══════════════════ AI ASSISTANT WITH MEMORY ══════════════════ */}
-      <section id="assistant" className="py-24 md:py-32 bg-sky-50/60">
+      {/* ══════════════════ HUMAN + AI ══════════════════ */}
+      <section id="modes" className="py-24 md:py-32 bg-ivory-50">
         <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Trip assistant</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              An assistant that remembers your trip.
+          <Reveal className="max-w-2xl">
+            <Eyebrow>Two ways to travel</Eyebrow>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              Human care, or the open road — with AI beside you.
             </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              Not a generic chatbot. Every trip has isolated memory — preferences, decisions, visited
-              places and budget state — used to answer what you ask next.
+            <p className="mt-4 text-charcoal-500 font-medium leading-relaxed">
+              Both modes share the same planned journey, verified map and live support. You choose
+              how much of it happens with another human by your side.
             </p>
           </Reveal>
 
-          <div className="mt-14 grid lg:grid-cols-[1fr_0.9fr] gap-10 items-center max-w-5xl mx-auto">
+          <div className="mt-14 grid md:grid-cols-2 gap-6">
+            {/* Guide Mode */}
             <Reveal>
-              <div className="rounded-[28px] border border-slate-200 bg-white shadow-soft-lg overflow-hidden">
-                <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-slate-100">
-                  <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
-                    <Compass className="w-4 h-4 text-white" />
-                  </span>
-                  <div>
-                    <p className="text-[13px] font-extrabold text-slate-900">Travion assistant</p>
-                    <p className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Munnar trip memory active
+              <div className="group relative overflow-hidden rounded-[28px] bg-charcoal-900 text-white p-8 min-h-[480px] flex flex-col">
+                <SafeImg src={IMG_GUIDE} alt="A local guide showing the way" className="absolute inset-0 w-full h-full object-cover opacity-22 transition-transform duration-[1.4s] ease-out group-hover:scale-[1.05]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-charcoal-950/70 via-transparent to-charcoal-950/90" />
+                <div className="relative z-10 flex-1 flex flex-col">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1 rounded-full bg-gold-400/90 text-charcoal-900 text-[10px] font-black uppercase tracking-wider">Guide mode</span>
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-ivory-200/80"><BadgeCheck className="w-3.5 h-3.5" /> Verified local guides</span>
+                  </div>
+                  <h3 className="mt-5 text-3xl font-extrabold tracking-tight">Travel with someone who knows the place.</h3>
+                  <ul className="mt-6 space-y-3.5">
+                    {[
+                      'Verified local guide matched to your route',
+                      'On-ground support through the whole trip',
+                      'Direct chat with your guide after assignment',
+                      'Local knowledge layered onto your AI plan'
+                    ].map((b) => (
+                      <li key={b} className="flex items-start gap-2.5 text-[13.5px] font-medium text-white/85">
+                        <Check className="w-4 h-4 text-gold-300 mt-0.5" /> {b}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-auto pt-7">
+                    <p className="text-[12px] font-medium text-white/60">
+                      Guide fee + platform fee — both shown upfront, computed server-side.
                     </p>
+                    <button
+                      onClick={() => openAuth(false)}
+                      className="mt-4 inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-white/95 hover:bg-white text-charcoal-900 text-sm font-bold transition-all hover:-translate-y-px"
+                    >
+                      Plan a guided trip
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </div>
-                  <span className="ml-auto px-2.5 py-1 rounded-lg bg-travion-50 text-travion-700 text-[10px] font-bold uppercase tracking-wider">
-                    Product preview
-                  </span>
                 </div>
+              </div>
+            </Reveal>
 
-                <div className="p-5 space-y-4 bg-slate-50/50">
-                  {/* Bubble 1 user */}
-                  <div className="flex justify-end">
-                    <div className="max-w-[80%] rounded-2xl rounded-br-md bg-travion-600 text-white px-4 py-2.5 text-[13px] font-medium leading-relaxed">
-                      I don't want crowded places tomorrow.
-                    </div>
+            {/* Adventurous Mode */}
+            <Reveal delay={0.12}>
+              <div className="group relative overflow-hidden rounded-[28px] bg-white border border-charcoal-100 p-8 min-h-[480px] flex flex-col">
+                <SafeImg src={IMG_ADVENTURE} alt="A solo traveller on a mountain trail" className="absolute inset-0 w-full h-full object-cover opacity-15 transition-transform duration-[1.4s] ease-out group-hover:scale-[1.05]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/30 to-ivory-50/95" />
+                <div className="relative z-10 flex-1 flex flex-col">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1 rounded-full bg-travion-600 text-white text-[10px] font-black uppercase tracking-wider">Adventurous mode</span>
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-charcoal-500"><BrainCircuit className="w-3.5 h-3.5" /> AI by your side</span>
                   </div>
-                  {/* Bubble 1 reply */}
-                  <div className="flex justify-start gap-2.5">
-                    <span className="w-7 h-7 rounded-lg bg-travion-100 flex items-center justify-center shrink-0 mt-1">
-                      <Compass className="w-3.5 h-3.5 text-travion-600" />
+                  <h3 className="mt-5 text-3xl font-extrabold tracking-tight text-charcoal-900">Independent travel, intelligently planned.</h3>
+                  <ul className="mt-6 space-y-3.5">
+                    {[
+                      'Full AI-planned journey, no guide fee',
+                      'Live map, navigation and AI assistant included',
+                      'Dynamic replanning whenever conditions change',
+                      'Local discovery and safety information built in'
+                    ].map((b) => (
+                      <li key={b} className="flex items-start gap-2.5 text-[13.5px] font-medium text-charcoal-600">
+                        <Check className="w-4 h-4 text-travion-600 mt-0.5" /> {b}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-auto pt-7">
+                    <p className="text-[12px] font-medium text-charcoal-400">
+                      Platform fee only — never a guide fee you don't ask for.
+                    </p>
+                    <button
+                      onClick={() => openAuth(false)}
+                      className="mt-4 inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-all hover:-translate-y-px"
+                    >
+                      Plan an independent trip
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ AI ASSISTANT ══════════════════ */}
+      <section id="assistant" className="py-24 md:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <Reveal delay={0.1} className="order-2 lg:order-1">
+              <div className="relative max-w-md">
+                <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-gold-100/30 to-transparent blur-xl" />
+                <div className="relative rounded-[28px] border border-charcoal-100 bg-ivory-50 shadow-soft-lg overflow-hidden">
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-charcoal-100 bg-white/70">
+                    <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
+                      <BrainCircuit className="w-4.5 h-4.5 text-white" />
                     </span>
-                    <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-white border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 leading-relaxed shadow-soft">
-                      Noted. I will keep tomorrow's plan to quieter verified locations and skip the
-                      high-traffic viewpoints.
+                    <div>
+                      <p className="text-[13.5px] font-extrabold text-charcoal-800">TRAVION assistant</p>
+                      <p className="text-[10.5px] font-semibold text-charcoal-400">Trip-scoped memory · your trip only</p>
                     </div>
+                    <span className="ml-auto text-[9px] font-bold uppercase tracking-widest text-gold-500">Product preview</span>
                   </div>
-
-                  {/* Memory chip */}
-                  <div className="flex justify-start pl-9">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-travion-50 border border-travion-100 px-3 py-1.5">
-                      <BrainCircuit className="w-3.5 h-3.5 text-travion-600" />
-                      <span className="text-[11px] font-bold text-travion-700">Saved: prefers calm places</span>
+                  <div className="space-y-3.5 p-5">
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-travion-600 text-white px-4 py-2.5 text-[13px] font-medium leading-relaxed shadow-soft">
+                        What's next?
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Bubble 2 user */}
-                  <div className="flex justify-end">
-                    <div className="max-w-[80%] rounded-2xl rounded-br-md bg-travion-600 text-white px-4 py-2.5 text-[13px] font-medium leading-relaxed">
-                      Find something for the afternoon.
+                    <div className="flex justify-start">
+                      <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-white border border-charcoal-100 px-4 py-2.5 text-[13px] font-medium leading-relaxed text-charcoal-700 shadow-soft">
+                        Your next stop is <span className="font-bold text-charcoal-900">Tank Bund</span> at <span className="font-bold text-travion-700">4:30 PM</span>.
+                        It's <span className="font-bold text-charcoal-900">12 minutes</span> from your current location.
+                      </div>
                     </div>
-                  </div>
-                  {/* Bubble 2 reply */}
-                  <div className="flex justify-start gap-2.5">
-                    <span className="w-7 h-7 rounded-lg bg-travion-100 flex items-center justify-center shrink-0 mt-1">
-                      <Compass className="w-3.5 h-3.5 text-travion-600" />
-                    </span>
-                    <div className="max-w-[82%] rounded-2xl rounded-bl-md bg-white border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 leading-relaxed shadow-soft">
-                      Based on your preference for quieter places, your remaining budget and
-                      tomorrow's route, the plantation estate walk fits best — low crowd, 20 minutes
-                      from your stay. I can add it to Day 3.
+                    <div className="flex justify-start">
+                      <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-white border border-charcoal-100 px-4 py-2.5 text-[13px] font-medium leading-relaxed text-charcoal-700 shadow-soft">
+                        The viewpoint stays open until 6:00 PM, so you have time. Replan if the weather turns?
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </Reveal>
 
-            {/* Context rail */}
-            <Reveal delay={0.15}>
-              <div className="space-y-3.5">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Context it reasons over</p>
+            <Reveal className="order-1 lg:order-2">
+              <Eyebrow>AI assistant</Eyebrow>
+              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+                An assistant that knows <em className="font-editorial font-normal italic">your</em> trip.
+              </h2>
+              <p className="mt-5 text-charcoal-500 font-medium leading-relaxed max-w-md">
+                Every trip gets its own isolated memory. Ask what's next, where to eat, or how to
+                adjust a day — the assistant answers from your verified itinerary, never from
+                somewhere else.
+              </p>
+              <div className="mt-8 space-y-3">
                 {[
-                  { icon: <BrainCircuit className="w-4 h-4" />, title: 'Trip memory', text: 'Your stated preferences and decisions — kept per trip, never mixed with other journeys.' },
-                  { icon: <Wallet className="w-4 h-4" />, title: 'Budget state', text: 'What was estimated, spent and reallocated so far on this trip.' },
-                  { icon: <Route className="w-4 h-4" />, title: 'Route position', text: 'Where you are, what is next and how far it is.' },
-                  { icon: <Layers className="w-4 h-4" />, title: 'Verified facts only', text: 'Stays, dining, attractions and emergency numbers come from the verified database — the assistant never invents them.' }
+                  { icon: <RefreshCw className="w-4 h-4" />, text: 'Replans only your flexible parts — with a plain-language reason' },
+                  { icon: <Clock className="w-4 h-4" />, text: 'Times come from the validated engine, never guessed schedules' },
+                  { icon: <Lock className="w-4 h-4" />, text: 'Nothing leaks between trips; memory is scoped per journey' }
                 ].map((row) => (
-                  <div key={row.title} className="flex gap-3.5 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-soft">
-                    <span className="w-9 h-9 shrink-0 rounded-xl bg-travion-50 border border-travion-100 text-travion-600 flex items-center justify-center">
-                      {row.icon}
-                    </span>
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-900">{row.title}</p>
-                      <p className="text-[12px] font-medium text-slate-500 leading-relaxed mt-1">{row.text}</p>
-                    </div>
+                  <div key={row.text} className="flex items-start gap-3 text-[13.5px] font-medium text-charcoal-600">
+                    <span className="w-8 h-8 rounded-xl bg-travion-50 text-travion-700 flex items-center justify-center shrink-0">{row.icon}</span>
+                    {row.text}
                   </div>
                 ))}
               </div>
             </Reveal>
           </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ ACTIVE TRIP PREVIEW ══════════════════ */}
+      <section id="today" className="py-24 md:py-32 bg-travion-900 text-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <Reveal>
+              <Eyebrow light>Live trip · Product preview</Eyebrow>
+              <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+                The day you actually <em className="font-editorial font-normal italic text-gold-300">travel</em>.
+              </h2>
+              <p className="mt-5 text-white/70 font-medium leading-relaxed max-w-md">
+                After payment is verified, your journey becomes a live dashboard — today's itinerary,
+                the map, your assistant, navigation, your guide and emergency info, all in one place.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-2.5">
+                {['Today', 'Map', 'AI assistant', 'Navigation', 'Guide', 'Emergency'].map((t) => (
+                  <span key={t} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3.5 py-1.5 text-[11px] font-bold text-white/85">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </Reveal>
+
+            <Reveal delay={0.15}>
+              <div className="relative">
+                <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-500/30 to-transparent blur-xl" />
+                <div className="relative rounded-[28px] bg-white/95 shadow-floating overflow-hidden">
+                  <div className="flex items-center justify-between px-6 py-5 border-b border-charcoal-100">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-travion-600">Today</p>
+                      <p className="text-xl font-extrabold text-charcoal-900">21 September</p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-gold-50 border border-gold-200 text-gold-500 text-[10px] font-black uppercase tracking-wider">Product preview</span>
+                  </div>
+                  <div className="p-6 relative">
+                    <span className="absolute left-[31px] top-8 bottom-8 w-px bg-charcoal-100" aria-hidden />
+                    {[
+                      { time: '09:00 AM', title: 'Breakfast', icon: <Utensils className="w-4 h-4" /> },
+                      { time: '10:00 AM', title: 'Heritage exploration', icon: <Landmark className="w-4 h-4" /> },
+                      { time: '12:30 PM', title: 'Lunch · street café', icon: <Coffee className="w-4 h-4" /> },
+                      { time: '03:30 PM', title: 'Viewpoint', icon: <Mountain className="w-4 h-4" /> },
+                      { time: '06:00 PM', title: 'Sunset', icon: <Navigation className="w-4 h-4" /> }
+                    ].map((row) => (
+                      <div key={row.time} className="relative flex gap-5 pb-5 last:pb-0">
+                        <span className="relative z-10 w-12 h-12 rounded-2xl bg-travion-50 border border-travion-200 text-travion-700 flex items-center justify-center shrink-0">
+                          {row.icon}
+                        </span>
+                        <div className="pt-1">
+                          <p className="text-[12px] font-black text-charcoal-400">{row.time}</p>
+                          <p className="text-[15px] font-extrabold text-charcoal-900">{row.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════ TRUST / SOCIAL PROOF ══════════════════ */}
+      <section id="trust" className="py-24 md:py-32 bg-ivory-50">
+        <div className="max-w-7xl mx-auto px-5 md:px-8">
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <div className="flex justify-center"><Eyebrow>Built to be trusted</Eyebrow></div>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              Real capability. No placeholders.
+            </h2>
+            <p className="mt-4 text-charcoal-500 font-medium leading-relaxed">
+              We don't publish fake testimonials or invented travellers. Here is what TRAVION actually
+              guarantees with real product capability.
+            </p>
+          </Reveal>
+
+          <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-5 gap-5">
+            {[
+              { icon: <MapPin className="w-5 h-5" />, title: 'Real places', text: 'Live maps of verified POIs across nine categories' },
+              { icon: <BadgeCheck className="w-5 h-5" />, title: 'Verified POI data', text: 'Providers confirm what exists before it ever appears' },
+              { icon: <BrainCircuit className="w-5 h-5" />, title: 'AI planning', text: 'Your preferences become genuine scheduling constraints' },
+              { icon: <HeartHandshake className="w-5 h-5" />, title: 'Human guide support', text: 'Guides onboarded, assessed and manager-approved' },
+              { icon: <ShieldCheck className="w-5 h-5" />, title: 'Secure payments', text: 'Razorpay processing with server-verified signatures' }
+            ].map((item, i) => (
+              <Reveal key={item.title} delay={Math.min(i * 0.06, 0.3)}>
+                <div className="group h-full rounded-[22px] border border-charcoal-100 bg-white p-6 text-center hover:shadow-soft hover:-translate-y-1 transition-all duration-300">
+                  <span className="mx-auto w-12 h-12 rounded-2xl bg-travion-50 text-travion-700 flex items-center justify-center group-hover:bg-travion-600 group-hover:text-white transition-colors duration-300">
+                    {item.icon}
+                  </span>
+                  <h3 className="mt-4 text-[14.5px] font-extrabold text-charcoal-900">{item.title}</h3>
+                  <p className="mt-1.5 text-[12px] font-medium text-charcoal-500 leading-relaxed">{item.text}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal delay={0.15}>
+            <div className="mt-8 rounded-[24px] border border-charcoal-100 bg-white p-7 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-5 md:justify-between">
+              <div className="flex items-center gap-4">
+                <span className="w-12 h-12 rounded-2xl bg-ivory-200 text-gold-500 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="text-[15px] font-extrabold text-charcoal-900">Honest social proof</p>
+                  <p className="mt-0.5 text-[12.5px] font-medium text-charcoal-500">No placeholders · No fake guides · No generic chat · Real verified data only.</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-charcoal-400">
+                <ShieldCheck className="w-4 h-4 text-travion-600" /> Razorpay-secured payments
+              </span>
+            </div>
+          </Reveal>
         </div>
       </section>
 
       {/* ══════════════════ GUIDE NETWORK ══════════════════ */}
-      <section id="guide-network" className="py-24 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Guide network</Eyebrow></div>
+      <section id="guide-network" className="py-24 md:py-32 bg-charcoal-900 text-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 grid lg:grid-cols-2 gap-12 items-center">
+          <Reveal>
+            <Eyebrow light>Guide network</Eyebrow>
             <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Travel with someone who knows the place.
+              Turn local knowledge into a living.
             </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              Every Travion guide is onboarded, assessed on destination knowledge and safety, then
-              approved by an operations manager before they ever take a trip.
+            <p className="mt-5 text-white/70 font-medium leading-relaxed max-w-md">
+              Verified guides plan with, not against, the platform. You get assessed on destination
+              knowledge and safety, approved by an operations manager, then matched to travellers
+              who chose Guide Mode along your routes.
             </p>
-          </Reveal>
-
-          {/* Workflow */}
-          <div className="mt-16 grid grid-cols-2 md:grid-cols-5 gap-3 items-stretch">
-            {[
-              { icon: <Users className="w-4 h-4" />, label: 'Traveller' },
-              { icon: <MapPin className="w-4 h-4" />, label: 'Trip request' },
-              { icon: <BadgeCheck className="w-4 h-4" />, label: 'Manager review' },
-              { icon: <ShieldCheck className="w-4 h-4" />, label: 'Verified guide' },
-              { icon: <Navigation className="w-4 h-4" />, label: 'Assigned journey' }
-            ].map((node, i) => (
-              <React.Fragment key={node.label}>
-                <Reveal delay={i * 0.08} className="h-full">
-                  <div className="h-full flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-6 text-center hover:border-travion-300 hover:bg-white transition-colors">
-                    <span className="w-10 h-10 rounded-2xl bg-white border border-slate-200 text-travion-600 flex items-center justify-center shadow-soft">
-                      {node.icon}
-                    </span>
-                    <span className="text-[12px] font-extrabold text-slate-800 leading-snug">{node.label}</span>
-                  </div>
-                </Reveal>
-                {i < 4 && (
-                  <div className="hidden md:flex items-center justify-center text-slate-300">
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* What verified means */}
-          <div className="mt-10 grid md:grid-cols-3 gap-5">
-            {[
-              { icon: <BookOpen className="w-4 h-4" />, title: 'Structured onboarding', text: 'Guides register with profile, phone, languages, destinations, experience and specializations.' },
-              { icon: <CheckCircle2 className="w-4 h-4" />, title: 'Knowledge assessment', text: 'A destination test and safety-scenario review must be completed before approval.' },
-              { icon: <ShieldCheck className="w-4 h-4" />, title: 'Manager approval', text: 'Managers inspect submissions and answers; approvals are written to the audit log.' }
-            ].map((c) => (
-              <Reveal key={c.title}>
-                <div className="rounded-2xl border border-slate-200 p-5 h-full">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="w-9 h-9 rounded-xl bg-travion-50 text-travion-600 flex items-center justify-center border border-travion-100">
-                      {c.icon}
-                    </span>
-                    <h3 className="text-sm font-extrabold text-slate-900">{c.title}</h3>
-                  </div>
-                  <p className="text-[12.5px] font-medium text-slate-500 leading-relaxed">{c.text}</p>
+            <div className="mt-8 space-y-3">
+              {[
+                { icon: <BadgeCheck className="w-4 h-4" />, text: 'Structured onboarding + safety assessment before approval' },
+                { icon: <Wallet className="w-4 h-4" />, text: 'Transparent fees with settled payouts you can track' },
+                { icon: <MessagesSquare className="w-4 h-4" />, text: 'Direct traveller chat from assignment to completion' }
+              ].map((row) => (
+                <div key={row.text} className="flex items-start gap-3 text-[13.5px] font-medium text-white/75">
+                  <span className="text-gold-300 mt-0.5">{row.icon}</span>
+                  {row.text}
                 </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ TWO MODES ══════════════════ */}
-      <section id="modes" className="py-24 md:py-32 bg-slate-50/90">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Two ways to travel</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Choose how you want the journey run.
-            </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              After your plan is built and edited your way — right before payment — you pick the
-              experience: a verified local guide, or full independence with AI by your side.
-            </p>
-            {/* Step split: choose WHAT first, then choose HOW */}
-            <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2">
-              {['Budget', 'Travel style', 'Discover places', 'Plan', 'Edit', 'Choose experience', 'Pay'].map((s, i) => (
-                <React.Fragment key={s}>
-                  {i === 3 && (
-                    <span className="mx-1 hidden sm:inline-flex items-center" aria-hidden>
-                      <span className="w-4 h-px bg-slate-300" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-travion-400" />
-                      <span className="w-4 h-px bg-slate-300" />
-                    </span>
-                  )}
-                  <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-black border ${
-                    i < 3 ? 'bg-white border-slate-200 text-slate-500'
-                      : i === 5 ? 'bg-travion-600 border-travion-600 text-white shadow-soft'
-                      : 'bg-white border-slate-200 text-slate-500'
-                  }`}>
-                    {i === 5 ? '★ ' : ''}{s}
-                  </span>
-                </React.Fragment>
               ))}
             </div>
-          </Reveal>
-
-          <div className="mt-14 grid md:grid-cols-2 gap-6">
-            {/* Guide mode */}
-            <Reveal>
-              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-travion-600">
-                <div className="h-52 relative overflow-hidden">
-                  <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=1200&q=80"
-                    alt="Local guide showing a traveller around a heritage town"
-                    loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover opacity-80 transition-transform duration-[1.5s] group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-travion-900 to-transparent" />
-                </div>
-                <div className="p-7 md:p-9 bg-white">
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft">
-                      <Users className="w-5 h-5" />
-                    </span>
-                    <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">Guide Mode</h3>
-                  </div>
-                  <p className="mt-2 text-slate-500 font-semibold text-[15px]">Your journey, with a verified local expert.</p>
-                  <ul className="mt-6 space-y-3">
-                    {modeBullets(true).map((b) => (
-                      <li key={b} className="flex items-start gap-2.5 text-[13.5px] font-medium text-slate-600">
-                        <CheckCircle2 className="w-4 h-4 text-travion-500 shrink-0 mt-0.5" />
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    onClick={() => openAuth(false)}
-                    className="mt-8 w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold transition-colors"
-                  >
-                    Plan with a guide
-                  </button>
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Adventurous mode */}
-            <Reveal delay={0.12}>
-              <div className="group relative rounded-[30px] overflow-hidden shadow-soft-lg hover:shadow-floating transition-shadow h-full bg-travion-600">
-                <div className="h-52 relative overflow-hidden">
-                  <img
-                    src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?auto=format&fit=crop&w=1200&q=80"
-                    alt="Traveller on a mountain trail with a backpack"
-                    loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover opacity-80 transition-transform duration-[1.5s] group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-travion-900 to-transparent" />
-                </div>
-                <div className="p-7 md:p-9 bg-white">
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-soft">
-                      <Compass className="w-5 h-5" />
-                    </span>
-                    <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">Adventurous Mode</h3>
-                  </div>
-                  <p className="mt-2 text-slate-500 font-semibold text-[15px]">Your journey, your way.</p>
-                  <ul className="mt-6 space-y-3">
-                    {modeBullets(false).map((b) => (
-                      <li key={b} className="flex items-start gap-2.5 text-[13.5px] font-medium text-slate-600">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    onClick={() => openAuth(false)}
-                    className="mt-8 w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
-                  >
-                    Plan on your own
-                  </button>
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ PREFERENCE-FIRST PLANNING ══════════════════ */}
-      <section id="preferences" className="py-24 md:py-32 bg-slate-50/90">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Preference-first planning</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              You choose what matters.
-            </h2>
-            <p className="mt-4 text-slate-500 font-medium leading-relaxed">
-              Travion plans around your actual choices — not a generic template.
-            </p>
-          </Reveal>
-
-          <div className="mt-14 relative">
-            <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gradient-to-b from-travion-200 via-slate-200 to-slate-100" />
-            {[
-              { t: 'Your destination', d: 'Where you want to go — real hubs with verified routes and stays.' },
-              { t: 'Your preferences', d: 'Budget, pace, stay style, food rules, transport and adventure level.' },
-              { t: 'Real places', d: 'Verified restaurants, hotels and attractions near your destination.' },
-              { t: 'Your selections', d: 'Choose the restaurants, stay and places you actually want to experience.' },
-              { t: 'AI optimization', d: 'Travion builds a day-wise journey around your picks — grouped by location, open hours, budget, and trip flow.' },
-              { t: 'Your trip', d: 'A plan that feels like yours — because you picked the pieces.' }
-            ].map((step, i) => (
-              <Reveal key={i} delay={i * 0.04}>
-                <div className="relative flex gap-6 pb-10 last:pb-0">
-                  <div className="relative z-10 w-14 h-14 shrink-0 rounded-2xl bg-white border border-slate-200 shadow-soft flex items-center justify-center">
-                    <span className="text-[11px] font-black text-travion-600 tracking-wide">{String(i + 1).padStart(2, '0')}</span>
-                  </div>
-                  <div className="pt-1.5">
-                    <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">{step.t}</h3>
-                    <p className="mt-1.5 text-[13.5px] font-medium text-slate-500 leading-relaxed max-w-md">{step.d}</p>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-
-          {/* Visual flow example */}
-          <Reveal delay={0.15}>
-            <div className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-soft">
-              <h3 className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400 mb-6">Example: a 3-day trip where you chose the pieces</h3>
-              <div className="grid md:grid-cols-3 gap-4">
-                {[
-                  { day: 'Day 1', items: ['📍 Explore: Place A', '🍽 Lunch: Restaurant A', '🌆 Evening: Nearby activity', '🏨 Stay: Hotel A'] },
-                  { day: 'Day 2', items: ['📍 Explore: Place C', '📍 Morning: Nearby attraction', '🍽 Lunch: Restaurant B', '🌆 Evening: Experience'] },
-                  { day: 'Day 3', items: ['📍 Explore: Place D', '🍽 Lunch: Restaurant C', '🌆 Evening: Free exploration', '🏨 Stay: Hotel A'] }
-                ].map((day) => (
-                  <div key={day.day} className="rounded-xl border border-slate-100 bg-slate-50 p-5">
-                    <p className="text-sm font-extrabold text-slate-900 mb-3">{day.day}</p>
-                    <ul className="space-y-2">
-                      {day.items.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[13px] font-medium text-slate-700">
-                          <span className="text-travion-500">{item.split(':')[0]}</span>
-                          <span className="text-slate-500">: {item.split(':').slice(1).join(':')}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-4 text-center text-xs font-medium text-slate-400">
-                Hotel A stays constant. Restaurants A, B, C are distributed across days. Places are grouped geographically. This is the experience Travion builds around your selections.
-              </p>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ══════════════════ HOW TRAVION WORKS ══════════════════ */}
-      <section id="how" className="py-24 md:py-32 bg-white">
-        <div className="max-w-3xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center">
-            <div className="flex justify-center"><Eyebrow>How it works</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              From preference to journey.
-            </h2>
-          </Reveal>
-
-          <div className="mt-16 relative">
-            <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gradient-to-b from-travion-200 via-slate-200 to-slate-100" />
-            {[
-              { n: '01', t: 'Plan your journey', d: 'Tell Travion where you are going, when, and how you like to travel — grounded in verified hubs with real routes and stays.' },
-              { n: '02', t: 'Stay like a host', d: 'Pick a verified stay matched to your budget and travel style, in the neighbourhood that fits how you will spend your days.' },
-              { n: '03', t: 'Navigate day-to-day', d: 'A live trip map with real GPS, turn-by-turn guidance and every stop pinned professionally on your route.' },
-              { n: '04', t: 'Communicate with travellers', d: 'A trip-scoped AI assistant that remembers your plan and helps you speak the local language when you are on the ground.' },
-              { n: '05', t: 'Discover local food', d: 'Local food, hidden gems and lesser-known experiences matched to your interests, budget and the time you have.' },
-              { n: '06', t: 'Adapt to change', d: 'Weather, delays and plan changes trigger dynamic replanning — plus a full offline package when connectivity drops.' }
-            ].map((step, i) => (
-              <Reveal key={step.n} delay={i * 0.04}>
-                <div className="relative flex gap-6 pb-10 last:pb-0">
-                  <div className="relative z-10 w-14 h-14 shrink-0 rounded-2xl bg-white border border-slate-200 shadow-soft flex items-center justify-center">
-                    <span className="text-[11px] font-black text-travion-600 tracking-wide">{step.n}</span>
-                  </div>
-                  <div className="pt-1.5">
-                    <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">{step.t}</h3>
-                    <p className="mt-1.5 text-[13.5px] font-medium text-slate-500 leading-relaxed max-w-md">{step.d}</p>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ BUDGET TRANSPARENCY ══════════════════ */}
-      <section id="fees" className="py-24 md:py-32 bg-sky-50/60">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 grid lg:grid-cols-2 gap-14 items-center">
-          <Reveal>
-            <Eyebrow>Transparent pricing</Eyebrow>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Your travel budget stays yours.
-            </h2>
-            <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
-              The budget you set is an estimate of your overall travel spending. Travion collects only
-              the applicable platform and guide service fees — never the travel budget itself.
-            </p>
-            <div className="mt-8 flex items-start gap-3.5 rounded-2xl border border-travion-100 bg-white p-5 shadow-soft">
-              <span className="w-10 h-10 shrink-0 rounded-xl bg-travion-600 text-white flex items-center justify-center">
-                <IndianRupee className="w-5 h-5" />
-              </span>
-              <p className="text-[13.5px] font-semibold text-slate-700 leading-relaxed">
-                In the app, every figure on this page is calculated server-side from your trip's
-                verified data — duration, destination, travellers and service level.
-              </p>
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.15}>
-            <div className="relative rounded-[28px] border border-slate-200 bg-white shadow-soft-lg overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                <p className="text-sm font-extrabold text-slate-900">Payment breakdown</p>
-                <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-600 text-[10px] font-bold uppercase tracking-wider">
-                  Sample only
-                </span>
-              </div>
-              <div className="p-6 space-y-5">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Estimated trip budget</p>
-                    <p className="text-2xl font-extrabold text-slate-900 mt-1">Rs 50,000</p>
-                  </div>
-                  <Wallet className="w-6 h-6 text-slate-300" />
-                </div>
-
-                <div className="space-y-2.5 rounded-2xl bg-slate-50 border border-slate-100 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Estimated travel expenses — yours to spend</p>
-                  {[
-                    { label: 'Transport', value: 'Rs 15,000' },
-                    { label: 'Stay', value: 'Rs 15,000' },
-                    { label: 'Food', value: 'Rs 7,000' },
-                    { label: 'Activities', value: 'Rs 5,000' }
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between text-[13px]">
-                      <span className="font-semibold text-slate-600">{row.label}</span>
-                      <span className="font-bold text-slate-800">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between rounded-2xl bg-slate-50 border border-slate-100 p-4">
-                  <span className="text-[13px] font-bold text-slate-600">Estimated travel spend</span>
-                  <span className="text-[15px] font-extrabold text-slate-900">Rs 42,000</span>
-                </div>
-
-                <div className="space-y-2.5 rounded-2xl bg-travion-50/70 border border-travion-100 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-travion-500">Travion services — fees for orchestration</p>
-                  {[
-                    { label: 'Guide fee', value: 'Rs 4,000', icon: <Users className="w-3.5 h-3.5" /> },
-                    { label: 'Platform fee', value: 'Rs 1,500', icon: <Compass className="w-3.5 h-3.5" /> }
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between text-[13px]">
-                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                        {row.icon}
-                        {row.label}
-                      </span>
-                      <span className="font-bold text-slate-800">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between rounded-2xl bg-travion-600 px-5 py-4">
-                  <span className="text-[13px] font-bold text-slate-200">Amount payable to Travion</span>
-                  <span className="text-lg font-extrabold text-white">Rs 5,500</span>
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ══════════════════ TRUST ══════════════════ */}
-      <section id="trust" className="py-24 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal className="text-center max-w-2xl mx-auto">
-            <div className="flex justify-center"><Eyebrow>Built to be trusted</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Built for travellers who want more than an itinerary.
-            </h2>
-          </Reveal>
-
-          <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              { icon: <ShieldCheck className="w-5 h-5" />, title: 'Verified guides', text: 'Onboarded, assessed and manager-approved before they can operate.' },
-              { icon: <Lock className="w-5 h-5" />, title: 'Secure payments', text: 'Fees recomputed server-side; every Razorpay payment signature is verified.' },
-              { icon: <Layers className="w-5 h-5" />, title: 'Real travel data', text: 'Schedules, stays, dining and emergency contacts come from verified sources — never invented.' },
-              { icon: <BrainCircuit className="w-5 h-5" />, title: 'Trip-specific AI memory', text: 'The assistant remembers your trip and only your trip, with isolated memory per journey.' },
-              { icon: <Wallet className="w-5 h-5" />, title: 'Transparent pricing', text: 'A full breakdown before payment — your travel budget is never charged as a service fee.' },
-              { icon: <Navigation className="w-5 h-5" />, title: 'Live journey support', text: 'Map, navigation, replanning and offline packages stay with you until you are home.' }
-            ].map((item, i) => (
-              <Reveal key={item.title} delay={Math.min(i * 0.06, 0.3)}>
-                <div className="group h-full rounded-2xl border border-slate-200 bg-slate-50/50 p-6 hover:bg-white hover:border-travion-200 hover:shadow-soft transition-all duration-300">
-                  <span className="w-11 h-11 rounded-2xl bg-white border border-slate-200 text-travion-600 flex items-center justify-center shadow-soft group-hover:bg-travion-600 group-hover:text-white group-hover:border-travion-600 transition-colors duration-300">
-                    {item.icon}
-                  </span>
-                  <h3 className="mt-4 text-[15px] font-extrabold text-slate-900">{item.title}</h3>
-                  <p className="mt-1.5 text-[12.5px] font-medium text-slate-500 leading-relaxed">{item.text}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-
-          {/* Honest social proof */}
-          <Reveal delay={0.1}>
-            <div className="mt-12 rounded-3xl border border-slate-200 bg-gradient-to-r from-travion-50 via-white to-emerald-50/50 px-7 py-8 md:px-10">
-              <div className="grid md:grid-cols-3 gap-8">
-                {[
-                  { title: 'No placeholders', text: 'Every schedule, stay, dish and emergency contact shown on a plan is verified before it appears.' },
-                  { title: 'No fake guides', text: 'Only onboarded, manager-approved local experts are ever matched to a trip.' },
-                  { title: 'No generic chat', text: 'The assistant reasons over your trip data and memory — or says the data is still being added.' }
-                ].map((c) => (
-                  <div key={c.title}>
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <BadgeCheck className="w-4 h-4 text-travion-600" />
-                      {c.title}
-                    </h3>
-                    <p className="mt-2 text-[12.5px] font-medium text-slate-500 leading-relaxed">{c.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ══════════════════ DESTINATION STORY ══════════════════ */}
-      <section className="relative py-28 md:py-40 overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2200&q=80"
-          alt="Wide coastline at golden hour"
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-travion-800/55" />
-        <div className="absolute inset-0 bg-gradient-to-r from-travion-900/70 via-slate-950/30 to-travion-800/60" />
-        <div className="relative max-w-7xl mx-auto px-5 md:px-8">
-          <Reveal>
-            <div className="max-w-2xl">
-              <Eyebrow light>Beyond the itinerary</Eyebrow>
-              <h2 className="mt-5 text-white text-4xl md:text-6xl font-extrabold tracking-[-0.02em] leading-[1.05]">
-                Go beyond the itinerary.
-              </h2>
-              <p className="mt-5 text-white/80 text-base md:text-lg font-medium leading-relaxed max-w-lg">
-                Discover places, experiences and local recommendations that fit the way you travel —
-                surfaced from verified local data, not guesswork.
-              </p>
+            <div className="mt-9 flex flex-wrap gap-3">
               <button
-                onClick={() => { document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }); }}
-                className="mt-8 inline-flex items-center gap-2 h-12 px-6 rounded-2xl bg-white text-slate-900 text-sm font-bold hover:bg-travion-50 transition-colors"
+                onClick={() => openGuideRegistration()}
+                className="inline-flex items-center gap-2 h-12 px-6 rounded-2xl bg-gold-400 hover:bg-gold-300 text-charcoal-900 text-sm font-black transition-all hover:-translate-y-0.5"
               >
-                Explore destinations
-                <ArrowRight className="w-4 h-4" />
+                Become a Guide
+                <ArrowUpRight className="w-4 h-4" />
               </button>
+              <button
+                onClick={() => onOpenGuideSignIn()}
+                className="inline-flex items-center h-12 px-6 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
+              >
+                Guide Sign In
+              </button>
+            </div>
+          </Reveal>
+          <Reveal delay={0.15}>
+            <div className="grid grid-cols-2 gap-5">
+              {[
+                { icon: <BookOpen className="w-5 h-5" />, title: 'Onboarding', text: 'Profile, languages, destinations, experience' },
+                { icon: <ShieldCheck className="w-5 h-5" />, title: 'Assessment', text: 'Destination knowledge + safety scenarios' },
+                { icon: <Users className="w-5 h-5" />, title: 'Approval', text: 'Manager verifies before you can operate' },
+                { icon: <Route className="w-5 h-5" />, title: 'Matching', text: 'Ranked against the trips you know best' }
+              ].map((c) => (
+                <div key={c.title} className="rounded-[22px] bg-white/5 border border-white/10 backdrop-blur p-5">
+                  <span className="w-10 h-10 rounded-xl bg-travion-500/20 text-travion-200 flex items-center justify-center">{c.icon}</span>
+                  <h3 className="mt-3 text-[14px] font-extrabold">{c.title}</h3>
+                  <p className="mt-1 text-[11.5px] font-medium text-white/55">{c.text}</p>
+                </div>
+              ))}
             </div>
           </Reveal>
         </div>
@@ -1930,47 +1396,42 @@ experiences you know best.
 
       {/* ══════════════════ ABOUT ══════════════════ */}
       <section id="about" className="py-24 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 grid lg:grid-cols-2 gap-14 items-center">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 grid lg:grid-cols-2 gap-12 items-center">
           <Reveal>
-            <Eyebrow>About Travion</Eyebrow>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              The whole journey, orchestrated around you.
+            <Eyebrow>About</Eyebrow>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              Why TRAVION exists.
             </h2>
-            <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
-              Most planners hand you a fixed itinerary. Travion treats a journey as a system —
-              destination, stays, transport, dining, activities and real local help — and coordinates
-              every part around the way you actually travel.
+            <p className="mt-5 text-charcoal-500 font-medium leading-relaxed max-w-md">
+              Travel planning is fragmented across a dozen tabs — discovery, bookings, budgets,
+              itineraries, directions, support. TRAVION connects them into one continuous journey,
+              so the person planning can focus on the trip, not the tooling.
             </p>
-            <ul className="mt-8 space-y-3">
+            <div className="mt-8 grid grid-cols-2 gap-3">
               {[
-                'Map-first planning: choose the exact places you want, then pick the experience.',
-                'Real verified data: schedules, stays, dining and emergency contacts are never invented.',
-                'AI that changes your plan when the plan changes — with the reason explained.',
-                'Guides, managers and payments are verified at every step, end to end.'
-              ].map((line) => (
-                <li key={line} className="flex items-start gap-2.5 text-[14px] font-semibold text-slate-700">
-                  <CheckCircle2 className="w-4.5 h-4.5 text-travion-500 shrink-0 mt-0.5" />
-                  {line}
-                </li>
+                'Discovery', 'Planning', 'Budget', 'Itinerary',
+                'Human support', 'Navigation', 'AI assistance', 'Live replanning'
+              ].map((c) => (
+                <div key={c} className="flex items-center gap-2.5 rounded-2xl border border-charcoal-100 bg-ivory-50 px-4 py-3">
+                  <CheckCircle2 className="w-4 h-4 text-travion-600 shrink-0" />
+                  <span className="text-[13px] font-bold text-charcoal-700">{c}</span>
+                </div>
               ))}
-            </ul>
+            </div>
           </Reveal>
-
           <Reveal delay={0.15}>
             <div className="relative">
-              <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-sky-50 to-amber-50/40 blur-xl" />
-              <img
-                src="https://images.unsplash.com/photo-1506003094589-53954a26283f?auto=format&fit=crop&w=1200&q=80"
-                alt="Travellers reviewing a trip plan over a live destination map"
-                loading="lazy"
-                decoding="async"
-                className="relative rounded-[28px] border border-slate-200 shadow-soft-lg w-full h-[420px] object-cover"
-              />
-              <div className="absolute -bottom-5 left-6 right-6 sm:left-auto sm:right-8 sm:w-72 rounded-2xl bg-white border border-slate-200 shadow-floating p-5">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">One journey, one system</p>
-                <p className="mt-2 text-[13px] font-semibold text-slate-600 leading-relaxed">
-                  Real places, real routes, real people — orchestrated and verified, not generated from a template.
-                </p>
+              <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-gold-100/30 to-transparent blur-xl" />
+              <div className="relative overflow-hidden rounded-[28px] shadow-soft-lg">
+                <SafeImg src={IMG_PLANNERS} alt="Travellers planning a route together" className="h-[480px] w-full object-cover" loading="eager" />
+                <div className="absolute inset-0 bg-gradient-to-t from-charcoal-950/60 via-transparent to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <p className="text-white text-sm font-medium leading-relaxed max-w-sm">
+                    "We build the planning layer so a traveller can stay in one journey — from first
+                    idea to the last stop."
+                  </p>
+                  <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">The TRAVION team</p>
+                </div>
               </div>
             </div>
           </Reveal>
@@ -1978,33 +1439,32 @@ experiences you know best.
       </section>
 
       {/* ══════════════════ FAQ ══════════════════ */}
-      <section id="faq" className="py-24 md:py-32 bg-slate-50/80">
+      <section id="faq" className="py-24 md:py-32 bg-ivory-50">
         <div className="max-w-3xl mx-auto px-5 md:px-8">
           <Reveal className="text-center">
             <div className="flex justify-center"><Eyebrow>Questions</Eyebrow></div>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Everything about Travion.
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              Frequently asked
             </h2>
           </Reveal>
-
-          <div className="mt-12 space-y-3">
+          <div className="mt-10 space-y-3">
             {faqs.map((f, i) => {
               const open = openFaq === i;
               return (
                 <Reveal key={f.q} delay={Math.min(i * 0.03, 0.2)}>
-                  <div className={`rounded-2xl border bg-white transition-all duration-300 ${open ? 'border-travion-200 shadow-soft' : 'border-slate-200'}`}>
+                  <div className={`rounded-2xl border transition-all duration-300 ${open ? 'border-travion-200 bg-white shadow-soft' : 'border-charcoal-100 bg-white'}`}>
                     <button
                       onClick={() => setOpenFaq(open ? null : i)}
                       aria-expanded={open}
-                      className="w-full flex items-center justify-between gap-4 px-5 py-4.5 text-left"
+                      className="w-full flex items-center justify-between gap-4 px-6 py-5 text-left"
                     >
-                      <span className="text-[14.5px] font-extrabold text-slate-900 leading-snug">{f.q}</span>
+                      <span className={`text-[15px] font-extrabold ${open ? 'text-travion-700' : 'text-charcoal-800'}`}>{f.q}</span>
                       <motion.span
                         animate={{ rotate: open ? 45 : 0 }}
                         transition={{ duration: 0.3 }}
-                        className={`w-8 h-8 shrink-0 rounded-xl flex items-center justify-center ${open ? 'bg-travion-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                        className="shrink-0 w-8 h-8 rounded-xl bg-ivory-200 flex items-center justify-center text-charcoal-600"
                       >
-                        <PlusIcon />
+                        <Plus className="w-4 h-4" />
                       </motion.span>
                     </button>
                     <AnimatePresence initial={false}>
@@ -2013,10 +1473,10 @@ experiences you know best.
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.4, ease: EASE }}
+                          transition={{ duration: 0.35, ease: EASE }}
                           className="overflow-hidden"
                         >
-                          <p className="px-5 pb-5 text-[13.5px] font-medium text-slate-600 leading-relaxed">{f.a}</p>
+                          <p className="px-6 pb-6 text-[13.5px] font-medium text-charcoal-500 leading-relaxed">{f.a}</p>
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -2029,36 +1489,40 @@ experiences you know best.
       </section>
 
       {/* ══════════════════ FINAL CTA ══════════════════ */}
-      <section className="relative py-32 md:py-44 overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=2200&q=80"
-          alt="Sunlit mountain valley road at dawn"
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-travion-800/65" />
+      <section className="relative py-28 md:py-36 overflow-hidden bg-travion-900">
+        <SafeImg src={IMG_ROAD} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover opacity-30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-travion-900/85 via-travion-900/70 to-charcoal-950/90" />
         <div className="relative max-w-4xl mx-auto px-5 md:px-8 text-center">
           <Reveal>
-            <Eyebrow light>Begin</Eyebrow>
-            <h2 className="mt-5 text-white text-4xl md:text-6xl font-extrabold tracking-[-0.02em] leading-[1.05]">
-              Your next journey starts here.
+            <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-gold-300">Ready?</p>
+            <h2 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-[-0.03em] leading-[1.05] text-white">
+              Travel without<br />
+              <em className="font-editorial font-normal italic">the uncertainty.</em>
             </h2>
-            <p className="mt-5 text-white/80 text-base md:text-lg font-medium max-w-xl mx-auto leading-relaxed">
-              Tell Travion where you are going. We will help orchestrate the journey around you.
+            <p className="mt-5 text-white/70 font-medium text-lg max-w-xl mx-auto">
+              Start your journey on a live map of real places — or help others travel by becoming a guide.
             </p>
-            <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3.5">
+            <div className="mt-9 flex flex-wrap justify-center gap-3.5">
               <button
                 onClick={() => openAuth(false)}
-                className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-[15px] font-bold shadow-floating transition-all hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
               >
                 Plan My Trip
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
+                onClick={() => openGuideRegistration()}
+                className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
+              >
+                Become a Guide
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+              <button
                 onClick={onExploreDemo}
-                className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl border border-white/30 bg-white/5 backdrop-blur text-white text-[15px] font-bold hover:bg-white/15 transition-all"
+                className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl bg-white text-charcoal-900 text-sm font-bold hover:bg-ivory-100 transition-all hover:-translate-y-0.5"
               >
                 Try the demo preview
+                <Compass className="w-4 h-4" />
               </button>
             </div>
           </Reveal>
@@ -2066,128 +1530,90 @@ experiences you know best.
       </section>
 
       {/* ══════════════════ CONTACT ══════════════════ */}
-      <section id="contact" className="py-24 md:py-32 bg-sky-50/60">
-        <div className="max-w-5xl mx-auto px-5 md:px-8 grid lg:grid-cols-[0.9fr_1.1fr] gap-14 items-start">
+      <section id="contact" className="py-24 md:py-32 bg-ivory-50">
+        <div className="max-w-6xl mx-auto px-5 md:px-8 grid lg:grid-cols-[0.9fr_1.1fr] gap-12 items-start">
           <Reveal>
             <Eyebrow>Contact</Eyebrow>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
-              Talk to a human.
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06] text-charcoal-900">
+              Talk to the people behind the journey.
             </h2>
-            <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
-              Questions about planning, payments, the guide network or a bug on your screen — the
-              message below goes straight to the Travion support queue for triage.
+            <p className="mt-5 text-charcoal-500 font-medium leading-relaxed max-w-md">
+              Questions about planning, payments, the guide network or the platform itself — a real
+              team reads every message.
             </p>
-            <ul className="mt-8 space-y-3.5">
+            <div className="mt-8 space-y-4">
               {[
-                { icon: <Clock className="w-4 h-4" />, title: 'Response time', text: 'Urgent reports are queued ahead of general questions and triaged by staff.' },
-                { icon: <ShieldCheck className="w-4 h-4" />, title: 'Private by default', text: 'Your email is only used to respond to your request — never sold or shared.' },
-                { icon: <Users className="w-4 h-4" />, title: 'Human review', text: 'Every message is read by a person in the operations team.' }
-              ].map((c) => (
-                <li key={c.title} className="flex gap-3">
-                  <span className="w-9 h-9 shrink-0 rounded-xl bg-white border border-slate-200 text-travion-600 flex items-center justify-center shadow-soft">
-                    {c.icon}
-                  </span>
+                { icon: <IndianRupee className="w-4 h-4" />, title: 'Transparent fees', text: 'Guide fee + platform fee, shown before you pay' },
+                { icon: <Phone className="w-4 h-4" />, title: 'Masked always', text: 'Phone numbers are masked except for escalation' },
+                { icon: <ShieldCheck className="w-4 h-4" />, title: 'Razorpay-secured', text: 'Payments processed with server-verified signatures' }
+              ].map((row) => (
+                <div key={row.title} className="flex items-start gap-4 rounded-2xl border border-charcoal-100 bg-white px-5 py-4">
+                  <span className="w-10 h-10 rounded-xl bg-travion-50 text-travion-700 flex items-center justify-center shrink-0">{row.icon}</span>
                   <div>
-                    <p className="text-sm font-extrabold text-slate-900">{c.title}</p>
-                    <p className="text-[12px] font-medium text-slate-500 leading-relaxed">{c.text}</p>
+                    <p className="text-[14px] font-extrabold text-charcoal-800">{row.title}</p>
+                    <p className="text-[12px] font-medium text-charcoal-500 mt-0.5">{row.text}</p>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </Reveal>
 
           <Reveal delay={0.15}>
-            <div className="rounded-[28px] border border-slate-200 bg-white shadow-soft-lg p-6 md:p-8">
+            <div className="rounded-[28px] border border-charcoal-100 bg-white shadow-soft-lg p-7 md:p-9">
               {contactState === 'success' ? (
-                <div className="py-10 text-center">
-                  <span className="mx-auto flex w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 items-center justify-center">
-                    <Check className="w-6 h-6" />
+                <div className="flex flex-col items-center justify-center py-14 text-center">
+                  <span className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
+                    <CheckCircle2 className="w-8 h-8" />
                   </span>
-                  <h3 className="mt-5 text-lg font-extrabold text-slate-900 tracking-tight">Message sent</h3>
-                  <p className="mt-2 text-[13px] font-medium text-slate-500 leading-relaxed max-w-sm mx-auto">
-                    Thanks {contactForm.name.split(' ')[0] || 'there'} — your message is in the support
-                    queue. We reply to the email you provided.
+                  <h3 className="mt-5 text-xl font-extrabold text-charcoal-900">Message sent</h3>
+                  <p className="mt-2 text-sm font-medium text-charcoal-500 max-w-xs">
+                    Thanks for writing to us. A member of the team will get back to you soon.
                   </p>
                   <button
                     onClick={() => { setContactState('idle'); setContactForm({ name: '', email: '', topic: 'General', priority: 'Normal', message: '' }); }}
-                    className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:border-travion-300 hover:text-travion-700 transition-colors"
+                    className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-2xl border border-charcoal-200 text-charcoal-700 text-sm font-bold hover:border-travion-300 hover:text-travion-700 transition-all"
                   >
                     Send another message
                   </button>
                 </div>
               ) : (
                 <form onSubmit={handleContactSubmit} className="space-y-4">
-                  {contactError && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <Field label="Name">
+                      <input type="text" required placeholder="Your name" value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })} className={inputCls} />
+                    </Field>
+                    <Field label="Email">
+                      <input type="email" required placeholder="you@example.com" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} className={inputCls} />
+                    </Field>
+                  </div>
+
+                  {contactState === 'error' && contactError && (
                     <div className="flex items-center gap-2.5 rounded-xl bg-red-50 border border-red-100 px-3.5 py-2.5 text-red-600 text-[12px] font-bold">
                       <AlertIcon />
                       {contactError}
                     </div>
                   )}
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <Field label="Your name">
-                      <input
-                        type="text" required minLength={2} maxLength={120}
-                        placeholder="Aarav Patel"
-                        value={contactForm.name}
-                        onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))}
-                        className={inputCls}
-                        aria-required="true"
-                      />
-                    </Field>
-                    <Field label="Email address">
-                      <input
-                        type="email" required
-                        placeholder="you@example.com"
-                        value={contactForm.email}
-                        onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))}
-                        className={inputCls}
-                        aria-required="true"
-                      />
-                    </Field>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <Field label="Topic">
-                      <select
-                        value={contactForm.topic}
-                        onChange={(e) => setContactForm((f) => ({ ...f, topic: e.target.value }))}
-                        className={inputCls}
-                      >
-                        {['General', 'Trip planning', 'Payments', 'Guide network', 'Help', 'Bug report'].map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Priority">
-                      <select
-                        value={contactForm.priority}
-                        onChange={(e) => setContactForm((f) => ({ ...f, priority: e.target.value }))}
-                        className={inputCls}
-                      >
-                        <option value="Normal">Normal</option>
-                        <option value="Urgent">Urgent</option>
-                      </select>
-                    </Field>
-                  </div>
+
                   <Field label="Message">
                     <textarea
-                      required minLength={10} maxLength={2000} rows={5}
+                      required
+                      rows={5}
+                      minLength={10}
+                      maxLength={2000}
                       placeholder="How can we help?"
                       value={contactForm.message}
-                      onChange={(e) => setContactForm((f) => ({ ...f, message: e.target.value }))}
-                      className={`${inputCls} h-auto min-h-[120px] py-3 resize-y`}
-                      aria-required="true"
+                      onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                      className={`${inputCls} h-auto py-3 resize-none`}
                     />
                   </Field>
+
                   <button
                     type="submit"
                     disabled={contactState === 'sending'}
-                    className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold shadow-soft transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                    className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-bold shadow-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {contactState === 'sending' ? 'Sending...' : 'Send message'}
                   </button>
-                  <p className="text-center text-[10.5px] font-semibold text-slate-400">
-                    No account needed. Messages are stored securely and read by the support team only.
-                  </p>
                 </form>
               )}
             </div>
@@ -2196,64 +1622,112 @@ experiences you know best.
       </section>
 
       {/* ══════════════════ FOOTER ══════════════════ */}
-      <footer className="bg-white border-t border-slate-200">
+      <footer className="bg-charcoal-950 text-white">
         <div className="max-w-7xl mx-auto px-5 md:px-8 py-16">
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-10">
-            <div className="col-span-2">
-              <a href="#top" className="flex items-center gap-2.5">
-                <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
-                  <Compass className="w-4 h-4 text-white" />
+          <div className="grid md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-10">
+            <div>
+              <a href="#top" className="inline-flex items-center gap-2.5" aria-label="Travion home">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
+                  <Compass className="w-5 h-5 text-white" />
                 </span>
-                <span className="text-[15px] font-extrabold tracking-tight text-slate-900">TRAVION</span>
+                <span className="text-[18px] font-extrabold tracking-[0.08em]">TRAVION</span>
               </a>
-              <p className="mt-4 text-[12.5px] font-medium text-slate-500 leading-relaxed max-w-xs">
-                An adaptive AI travel orchestration platform. Plan, coordinate, navigate and adapt
-                every part of your journey.
+              <p className="mt-3 text-[13px] font-medium text-white/50 leading-relaxed max-w-xs">
+                Travel without the uncertainty. One continuous journey — planning, discovery, human
+                support, adaptive itineraries, live travel and AI assistance.
               </p>
-            </div>
-            {[
-              { h: 'Product', links: ['How it works', 'Modes', 'Destinations', 'Pricing'] },
-              { h: 'Travel', links: ['Verified hubs', 'Live trip map', 'Offline mode', 'Trip assistant'] },
-              { h: 'Guides', links: ['Guide network', 'Verification', 'Guide Mode'] },
-              { h: 'Company', links: ['About', 'Contact', 'Help'] }
-            ].map((col) => (
-              <div key={col.h}>
-                <h4 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400 mb-4">{col.h}</h4>
-                <ul className="space-y-2.5">
-                  {col.links.map((l) => (
-                    <li key={l}>
-                      <a href={FOOTER_HREFS[l] || '#about'} className="text-[12.5px] font-semibold text-slate-500 hover:text-travion-700 transition-colors">
-                        {l}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+              <div className="mt-5 flex flex-wrap gap-2.5">
+                <button
+                  onClick={() => openAuth(false)}
+                  className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[12.5px] font-bold transition-all"
+                >
+                  Plan My Trip
+                </button>
+                <button
+                  onClick={() => openGuideRegistration()}
+                  className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border border-white/20 bg-white/5 text-white text-[12.5px] font-bold hover:bg-white/15 transition-all"
+                >
+                  Become a Guide
+                </button>
               </div>
-            ))}
+            </div>
+
+            <nav aria-label="Explore">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gold-300">Explore</p>
+              <ul className="mt-4 space-y-2.5">
+                {['Explore', 'Destinations', 'Live trip map', 'How It Works', 'Features', 'About'].map((link) => (
+                  <li key={link}>
+                    <a href={FOOTER_HREFS[link]} className="text-[13.5px] font-medium text-white/60 hover:text-white transition-colors">
+                      {link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <nav aria-label="Support">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gold-300">Support</p>
+              <ul className="mt-4 space-y-2.5">
+                {['Contact', 'FAQ', 'Help'].map((link) => (
+                  <li key={link}>
+                    <a href={FOOTER_HREFS[link]} className="text-[13.5px] font-medium text-white/60 hover:text-white transition-colors">
+                      {link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 space-y-2.5">
+                <button
+                  onClick={() => openGuideRegistration()}
+                  className="block text-[13.5px] font-medium text-white/60 hover:text-white transition-colors"
+                >
+                  Guide network
+                </button>
+                <button
+                  onClick={() => onOpenGuideSignIn()}
+                  className="block text-[13.5px] font-medium text-white/60 hover:text-white transition-colors"
+                >
+                  Guide Sign In
+                </button>
+              </div>
+            </nav>
+
+            <nav aria-label="Legal">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gold-300">Legal</p>
+              <ul className="mt-4 space-y-2.5">
+                <li>
+                  <button onClick={() => setShowTerms(true)} className="text-[13.5px] font-medium text-white/60 hover:text-white transition-colors">
+                    Terms
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setShowPrivacy(true)} className="text-[13.5px] font-medium text-white/60 hover:text-white transition-colors">
+                    Privacy
+                  </button>
+                </li>
+              </ul>
+              <p className="mt-6 text-[12px] font-medium text-white/35 leading-relaxed">
+                Made for travellers,
+                <br />guides and operators.
+              </p>
+            </nav>
           </div>
 
-          <div className="mt-14 pt-7 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4 text-[11.5px] font-semibold text-slate-400">
-              <button onClick={() => setShowPrivacy(true)} className="hover:text-slate-600 transition-colors">Privacy</button>
-              <span className="w-px h-3 bg-slate-200" />
-              <button onClick={() => setShowTerms(true)} className="hover:text-slate-600 transition-colors">Terms</button>
-              <span className="w-px h-3 bg-slate-200" />
-              <a href="#contact" className="hover:text-slate-600 transition-colors">Contact</a>
-            </div>
-            <p className="text-[11.5px] font-semibold text-slate-400">© 2026 Travion Inc. Software-only platform.</p>
-            {/* Hidden dot — 7 clicks opens the authorized gateway; no hints in UI */}
-            <div
-              onClick={handleDotClick}
-              role="presentation"
-              className="w-2 h-2 rounded-full bg-slate-200 cursor-default select-none"
-              style={{ opacity: dotClickCount > 0 ? 0.8 : 0.4 }}
-              aria-hidden="true"
-            />
+          <div className="mt-14 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-[11.5px] font-medium text-white/40">
+              © {new Date().getFullYear()} TRAVION. Travel without the uncertainty.
+            </p>
+            <p className="text-[11.5px] font-medium text-white/40 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-travion-400" />
+              Razorpay-secured payments
+            </p>
+            {/* Hidden access point — see rules around elevate */}
+            <button aria-hidden="true" tabIndex={-1} onClick={handleDotClick} className="w-2 h-2 rounded-full opacity-0 hover:opacity-30 transition-opacity" />
           </div>
         </div>
       </footer>
 
-      {/* ══════════════════ AUTH MODAL ══════════════════ */}
+      {/* ══════════════════ AUTH MODAL (traveller flow only) ══════════════════ */}
       <AnimatePresence>
         {showAuthModal && (
           <motion.div
@@ -2263,23 +1737,21 @@ experiences you know best.
             className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto"
             onClick={(e) => e.target === e.currentTarget && setShowAuthModal(false)}
           >
-            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
+            <div className="fixed inset-0 bg-charcoal-950/60 backdrop-blur-md" />
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 16 }}
               transition={{ duration: 0.45, ease: EASE }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={isLoginMode ? 'Sign in' : 'Create your account'}
               className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl md:grid md:grid-cols-[0.9fr_1.1fr]"
             >
               {/* Brand panel */}
-              <div className="hidden md:flex flex-col justify-between relative overflow-hidden rounded-l-[28px] p-9 bg-travion-800">
-                <img
-                  src={HERO_IMAGE}
-                  alt=""
-                  aria-hidden="true"
-                  className="absolute inset-0 w-full h-full object-cover opacity-40"
-                />
-                <div className="absolute inset-0 bg-gradient-to-br from-travion-900/80 via-slate-950/60 to-travion-800/80" />
+              <div className="hidden md:flex flex-col justify-between relative overflow-hidden rounded-l-[28px] p-9 bg-travion-900">
+                <SafeImg src={HERO_IMAGE} alt="" className="absolute inset-0 w-full h-full object-cover opacity-35" />
+                <div className="absolute inset-0 bg-gradient-to-br from-travion-900/90 via-charcoal-950/55 to-travion-800/85" />
                 <div className="relative z-10 flex items-center gap-2.5">
                   <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-400 to-travion-600 flex items-center justify-center">
                     <Compass className="w-5 h-5 text-white" />
@@ -2312,17 +1784,17 @@ experiences you know best.
               <div className="p-6 md:p-9">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                    <h3 className="text-xl font-extrabold text-charcoal-900 tracking-tight">
                       {isLoginMode ? 'Sign in' : 'Create your account'}
                     </h3>
-                    <p className="text-[12.5px] font-medium text-slate-500 mt-1">
+                    <p className="text-[12.5px] font-medium text-charcoal-500 mt-1">
                       {isLoginMode ? 'Pick up where you left off.' : 'Start orchestrating your next journey.'}
                     </p>
                   </div>
                   <button
                     onClick={() => setShowAuthModal(false)}
                     aria-label="Close"
-                    className="p-2 -m-1 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                    className="p-2 -m-1 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-charcoal-50 transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -2344,14 +1816,14 @@ experiences you know best.
                           className={`p-3.5 rounded-2xl border text-left transition-all ${
                             active
                               ? 'bg-travion-50 border-travion-300 ring-2 ring-travion-100'
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
+                              : 'border-charcoal-200 hover:border-charcoal-300 bg-white'
                           }`}
                         >
-                          <span className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 ${active ? 'bg-travion-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                          <span className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 ${active ? 'bg-travion-600 text-white' : 'bg-charcoal-50 text-charcoal-500'}`}>
                             {opt.icon}
                           </span>
-                          <p className={`text-[13px] font-extrabold ${active ? 'text-travion-700' : 'text-slate-800'}`}>{opt.title}</p>
-                          <p className="text-[11px] font-medium text-slate-400 mt-0.5">{opt.desc}</p>
+                          <p className={`text-[13px] font-extrabold ${active ? 'text-travion-700' : 'text-charcoal-800'}`}>{opt.title}</p>
+                          <p className="text-[11px] font-medium text-charcoal-400 mt-0.5">{opt.desc}</p>
                         </button>
                       );
                     })}
@@ -2380,21 +1852,22 @@ experiences you know best.
                       <Field label="First name">
                         <input type="text" required placeholder="Aarav" value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
                       </Field>
-                      <Field label="Last name">                        <input type="text" required placeholder="Sharma" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
+                      <Field label="Last name">
+                        <input type="text" required placeholder="Sharma" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
                       </Field>
                     </div>
                   )}
 
                   <Field label="Email address">
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-400 pointer-events-none" />
                       <input type="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className={`${inputCls} pl-10`} />
                     </div>
                   </Field>
 
                   <Field label={isLoginMode ? 'Password' : 'Create a strong password'}>
                     <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-400 pointer-events-none" />
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required placeholder="8+ characters with a capital and a number"
@@ -2402,7 +1875,7 @@ experiences you know best.
                         onChange={(e) => setPassword(e.target.value)}
                         className={`${inputCls} pl-10 pr-11`}
                       />
-                      <button type="button" onClick={() => setShowPassword((s) => !s)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      <button type="button" onClick={() => setShowPassword((s) => !s)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-600">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
@@ -2413,14 +1886,14 @@ experiences you know best.
                       {/* Strength meter */}
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-400">Password strength</span>
+                          <span className="text-[10.5px] font-black uppercase tracking-wider text-charcoal-400">Password strength</span>
                           <span className={`text-[11px] font-extrabold ${strengthText[strengthIndex]}`}>{strengthLabel}</span>
                         </div>
                         <div className="flex gap-1.5">
                           {[0, 1, 2, 3].map((i) => (
                             <motion.div
                               key={i}
-                              animate={{ backgroundColor: i < satisfiedCount ? strengthBar[strengthIndex] : 'rgba(226,232,240,1)' }}
+                              animate={{ backgroundColor: i < satisfiedCount ? strengthBar[strengthIndex] : 'rgba(231,235,238,1)' }}
                               className="h-1.5 flex-1 rounded-full"
                             />
                           ))}
@@ -2434,7 +1907,7 @@ experiences you know best.
                           ] as const).map((r) => {
                             const ok = passwordChecks[r.k];
                             return (
-                              <span key={r.k} className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10.5px] font-bold border ${ok ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                              <span key={r.k} className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10.5px] font-bold border ${ok ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-charcoal-50 text-charcoal-400 border-charcoal-200'}`}>
                                 {ok ? <Check className="w-3 h-3" /> : <X className="w-3 h-3 opacity-60" />}
                                 {r.label}
                               </span>
@@ -2446,7 +1919,7 @@ experiences you know best.
                       {/* Confirm password */}
                       <Field label="Confirm password">
                         <div className="relative">
-                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-400 pointer-events-none" />
                           <input
                             type={showConfirmPassword ? 'text' : 'password'}
                             required placeholder="Re-type your password"
@@ -2460,7 +1933,7 @@ experiences you know best.
                                   : 'border-red-300 ring-2 ring-red-50'
                             }`}
                           />
-                          <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} aria-label="Toggle confirm password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                          <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} aria-label="Toggle confirm password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-600">
                             {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
@@ -2475,7 +1948,7 @@ experiences you know best.
                       {/* Mandatory phone onboarding — masked for other users, never shown publicly */}
                       <Field label="Phone number">
                         <div className="relative">
-                          <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-400 pointer-events-none" />
                           <input
                             type="tel"
                             required
@@ -2498,7 +1971,7 @@ experiences you know best.
                             Enter a valid 10-digit Indian mobile number
                           </p>
                         )}
-                        <p className="mt-1.5 text-[10.5px] font-semibold text-slate-400">
+                        <p className="mt-1.5 text-[10.5px] font-semibold text-charcoal-400">
                           Needed for guide coordination and emergencies. Always shown masked (+91 83095****) — never publicly.
                         </p>
                       </Field>
@@ -2507,12 +1980,12 @@ experiences you know best.
 
                   {/* Remember me */}
                   <button type="button" onClick={() => setRememberMe((r) => !r)} className="flex items-center gap-2.5 select-none group w-fit">
-                    <span className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${rememberMe ? 'bg-travion-600 border-travion-600' : 'bg-white border-slate-300 group-hover:border-slate-400'}`}>
+                    <span className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${rememberMe ? 'bg-travion-600 border-travion-600' : 'bg-white border-charcoal-300 group-hover:border-charcoal-400'}`}>
                       {rememberMe && <Check className="w-3 h-3 text-white" />}
                     </span>
-                    <span className="text-[12px] font-bold text-slate-600 group-hover:text-slate-800">
+                    <span className="text-[12px] font-bold text-charcoal-600 group-hover:text-charcoal-800">
                       Remember me
-                      <span className="font-medium text-slate-400"> · stay signed in on this device</span>
+                      <span className="font-medium text-charcoal-400"> · stay signed in on this device</span>
                     </span>
                   </button>
 
@@ -2530,7 +2003,7 @@ experiences you know best.
                   </motion.button>
                 </form>
 
-                <p className="mt-5 text-center text-[12.5px] font-semibold text-slate-500">
+                <p className="mt-5 text-center text-[12.5px] font-semibold text-charcoal-500">
                   {isLoginMode ? (
                     <>New to Travion?{' '}
                       <button onClick={() => { setIsLoginMode(false); setAuthError(null); }} className="font-extrabold text-travion-600 hover:text-travion-700">Create an account</button>
@@ -2557,23 +2030,23 @@ experiences you know best.
             className="fixed inset-0 z-[80] flex items-center justify-center p-4"
             onClick={(e) => e.target === e.currentTarget && setShowElevateModal(false)}
           >
-            <div className="fixed inset-0 bg-travion-800/70 backdrop-blur-lg" />
+            <div className="fixed inset-0 bg-charcoal-950/70 backdrop-blur-lg" />
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.94, y: 12 }}
               transition={{ duration: 0.35, ease: EASE }}
-              className="relative w-full max-w-sm bg-white rounded-3xl p-7 shadow-2xl border border-slate-200"
+              className="relative w-full max-w-sm bg-white rounded-3xl p-7 shadow-2xl border border-charcoal-100"
             >
               <div className="flex items-center gap-3 mb-6">
-                <span className="w-10 h-10 rounded-2xl bg-travion-600 text-slate-300 flex items-center justify-center">
+                <span className="w-10 h-10 rounded-2xl bg-charcoal-900 text-gold-300 flex items-center justify-center">
                   <Key className="w-4.5 h-4.5" />
                 </span>
                 <div>
-                  <h3 className="text-[15px] font-extrabold text-slate-900">Authorized operations</h3>
-                  <p className="text-[11px] font-semibold text-slate-400">Restricted gateway · audited</p>
+                  <h3 className="text-[15px] font-extrabold text-charcoal-900">Authorized operations</h3>
+                  <p className="text-[11px] font-semibold text-charcoal-400">Restricted gateway · audited</p>
                 </div>
-                <button onClick={() => setShowElevateModal(false)} aria-label="Close" className="ml-auto p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                <button onClick={() => setShowElevateModal(false)} aria-label="Close" className="ml-auto p-1.5 text-charcoal-400 hover:text-charcoal-700 rounded-lg hover:bg-charcoal-50">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -2601,7 +2074,7 @@ experiences you know best.
                 <Field label="Password">
                   <div className="relative">
                     <input type={elevateShowPass ? 'text' : 'password'} required placeholder="Password" value={elevatePassword} onChange={(e) => setElevatePassword(e.target.value)} className={`${inputCls} pr-11`} />
-                    <button type="button" onClick={() => setElevateShowPass((s) => !s)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <button type="button" onClick={() => setElevateShowPass((s) => !s)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-600">
                       {elevateShowPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
@@ -2632,7 +2105,7 @@ experiences you know best.
             className="fixed inset-0 z-[75] flex items-center justify-center p-4"
             onClick={(e) => e.target === e.currentTarget && setShowTerms(false)}
           >
-            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
+            <div className="fixed inset-0 bg-charcoal-950/55 backdrop-blur-md" />
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2643,20 +2116,20 @@ experiences you know best.
               aria-label="Terms and conditions"
               className="relative w-full max-w-2xl max-h-[86vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl"
             >
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-charcoal-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
                 <div className="flex items-center gap-3">
                   <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
                     <Compass className="w-4 h-4 text-white" />
                   </span>
                   <div>
-                    <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight">Terms &amp; Conditions</h3>
-                    <p className="text-[10.5px] font-semibold text-slate-400">Travion · last updated February 2026</p>
+                    <h3 className="text-[15px] font-extrabold text-charcoal-900 tracking-tight">Terms &amp; Conditions</h3>
+                    <p className="text-[10.5px] font-semibold text-charcoal-400">Travion · last updated February 2026</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowTerms(false)}
                   aria-label="Close terms"
-                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-charcoal-50 transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2673,8 +2146,8 @@ experiences you know best.
                   { t: '8. Changes and contact', d: 'We may update these Terms as the platform evolves; continuing to use Travion after a change means you accept the revised Terms. Questions about these Terms can be raised through the contact form on this page.' }
                 ].map((s) => (
                   <div key={s.t}>
-                    <h4 className="text-[13.5px] font-extrabold text-slate-900">{s.t}</h4>
-                    <p className="mt-1.5 text-[13px] font-medium text-slate-500 leading-relaxed">{s.d}</p>
+                    <h4 className="text-[13.5px] font-extrabold text-charcoal-900">{s.t}</h4>
+                    <p className="mt-1.5 text-[13px] font-medium text-charcoal-500 leading-relaxed">{s.d}</p>
                   </div>
                 ))}
                 <button
@@ -2700,7 +2173,7 @@ experiences you know best.
             className="fixed inset-0 z-[75] flex items-center justify-center p-4"
             onClick={(e) => e.target === e.currentTarget && setShowPrivacy(false)}
           >
-            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
+            <div className="fixed inset-0 bg-charcoal-950/55 backdrop-blur-md" />
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2711,20 +2184,20 @@ experiences you know best.
               aria-label="Privacy policy"
               className="relative w-full max-w-2xl max-h-[86vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl"
             >
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-charcoal-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
                 <div className="flex items-center gap-3">
                   <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
                     <Compass className="w-4 h-4 text-white" />
                   </span>
                   <div>
-                    <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight">Privacy Policy</h3>
-                    <p className="text-[10.5px] font-semibold text-slate-400">Travion · last updated February 2026</p>
+                    <h3 className="text-[15px] font-extrabold text-charcoal-900 tracking-tight">Privacy Policy</h3>
+                    <p className="text-[10.5px] font-semibold text-charcoal-400">Travion · last updated February 2026</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowPrivacy(false)}
                   aria-label="Close privacy policy"
-                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  className="p-2 rounded-xl text-charcoal-400 hover:text-charcoal-700 hover:bg-charcoal-50 transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2740,8 +2213,8 @@ experiences you know best.
                   { t: '7. Contact', d: 'For privacy questions or requests, use the contact form on this page or reach Travion directly at support@travion.in. We will verify your identity before acting on account-level requests.' }
                 ].map((s) => (
                   <div key={s.t}>
-                    <h4 className="text-[13.5px] font-extrabold text-slate-900">{s.t}</h4>
-                    <p className="mt-1.5 text-[13px] font-medium text-slate-500 leading-relaxed">{s.d}</p>
+                    <h4 className="text-[13.5px] font-extrabold text-charcoal-900">{s.t}</h4>
+                    <p className="mt-1.5 text-[13px] font-medium text-charcoal-500 leading-relaxed">{s.d}</p>
                   </div>
                 ))}
                 <button
@@ -2763,18 +2236,28 @@ experiences you know best.
 /* ── Small shared bits ────────────────────────────────────── */
 
 const inputCls =
-  'w-full h-11 px-3.5 rounded-xl border border-slate-200 bg-white text-[13.5px] font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-travion-400 focus:ring-2 focus:ring-travion-100 transition-all';
+  'w-full h-11 px-3.5 rounded-xl border border-charcoal-200 bg-white text-[13.5px] font-semibold text-charcoal-900 placeholder:text-charcoal-400 focus:outline-none focus:border-travion-400 focus:ring-2 focus:ring-travion-100 transition-all';
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <label className="block">
-    <span className="block text-[10.5px] font-black uppercase tracking-wider text-slate-400 mb-1.5">{label}</span>
+    <span className="block text-[10.5px] font-black uppercase tracking-wider text-charcoal-400 mb-1.5">{label}</span>
     {children}
   </label>
 );
 
-const PlusIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+const Plus: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M5 12h14M12 5v14" />
+  </svg>
+);
+
+const Coffee: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+    <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+    <line x1="6" y1="2" x2="6" y2="4" />
+    <line x1="10" y1="2" x2="10" y2="4" />
+    <line x1="14" y1="2" x2="14" y2="4" />
   </svg>
 );
 

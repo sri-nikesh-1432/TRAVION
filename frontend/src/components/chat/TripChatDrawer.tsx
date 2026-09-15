@@ -159,10 +159,10 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 320 }}
       transition={{ type: 'tween', duration: 0.28, ease: 'easeOut' }}
-      className="fixed right-0 top-0 bottom-0 w-full sm:w-[430px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col"
+      className="fixed right-0 top-0 bottom-0 w-full sm:w-[430px] bg-white shadow-2xl border-l border-charcoal-200 z-50 flex flex-col"
     >
       {/* macOS-style header */}
-      <div className="px-4 pt-3.5 pb-3 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white">
+      <div className="px-4 pt-3.5 pb-3 border-b border-charcoal-100 bg-gradient-to-b from-ivory-50 to-white">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             {TRAFFIC.map((t) => (
@@ -170,14 +170,14 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
             ))}
           </div>
           <div className="flex-1 text-center">
-            <p className="text-[11px] font-black tracking-[0.18em] text-slate-700">
+            <p className="text-[11px] font-black tracking-[0.18em] text-charcoal-700">
               {isGuide ? 'GUIDE CHAT' : 'TRAVION AI'}
             </p>
-            <p className="text-[10px] font-semibold text-slate-400">
+            <p className="text-[10px] font-semibold text-charcoal-400">
               {isGuide ? "I'm coordinating this trip with you." : "I'm following your journey."}
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200">
+          <button onClick={onClose} className="p-1.5 text-charcoal-400 hover:text-charcoal-600 rounded-full hover:bg-sand-200">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -193,7 +193,7 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
               className={`whitespace-nowrap shrink-0 px-2.5 py-1 rounded-full border text-[10.5px] font-bold transition-colors ${
                 chip.onClick
                   ? 'bg-travion-50 text-travion-700 border-travion-100 hover:bg-travion-100'
-                  : 'bg-slate-50 text-slate-500 border-slate-200'
+                  : 'bg-ivory-50 text-charcoal-500 border-charcoal-200'
               }`}
             >
               <span className="inline-flex items-center gap-1">{chip.icon}{chip.label}</span>
@@ -204,11 +204,11 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
 
       {/* Channel swithcer (user mode only) */}
       {!isGuide && (
-        <div className="p-3 bg-white border-b border-slate-100 flex items-center gap-2">
+        <div className="p-3 bg-white border-b border-charcoal-100 flex items-center gap-2">
           <button
             onClick={() => setChannel('AI')}
             className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              channel === 'AI' ? 'bg-travion-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+              channel === 'AI' ? 'bg-travion-600 text-white shadow-sm' : 'bg-ivory-50 text-charcoal-600 hover:bg-sand-100'
             }`}
           >
             <Bot className="w-4 h-4" />
@@ -219,8 +219,8 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
             disabled={!isGuideAssigned}
             className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               channel === 'GUIDE' ? 'bg-travion-600 text-white shadow-sm'
-              : isGuideAssigned ? 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-              : 'bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed'
+              : isGuideAssigned ? 'bg-ivory-50 text-charcoal-600 hover:bg-sand-100'
+              : 'bg-sand-100 text-charcoal-400 opacity-60 cursor-not-allowed'
             }`}
           >
             {isGuideAssigned ? <User className="w-4 h-4" /> : <Lock className="w-3.5 h-3.5" />}
@@ -230,16 +230,16 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
       )}
 
       {/* Messages */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/40">
+      <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-ivory-50/40">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-charcoal-400">
             <div className="w-12 h-12 rounded-2xl bg-travion-50 text-travion-500 flex items-center justify-center mb-3">
               {isGuide ? <MessageSquare className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
             </div>
-            <p className="text-sm font-semibold text-slate-700">
+            <p className="text-sm font-semibold text-charcoal-700">
               {isGuide ? 'Guide conversation ready' : 'Trip-aware assistant ready'}
             </p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-charcoal-400 mt-1">
               {isGuide
                 ? 'The traveller can message you here — trip context stays attached.'
                 : 'Anything about your trip: food, budget, next stop, weather, changes.'}
@@ -251,12 +251,12 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
             const isAi = msg.sender_role === 'AI';
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                <span className="text-[10px] font-bold text-slate-400 px-1 mb-0.5">{msg.sender_name}</span>
+                <span className="text-[10px] font-bold text-charcoal-400 px-1 mb-0.5">{msg.sender_name}</span>
                 <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs font-medium leading-relaxed whitespace-pre-line ${
                   isMe
                     ? 'bg-travion-600 text-white rounded-tr-none'
                     : isAi
-                      ? 'bg-white text-slate-800 border border-slate-200 rounded-tl-none shadow-sm'
+                      ? 'bg-white text-charcoal-800 border border-charcoal-200 rounded-tl-none shadow-sm'
                       : 'bg-amber-500 text-white rounded-tl-none'
                 }`}>
                   {msg.message}
@@ -269,13 +269,13 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
       </div>
 
       {/* Quick prompts */}
-      <div className="p-2.5 bg-white border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <div className="p-2.5 bg-white border-t border-charcoal-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         {quickPrompts.map((prompt, idx) => (
           <button
             key={idx}
             type="button"
             onClick={() => handleSend(prompt)}
-            className="whitespace-nowrap px-3 py-1 rounded-full bg-slate-100 hover:bg-travion-50 hover:text-travion-700 text-[11px] font-semibold text-slate-600 border border-slate-200 transition-colors shrink-0"
+            className="whitespace-nowrap px-3 py-1 rounded-full bg-sand-100 hover:bg-travion-50 hover:text-travion-700 text-[11px] font-semibold text-charcoal-600 border border-charcoal-200 transition-colors shrink-0"
           >
             {prompt}
           </button>
@@ -283,14 +283,14 @@ export const TripChatDrawer: React.FC<TripChatDrawerProps> = ({
       </div>
 
       {/* Input */}
-      <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+      <div className="p-3 bg-white border-t border-charcoal-200 flex items-center gap-2">
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder={isGuide ? "Message the traveller..." : channel === 'GUIDE' ? 'Message your assigned guide...' : 'Ask Trip AI anything...'}
-          className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold focus:border-travion-500 focus:outline-none bg-slate-50"
+          className="flex-1 px-4 py-2.5 rounded-2xl border border-charcoal-200 text-xs font-semibold focus:border-travion-500 focus:outline-none bg-ivory-50"
         />
         <button
           onClick={() => handleSend()}

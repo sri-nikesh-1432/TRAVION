@@ -203,9 +203,9 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
               <p className="text-2xl font-black text-amber-700">{stats?.busy_guides ?? 0}</p>
               <p className="text-[11px] font-bold text-amber-600">BUSY</p>
             </div>
-            <div className="p-4 rounded-2xl bg-slate-100 border border-slate-200">
-              <p className="text-2xl font-black text-slate-600">{stats?.duty_off_guides ?? 0}</p>
-              <p className="text-[11px] font-bold text-slate-500">DUTY OFF</p>
+            <div className="p-4 rounded-2xl bg-sand-100 border border-charcoal-200">
+              <p className="text-2xl font-black text-charcoal-600">{stats?.duty_off_guides ?? 0}</p>
+              <p className="text-[11px] font-bold text-charcoal-500">DUTY OFF</p>
             </div>
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100">
               <p className="text-2xl font-black text-rose-600">{stats?.pending_guide_approvals ?? 0}</p>
@@ -246,14 +246,14 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
             <div className="space-y-2.5">
               {tripRequests.slice(0, 5).map((r) => (
                 <button key={r.trip_id} onClick={() => { setTripDrawerId(r.trip_id); }}
-                  className="w-full text-left p-3 rounded-2xl border border-slate-200 hover:border-travion-300 transition-all">
+                  className="w-full text-left p-3 rounded-2xl border border-charcoal-200 hover:border-travion-300 transition-all">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-slate-900">{r.traveller?.name}</span>
+                    <span className="text-xs font-extrabold text-charcoal-900">{r.traveller?.name}</span>
                     <StatusPill status={r.status} />
                   </div>
-                  <div className="mt-1 flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                  <div className="mt-1 flex items-center gap-1 text-[11px] font-bold text-charcoal-500">
                     <MapPin className="w-3 h-3 text-travion-500" /> {r.source} → {r.destination}
-                    <span className="text-slate-300">·</span>
+                    <span className="text-charcoal-300">·</span>
                     <Calendar className="w-3 h-3 text-travion-500" /> {fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)}
                   </div>
                 </button>
@@ -277,12 +277,12 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           rows={filtered}
           empty="No trip requests yet"
           columns={[
-            { key: 'traveller.name', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller?.name}</span> },
-            { key: 'route', label: 'Route', render: (r) => <span className="text-slate-600">{r.source} → {r.destination}</span> },
-            { key: 'start_datetime', label: 'Dates', render: (r) => <span className="text-slate-500 whitespace-nowrap">{fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)}</span> },
-            { key: 'language', label: 'Language', render: (r) => <span className="text-slate-500">{r.traveller?.preferred_language || 'English'}</span> },
+            { key: 'traveller.name', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller?.name}</span> },
+            { key: 'route', label: 'Route', render: (r) => <span className="text-charcoal-600">{r.source} → {r.destination}</span> },
+            { key: 'start_datetime', label: 'Dates', render: (r) => <span className="text-charcoal-500 whitespace-nowrap">{fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)}</span> },
+            { key: 'language', label: 'Language', render: (r) => <span className="text-charcoal-500">{r.traveller?.preferred_language || 'English'}</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
-            { key: 'guide', label: 'Guide', render: (r) => r.assigned_guide_name ? <span className="font-bold text-travion-700">{r.assigned_guide_name}</span> : <span className="text-slate-300">Unassigned</span> },
+            { key: 'guide', label: 'Guide', render: (r) => r.assigned_guide_name ? <span className="font-bold text-travion-700">{r.assigned_guide_name}</span> : <span className="text-charcoal-300">Unassigned</span> },
             { key: 'action', label: '', render: (r) => (
               <div className="flex items-center gap-1.5 justify-end">
                 <IconBtn onClick={() => setTripDrawerId(r.trip_id)} title="View trip"><Eye className="w-4 h-4" /></IconBtn>
@@ -304,9 +304,9 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* LEFT — traveller requests */}
         <div className="lg:col-span-4 space-y-2.5">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Traveller Requests</span>
+          <span className="text-xs font-bold text-charcoal-400 uppercase tracking-wider block">Traveller Requests</span>
           {tripRequests.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-[11px] font-bold text-slate-400 text-center">
+            <div className="rounded-2xl border border-dashed border-charcoal-300 p-6 text-[11px] font-bold text-charcoal-400 text-center">
               No pending Guide Mode requests.
             </div>
           ) : tripRequests.map((r) => {
@@ -320,24 +320,24 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                 onDragEnd={() => setDragTripId(null)}
                 onClick={() => handleSelectTrip(r.trip_id)}
                 className={`cursor-grab active:cursor-grabbing p-4 rounded-2xl border transition-all ${
-                  isSel ? 'border-travion-500 bg-travion-50/60 shadow-sm ring-2 ring-travion-200' : 'border-slate-200 hover:border-travion-200 bg-white'
+                  isSel ? 'border-travion-500 bg-travion-50/60 shadow-sm ring-2 ring-travion-200' : 'border-charcoal-200 hover:border-travion-200 bg-white'
                 } ${isDragging ? 'opacity-50 border-dashed' : ''}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-black text-slate-900">
-                    <GripVertical className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="flex items-center gap-1.5 text-xs font-black text-charcoal-900">
+                    <GripVertical className="w-3.5 h-3.5 text-charcoal-300" />
                     {r.traveller?.name}
                   </span>
                   <StatusPill status={r.status} />
                 </div>
-                <div className="mt-1.5 text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                <div className="mt-1.5 text-[11px] font-bold text-charcoal-600 flex items-center gap-1">
                   <MapPin className="w-3 h-3 text-travion-500" /> {r.source} → {r.destination}
                 </div>
-                <div className="mt-0.5 text-[10.5px] font-semibold text-slate-400">
+                <div className="mt-0.5 text-[10.5px] font-semibold text-charcoal-400">
                   {fmtDate(r.start_datetime)} – {fmtDate(r.end_datetime)} · Guide Mode
                 </div>
                 {r.traveller?.preferred_language && (
-                  <div className="mt-1 text-[10px] font-bold text-slate-400">Language: {r.traveller.preferred_language}</div>
+                  <div className="mt-1 text-[10px] font-bold text-charcoal-400">Language: {r.traveller.preferred_language}</div>
                 )}
               </div>
             );
@@ -346,33 +346,33 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
 
         {/* CENTER — assignment workspace */}
         <div className="lg:col-span-4 flex flex-col">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Assignment Workspace</span>
-          <div className="flex-1 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/60 p-5 space-y-4 min-h-[280px]">
-            <div className="rounded-2xl bg-white border border-slate-200 p-4">
-              <p className="text-[10px] font-bold uppercase text-slate-400">Traveller</p>
+          <span className="text-xs font-bold text-charcoal-400 uppercase tracking-wider block mb-2">Assignment Workspace</span>
+          <div className="flex-1 rounded-3xl border-2 border-dashed border-charcoal-200 bg-ivory-50/60 p-5 space-y-4 min-h-[280px]">
+            <div className="rounded-2xl bg-white border border-charcoal-200 p-4">
+              <p className="text-[10px] font-bold uppercase text-charcoal-400">Traveller</p>
               {selectedTrip ? (
                 <>
-                  <p className="text-sm font-extrabold text-slate-900 mt-0.5">{selectedTrip.traveller?.name}</p>
-                  <p className="text-[11px] font-bold text-slate-500">{selectedTrip.source} → {selectedTrip.destination}</p>
-                  <p className="text-[11px] font-semibold text-slate-400">{fmtDate(selectedTrip.start_datetime)} – {fmtDate(selectedTrip.end_datetime)}</p>
+                  <p className="text-sm font-extrabold text-charcoal-900 mt-0.5">{selectedTrip.traveller?.name}</p>
+                  <p className="text-[11px] font-bold text-charcoal-500">{selectedTrip.source} → {selectedTrip.destination}</p>
+                  <p className="text-[11px] font-semibold text-charcoal-400">{fmtDate(selectedTrip.start_datetime)} – {fmtDate(selectedTrip.end_datetime)}</p>
                 </>
-              ) : <p className="text-[11px] font-bold text-slate-300 mt-1">Select a request from the left</p>}
+              ) : <p className="text-[11px] font-bold text-charcoal-300 mt-1">Select a request from the left</p>}
             </div>
             <div className="flex items-center justify-center">
-              <ArrowDownToLine className="w-5 h-5 text-slate-300" />
+              <ArrowDownToLine className="w-5 h-5 text-charcoal-300" />
             </div>
-            <div className="rounded-2xl bg-white border border-slate-200 p-4">
-              <p className="text-[10px] font-bold uppercase text-slate-400">Selected Guide</p>
+            <div className="rounded-2xl bg-white border border-charcoal-200 p-4">
+              <p className="text-[10px] font-bold uppercase text-charcoal-400">Selected Guide</p>
               {selectedCandidate ? (
                 <>
                   <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-sm font-extrabold text-slate-900">{selectedCandidate.name}</p>
+                    <p className="text-sm font-extrabold text-charcoal-900">{selectedCandidate.name}</p>
                     <StatusPill status={selectedCandidate.status} />
                   </div>
-                  <p className="text-[11px] font-bold text-slate-500">{selectedCandidate.experience_years} yrs · {selectedCandidate.languages.join(', ')}</p>
-                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Match {selectedCandidate.match_score}% · Dest {selectedCandidate.match_breakdown.destination_compatibility}% · Lang {selectedCandidate.match_breakdown.language_compatibility}%</p>
+                  <p className="text-[11px] font-bold text-charcoal-500">{selectedCandidate.experience_years} yrs · {selectedCandidate.languages.join(', ')}</p>
+                  <p className="text-[10px] font-bold text-charcoal-400 mt-0.5">Match {selectedCandidate.match_score}% · Dest {selectedCandidate.match_breakdown.destination_compatibility}% · Lang {selectedCandidate.match_breakdown.language_compatibility}%</p>
                 </>
-              ) : <p className="text-[11px] font-bold text-slate-300 mt-1">Choose a guide from the right</p>}
+              ) : <p className="text-[11px] font-bold text-charcoal-300 mt-1">Choose a guide from the right</p>}
             </div>
             <button
               disabled={!selectedTrip || !selectedCandidate || isAssigning}
@@ -387,13 +387,13 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
 
         {/* RIGHT — eligible guides */}
         <div className="lg:col-span-4 space-y-2.5">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+          <span className="text-xs font-bold text-charcoal-400 uppercase tracking-wider block">
             Eligible Guides {selectedTripId ? `for ${selectedTrip?.destination}` : ''}
           </span>
           {detailLoading ? (
-            <div className="space-y-2.5">{[0, 1, 2].map((i) => <div key={i} className="h-24 rounded-2xl bg-slate-100 animate-pulse" />)}</div>
+            <div className="space-y-2.5">{[0, 1, 2].map((i) => <div key={i} className="h-24 rounded-2xl bg-sand-100 animate-pulse" />)}</div>
           ) : candidates.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-[11px] font-bold text-slate-400 text-center">
+            <div className="rounded-2xl border border-dashed border-charcoal-300 p-6 text-[11px] font-bold text-charcoal-400 text-center">
               {selectedTripId ? 'No approved guides match this trip yet.' : 'Select a trip to see eligible guides.'}
             </div>
           ) : candidates.map((cand) => {
@@ -415,17 +415,17 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                 className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                   dragActive ? 'border-travion-500 ring-2 ring-travion-200 bg-travion-50/60'
                   : isSel ? 'border-travion-500 bg-travion-50/60 ring-2 ring-travion-100'
-                  : cand.status === 'ACTIVE' ? 'border-slate-200 bg-white hover:border-travion-200'
-                  : 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
+                  : cand.status === 'ACTIVE' ? 'border-charcoal-200 bg-white hover:border-travion-200'
+                  : 'border-charcoal-200 bg-ivory-50 opacity-60 cursor-not-allowed'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <span className="text-xs font-extrabold text-slate-900">{cand.name}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cand.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'}`}>
+                  <span className="text-xs font-extrabold text-charcoal-900">{cand.name}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cand.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-sand-200 text-charcoal-500'}`}>
                     {cand.status}
                   </span>
                 </div>
-                <p className="text-[10.5px] font-semibold text-slate-500 flex items-center gap-1 flex-wrap">
+                <p className="text-[10.5px] font-semibold text-charcoal-500 flex items-center gap-1 flex-wrap">
                   {cand.experience_years} yrs exp · {cand.languages.join(', ')} · <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {cand.rating} ({cand.review_count})
                 </p>
                 <div className="mt-2 flex items-center justify-between">
@@ -437,18 +437,18 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                     >
                       {isSel ? 'Selected' : 'Select'}
                     </button>
-                  ) : <span className="text-[10px] font-bold text-slate-400">Not available</span>}
+                  ) : <span className="text-[10px] font-bold text-charcoal-400">Not available</span>}
                 </div>
                 <div className="mt-2 space-y-1">
                   {(['destination_compatibility', 'language_compatibility', 'availability', 'experience', 'rating'] as const).map((k) => {
                     const mb = cand.match_breakdown as Record<string, number>;
                     return (
                       <div key={k} className="flex items-center gap-2">
-                        <span className="w-20 text-[9px] font-bold text-slate-400 uppercase">{k.replace('_compatibility', '')}</span>
-                        <div className="flex-1 h-1 rounded-full bg-slate-100 overflow-hidden">
+                        <span className="w-20 text-[9px] font-bold text-charcoal-400 uppercase">{k.replace('_compatibility', '')}</span>
+                        <div className="flex-1 h-1 rounded-full bg-sand-100 overflow-hidden">
                           <div className="h-full rounded-full bg-travion-500" style={{ width: `${mb[k] || 0}%` }} />
                         </div>
-                        <span className="text-[9px] font-bold text-slate-500 tabular-nums">{mb[k] || 0}%</span>
+                        <span className="text-[9px] font-bold text-charcoal-500 tabular-nums">{mb[k] || 0}%</span>
                       </div>
                     );
                   })}
@@ -471,12 +471,12 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           rows={filtered}
           empty="No active trips right now"
           columns={[
-            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-            { key: 'route', label: 'Route', render: (r) => <span className="text-slate-600">{r.source} → {r.destination}</span> },
-            { key: 'start_datetime', label: 'Trip dates', render: (r) => <span className="text-slate-500 whitespace-nowrap">{fmtDateTime(r.start_datetime)}</span> },
+            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+            { key: 'route', label: 'Route', render: (r) => <span className="text-charcoal-600">{r.source} → {r.destination}</span> },
+            { key: 'start_datetime', label: 'Trip dates', render: (r) => <span className="text-charcoal-500 whitespace-nowrap">{fmtDateTime(r.start_datetime)}</span> },
             { key: 'mode', label: 'Mode', render: (r) => <ModePill mode={r.mode} /> },
-            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-slate-300">—</span> },
-            { key: 'plan_days', label: 'Plan', render: (r) => <span className="text-slate-500">{r.plan_days} days</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name ? <span className="font-bold text-travion-700">{r.guide_name}</span> : <span className="text-charcoal-300">—</span> },
+            { key: 'plan_days', label: 'Plan', render: (r) => <span className="text-charcoal-500">{r.plan_days} days</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
           ]}
         />
@@ -494,10 +494,10 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           rows={filtered}
           empty="No guide records yet"
           columns={[
-            { key: 'name', label: 'Guide', render: (r) => <span className="font-extrabold text-slate-900">{r.name}</span> },
-            { key: 'destinations', label: 'Coverage', render: (r) => <span className="text-slate-500">{r.destinations?.join(', ') || '—'}</span> },
-            { key: 'languages', label: 'Languages', render: (r) => <span className="text-slate-500">{r.languages?.join(', ') || '—'}</span> },
-            { key: 'experience_years', label: 'Exp', render: (r) => <span className="text-slate-600">{r.experience_years}y</span> },
+            { key: 'name', label: 'Guide', render: (r) => <span className="font-extrabold text-charcoal-900">{r.name}</span> },
+            { key: 'destinations', label: 'Coverage', render: (r) => <span className="text-charcoal-500">{r.destinations?.join(', ') || '—'}</span> },
+            { key: 'languages', label: 'Languages', render: (r) => <span className="text-charcoal-500">{r.languages?.join(', ') || '—'}</span> },
+            { key: 'experience_years', label: 'Exp', render: (r) => <span className="text-charcoal-600">{r.experience_years}y</span> },
             { key: 'rating', label: 'Rating', render: (r) => <span className="font-bold text-amber-600 inline-flex items-center gap-1"><Star className="w-3 h-3 fill-amber-400 text-amber-400" />{r.rating} ({r.review_count})</span> },
             { key: 'rate', label: 'Daily rate (₹/day)', render: (r) => (
               <span className="inline-flex items-center gap-1.5">
@@ -505,7 +505,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                   type="number" min={0} max={30000} step={100}
                   value={rateDrafts[r.id] ?? r.rate_per_day ?? 0}
                   onChange={(e) => setRateDrafts((d) => ({ ...d, [r.id]: Number(e.target.value) }))}
-                  className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold text-slate-800 focus:border-travion-400 focus:outline-none"
+                  className="w-24 rounded-lg border border-charcoal-200 px-2 py-1 text-xs font-bold text-charcoal-800 focus:border-travion-400 focus:outline-none"
                 />
                 <button
                   onClick={() => saveGuideRate(r.id)}
@@ -517,7 +517,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
             ) },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
             { key: 'approval_status', label: 'Verification', render: (r) => <StatusPill status={r.approval_status} /> },
-            { key: 'trip', label: 'Current trip', render: (r) => r.current_trip_id ? <span className="font-mono text-[10px] text-slate-400">{shortId(r.current_trip_id)}</span> : <span className="text-slate-300">—</span> },
+            { key: 'trip', label: 'Current trip', render: (r) => r.current_trip_id ? <span className="font-mono text-[10px] text-charcoal-400">{shortId(r.current_trip_id)}</span> : <span className="text-charcoal-300">—</span> },
           ]}
         />
       </SectionCard>
@@ -531,11 +531,11 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
       ) : (
         <div className="space-y-4">
           {pendingGuides.map((g) => (
-            <div key={g.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+            <div key={g.id} className="p-4 rounded-2xl bg-ivory-50 border border-charcoal-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <div className="font-bold text-sm text-slate-900">{g.name}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className="font-bold text-sm text-charcoal-900">{g.name}</div>
+                  <div className="text-xs text-charcoal-500 mt-0.5">
                     Destinations: {g.destinations.join(', ')} · Languages: {g.languages.join(', ')} · {g.experience_years} yrs
                   </div>
                 </div>
@@ -547,13 +547,13 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Destination knowledge</p>
-                  <p className="text-[11.5px] font-semibold text-slate-700 leading-relaxed">{g.destination_knowledge}</p>
+                <div className="bg-white p-3 rounded-xl border border-charcoal-200">
+                  <p className="text-[10px] font-bold uppercase text-charcoal-400 mb-1">Destination knowledge</p>
+                  <p className="text-[11.5px] font-semibold text-charcoal-700 leading-relaxed">{g.destination_knowledge}</p>
                 </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Safety & emergency response</p>
-                  <p className="text-[11.5px] font-semibold text-slate-700 leading-relaxed">{g.safety_information}</p>
+                <div className="bg-white p-3 rounded-xl border border-charcoal-200">
+                  <p className="text-[10px] font-bold uppercase text-charcoal-400 mb-1">Safety & emergency response</p>
+                  <p className="text-[11.5px] font-semibold text-charcoal-700 leading-relaxed">{g.safety_information}</p>
                 </div>
               </div>
             </div>
@@ -569,11 +569,11 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
         rows={settlements}
         empty="No payment settlements recorded yet"
         columns={[
-          { key: 'trip_id', label: 'Trip', render: (r) => <span className="font-mono text-[10.5px] text-slate-400">{shortId(r.trip_id)}</span> },
-          { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-extrabold text-slate-900">{r.guide_name}</span> },
+          { key: 'trip_id', label: 'Trip', render: (r) => <span className="font-mono text-[10.5px] text-charcoal-400">{shortId(r.trip_id)}</span> },
+          { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-extrabold text-charcoal-900">{r.guide_name}</span> },
           { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="font-bold text-emerald-600">{inr(r.guide_fee)}</span> },
-          { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-slate-500">{inr(r.platform_fee)}</span> },
-          { key: 'total_amount', label: 'Traveller paid', render: (r) => <span className="font-bold text-slate-700">{inr(r.total_amount)}</span> },
+          { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-charcoal-500">{inr(r.platform_fee)}</span> },
+          { key: 'total_amount', label: 'Traveller paid', render: (r) => <span className="font-bold text-charcoal-700">{inr(r.total_amount)}</span> },
           { key: 'settlement_status', label: 'Settlement', render: (r) => <StatusPill status={r.settlement_status} /> },
           { key: 'action', label: '', render: (r) => r.settlement_status !== 'SETTLED' ? (
             <button onClick={() => setConfirmSettle(r.split_id)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px]">Mark Settled</button>
@@ -593,15 +593,15 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           rows={filtered}
           empty="No payments recorded yet"
           columns={[
-            { key: 'payment_id', label: 'Transaction', render: (r) => <span className="font-mono text-[10.5px] text-slate-400">{shortId(r.payment_id)}</span> },
-            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.traveller}</span> },
-            { key: 'destination', label: 'Trip', render: (r) => <span className="text-slate-600">{r.destination}</span> },
-            { key: 'amount', label: 'Amount', render: (r) => <span className="font-bold text-slate-900">{inr(r.amount)}</span> },
+            { key: 'payment_id', label: 'Transaction', render: (r) => <span className="font-mono text-[10.5px] text-charcoal-400">{shortId(r.payment_id)}</span> },
+            { key: 'traveller', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.traveller}</span> },
+            { key: 'destination', label: 'Trip', render: (r) => <span className="text-charcoal-600">{r.destination}</span> },
+            { key: 'amount', label: 'Amount', render: (r) => <span className="font-bold text-charcoal-900">{inr(r.amount)}</span> },
             { key: 'guide_fee', label: 'Guide fee', render: (r) => <span className="text-emerald-600 font-bold">{inr(r.guide_fee)}</span> },
-            { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-slate-500">{inr(r.platform_fee)}</span> },
-            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name || <span className="text-slate-300">—</span> },
+            { key: 'platform_fee', label: 'Platform fee', render: (r) => <span className="text-charcoal-500">{inr(r.platform_fee)}</span> },
+            { key: 'guide_name', label: 'Guide', render: (r) => r.guide_name || <span className="text-charcoal-300">—</span> },
             { key: 'status', label: 'Status', render: (r) => <StatusPill status={r.status} /> },
-            { key: 'created_at', label: 'Date', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDateTime(r.created_at)}</span> },
+            { key: 'created_at', label: 'Date', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDateTime(r.created_at)}</span> },
           ]}
         />
       </SectionCard>
@@ -650,7 +650,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
               }))}
               valueKey="Guide fee" money
             />
-            <div className="mt-3 flex items-center gap-4 text-[10.5px] font-bold text-slate-500">
+            <div className="mt-3 flex items-center gap-4 text-[10.5px] font-bold text-charcoal-500">
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-travion-500" /> Platform fee</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Guide fee</span>
             </div>
@@ -673,15 +673,15 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           rows={filtered}
           empty="No reviews yet"
           columns={[
-            { key: 'user_name', label: 'Traveller', render: (r) => <span className="font-extrabold text-slate-900">{r.user_name}</span> },
+            { key: 'user_name', label: 'Traveller', render: (r) => <span className="font-extrabold text-charcoal-900">{r.user_name}</span> },
             { key: 'guide_name', label: 'Guide', render: (r) => <span className="font-bold text-travion-700">{r.guide_name}</span> },
             { key: 'rating', label: 'Rating', render: (r) => (
               <span className="inline-flex items-center gap-0.5 text-amber-400">
                 {Array.from({ length: Math.min(r.rating, 5) }).map((_, i) => <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />)}
               </span>
             ) },
-            { key: 'comment', label: 'Comment', render: (r) => <span className="text-slate-500 line-clamp-2 max-w-[280px]">{r.comment || '—'}</span> },
-            { key: 'created_at', label: 'Date', render: (r) => <span className="text-slate-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
+            { key: 'comment', label: 'Comment', render: (r) => <span className="text-charcoal-500 line-clamp-2 max-w-[280px]">{r.comment || '—'}</span> },
+            { key: 'created_at', label: 'Date', render: (r) => <span className="text-charcoal-400 whitespace-nowrap">{fmtDate(r.created_at)}</span> },
           ]}
         />
       </SectionCard>
@@ -733,22 +733,22 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           const d = tripDetailDrawer(tripDrawer);
           return (
             <>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400">{d.traveller}</p>
-                <p className="text-base font-black text-slate-900 mt-0.5">{d.route}</p>
-                <p className="text-[12px] font-bold text-slate-500 mt-0.5">{d.dates}</p>
+              <div className="rounded-2xl bg-ivory-50 border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400">{d.traveller}</p>
+                <p className="text-base font-black text-charcoal-900 mt-0.5">{d.route}</p>
+                <p className="text-[12px] font-bold text-charcoal-500 mt-0.5">{d.dates}</p>
                 <div className="mt-2 flex items-center gap-2">
                   <ModePill mode="GUIDE_MODE" />
                   <StatusPill status={d.status} />
-                  <span className="text-[10.5px] font-bold text-slate-500">Language: {d.language}</span>
+                  <span className="text-[10.5px] font-bold text-charcoal-500">Language: {d.language}</span>
                 </div>
               </div>
-              <div className="rounded-2xl bg-white border border-slate-200 p-4">
-                <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">Assignment state</p>
+              <div className="rounded-2xl bg-white border border-charcoal-200 p-4">
+                <p className="text-[10px] font-bold uppercase text-charcoal-400 mb-2">Assignment state</p>
                 {d.guide ? (
                   <p className="text-[12.5px] font-extrabold text-travion-700">Assigned guide: {d.guide} {d.match ? `· match ${d.match}%` : ''}</p>
                 ) : (
-                  <p className="text-[12.5px] font-bold text-slate-500">Unassigned</p>
+                  <p className="text-[12.5px] font-bold text-charcoal-500">Unassigned</p>
                 )}
               </div>
               {!d.guide && (

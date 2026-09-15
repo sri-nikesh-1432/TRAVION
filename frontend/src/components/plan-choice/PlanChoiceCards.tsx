@@ -32,10 +32,10 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="text-center mb-8">
         <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 4 · Choose your plan</span>
-        <h2 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">
+        <h2 className="mt-2 text-2xl font-extrabold text-charcoal-900 tracking-tight">
           Three ways to experience {destinationName}
         </h2>
-        <p className="mt-1.5 text-[13px] font-medium text-slate-500">
+        <p className="mt-1.5 text-[13px] font-medium text-charcoal-500">
           {plans[0]?.cost_breakdown?.guide_mode
             ? 'Every plan fits your travel budget — the 12.5% guide fee and 3% platform fee are added on top and shown per plan.'
             : 'Every plan includes your selected places and stays within your budget — the platform fee is included in the ceiling, so what you see is what you spend.'}
@@ -63,7 +63,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               transition={{ delay: i * 0.08 }}
               onClick={() => setSelected(plan.type)}
               className={`relative text-left p-5 rounded-3xl border bg-white shadow-soft transition-all ${
-                isSelected ? 'border-travion-400 ring-2 ring-travion-200' : 'border-slate-200 hover:border-travion-200'
+                isSelected ? 'border-travion-400 ring-2 ring-travion-200' : 'border-charcoal-200 hover:border-travion-200'
               }`}
             >
               {plan.recommended && (
@@ -73,11 +73,11 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               )}
 
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                <span className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">
                   {plan.label.replace(/^plan\s*[abc]\s*·\s*/i, '').trim() || plan.type}
                 </span>
                 <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                  isSelected ? 'bg-travion-600 border-travion-600 text-white' : 'border-slate-300'
+                  isSelected ? 'bg-travion-600 border-travion-600 text-white' : 'border-charcoal-300'
                 }`}>
                   {isSelected && <Check className="w-3 h-3" />}
                 </span>
@@ -86,7 +86,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               {/* Live budget bar */}
               <div className="mt-3">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-2xl font-extrabold text-slate-900">{fmtBudget(plan.final_total)}</p>
+                  <p className="text-2xl font-extrabold text-charcoal-900">{fmtBudget(plan.final_total)}</p>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wide ${
                     plan.within_budget ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
                   }`}>
@@ -98,16 +98,16 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                     {budgetOk ? `${inr(plan.remaining_budget)} remaining` : 'Budget unavailable'}
                   </span>
                   {plan.max_affordable_days ? (
-                    <span className="text-slate-400">fits {plan.max_affordable_days}d</span>
+                    <span className="text-charcoal-400">fits {plan.max_affordable_days}d</span>
                   ) : null}
                 </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="mt-1.5 h-1.5 rounded-full bg-sand-100 overflow-hidden">
                   <div
                     className={`h-full rounded-full ${comparable > plan.budget_max ? 'bg-red-500' : 'bg-travion-600'}`}
                     style={{ width: `${usedPct}%` }}
                   />
                 </div>
-                <div className="mt-1 flex justify-between text-[9.5px] font-bold text-slate-400">
+                <div className="mt-1 flex justify-between text-[9.5px] font-bold text-charcoal-400">
                   <span>{budgetOk ? (guideTrip ? 'of your travel budget' : 'of your selected budget') : ''}</span>
                   <span>{fmtBudget(plan.budget_max)}</span>
                 </div>
@@ -122,15 +122,15 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               )}
 
               {/* Transparent fee math */}
-              <div className="mt-3.5 space-y-1.5 text-[12px] font-semibold text-slate-600">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Trip cost</p>
+              <div className="mt-3.5 space-y-1.5 text-[12px] font-semibold text-charcoal-600">
+                <p className="text-[10px] font-black uppercase tracking-wider text-charcoal-400">Trip cost</p>
                 <div className="flex justify-between"><span>Transport</span><span>{inr(bd.transport || 0)}</span></div>
                 <div className="flex justify-between"><span>Stay</span><span>{inr(bd.stay || 0)}</span></div>
                 <div className="flex justify-between"><span>Food</span><span>{inr(bd.food || 0)}</span></div>
                 {(bd.activities || 0) > 0 && (
                   <div className="flex justify-between"><span>Activities & extras</span><span>{inr(bd.activities || 0)}</span></div>
                 )}
-                <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-800">
+                <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-bold text-charcoal-800">
                   <span>Base plan cost</span><span>{inr(plan.base_plan_cost)}</span>
                 </div>
                 {(bd.guide_fee || 0) > 0 && (
@@ -141,7 +141,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                 <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
                   <span>Platform fee (3%)</span><span>{inr(plan.platform_fee)}</span>
                 </div>
-                <div className="flex justify-between border-t border-slate-100 pt-1.5 font-extrabold text-slate-900">
+                <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-extrabold text-charcoal-900">
                   <span>Total incl. fee</span><span>{inr(plan.final_total)}</span>
                 </div>
               </div>
@@ -150,7 +150,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
               {plan.highlights?.length > 0 && (
                 <div className="mt-3.5 space-y-1">
                   {plan.highlights.map((h, hi) => (
-                    <p key={hi} className="text-[11.5px] font-semibold text-slate-600 leading-relaxed">{h}</p>
+                    <p key={hi} className="text-[11.5px] font-semibold text-charcoal-600 leading-relaxed">{h}</p>
                   ))}
                 </div>
               )}
@@ -175,7 +175,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
           <button
             type="button"
             onClick={onBack}
-            className="h-12 px-6 rounded-2xl text-slate-500 text-[13px] font-bold hover:text-slate-700 transition-colors"
+            className="h-12 px-6 rounded-2xl text-charcoal-500 text-[13px] font-bold hover:text-charcoal-700 transition-colors"
           >
             Change my places
           </button>
@@ -184,7 +184,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
           type="button"
           disabled={!selected || busy}
           onClick={handleConfirm}
-          className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-extrabold transition-colors"
+          className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-sand-200 disabled:text-charcoal-400 text-white text-sm font-extrabold transition-colors"
         >
           {busy ? 'Building your itinerary…' : 'Confirm plan & continue'}
           {!busy && <ArrowRight className="w-4 h-4" />}

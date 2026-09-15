@@ -109,7 +109,7 @@ export const LiveNavigationMode: React.FC<LiveNavigationModeProps> = ({
             <div className="w-16 h-16 rounded-full bg-travion-500 border-4 border-white shadow-floating flex items-center justify-center text-white">
               <Navigation className="w-8 h-8" />
             </div>
-            <span className="mt-2 px-3 py-1 rounded-full bg-white/90 text-[10px] font-black tracking-wide text-slate-900 shadow-md">
+            <span className="mt-2 px-3 py-1 rounded-full bg-white/90 text-[10px] font-black tracking-wide text-charcoal-900 shadow-md">
               TRAVION GPS ACTIVE
             </span>
           </motion.div>
@@ -119,8 +119,8 @@ export const LiveNavigationMode: React.FC<LiveNavigationModeProps> = ({
       {/* Bottom Card: ETA, Distance, Destination Name & Next Simulation Button */}
       <div className="w-full max-w-xl mx-auto bg-white rounded-3xl p-5 shadow-2xl flex items-center justify-between">
         <div>
-          <div className="text-[11px] font-bold text-slate-400 uppercase">Destination</div>
-          <div className="text-base font-extrabold text-slate-900 truncate max-w-[200px]">
+          <div className="text-[11px] font-bold text-charcoal-400 uppercase">Destination</div>
+          <div className="text-base font-extrabold text-charcoal-900 truncate max-w-[200px]">
             {destinationStop.title}
           </div>
           <div className="text-xs text-emerald-600 font-bold mt-0.5">
