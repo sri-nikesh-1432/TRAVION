@@ -171,6 +171,37 @@ def test_places_return_real_shape_from_region_filter(monkeypatch):
     assert p["name"] == "Hanuman Temple" and p["lat"] == 11.4142 and p["source"] == "geoapify"
 
 
+# ── text_search (Gemini-intent tier: model suggests queries, GeoApify verifies) ──
+
+def test_text_search_returns_real_features(monkeypatch):
+    def fake_get(url, params, timeout=15):
+        assert "v2/places" in url
+        assert "text" in params and params["text"] == "handicraft bazaars"
+        assert params["filter"].startswith("rect:")
+        return {
+            "features_nb": 1,
+            "features": [{
+                "properties": {
+                    "name": "Laad Bazaar", "formatted": "Laad Bazaar, Hyderabad",
+                    "categories": ["commercial.marketplace"],
+                    "place_id": "gp_laad", "lat": 17.3616, "lon": 78.4757,
+                    "opening_hours": "10:00-21:00",
+                },
+            }],
+        }
+
+    monkeypatch.setattr(geo, "_get", fake_get)
+    out = geo.text_search("handicraft bazaars", "rect:78.4,17.3,78.6,17.45")
+    assert len(out) == 1
+    assert out[0]["properties"]["name"] == "Laad Bazaar"
+    assert geo.text_search("handicraft bazaars", "rect:78.4,17.3,78.6,17.45") == out  # cached
+
+
+def test_text_search_empty_without_key_or_filter():
+    assert geo.text_search("", "rect:1,2,3,4") == []
+    assert geo.text_search("anything", "") == []
+
+
 # ── place details ────────────────────────────────────────────────────────────
 
 def test_place_details_real_fields_or_404(monkeypatch):

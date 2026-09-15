@@ -38,9 +38,12 @@ def _feature(name: str, cats, lat=11.4102, lng=76.6950, pid=None):
 @pytest.fixture
 def geoapify_env(monkeypatch):
     """Key configured + no Overpass/geocode so GeoApify is the only live tier.
+    The Gemini search-intent tier and GeoApify text_search stay stubbed too, so
+    the local .env secret never leaves the machine during tests.
     The discovery TTL cache is cleared per test so identical destinations with
     different mocked payloads never leak results across tests."""
     from app.core.config import settings
+    from app.services import geoapify as geo_svc
     monkeypatch.setattr(pd, "_cache", {})
     monkeypatch.setattr(settings, "GEOAPIFY_API_KEY", "test-geoapify-key")
     monkeypatch.setattr(settings, "GOOGLE_PLACES_API_KEY", "")
@@ -51,6 +54,8 @@ def geoapify_env(monkeypatch):
         c: [] for c in pd.MAP_CATEGORIES
     })
     monkeypatch.setattr(pd, "_geocode_destination", lambda dest, state=None: None)
+    monkeypatch.setattr(pd, "gemini_search_intents", lambda dest, prefs=None: {})
+    monkeypatch.setattr(geo_svc, "text_search", lambda q, geo_filter, limit=30, offset=0, lang="en": [])
     return monkeypatch
 
 

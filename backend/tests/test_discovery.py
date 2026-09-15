@@ -18,6 +18,8 @@ Network tiers (Google/Overpass/geocoding) are mocked out so the tests are
 offline and deterministic; the geonames index + verified catalog are real local
 data.
 """
+import json
+
 import pytest
 
 import app.services.places_discovery as pd
@@ -25,8 +27,18 @@ import app.services.places_discovery as pd
 
 @pytest.fixture(autouse=True)
 def offline_no_network(monkeypatch):
-    """No GeoApify, no Google key, no live Overpass, no geocoding — the geonames
-    index + verified catalog (real local data) do all the work, deterministically."""
+    """No GeoApify, no Google, no Gemini, no live Overpass, no geocoding — the
+    geonames index + verified catalog (real local data) do all the work,
+    deterministically. The provider tiers and the Gemini/text-search network
+    boundary are stubbed so a developer machine with real .env keys stays
+    offline in tests; any accidental live call is an assertion failure."""
+    from app.services import geoapify as geo_svc
+
+    class _OfflineRequests:
+        def get(self, *a, **k): raise AssertionError("offline: unexpected requests.get")
+        def post(self, *a, **k): raise AssertionError("offline: unexpected requests.post")
+
+    monkeypatch.setattr(pd, "requests", _OfflineRequests())
     monkeypatch.setattr(pd, "_geoapify_fetch", lambda categories, geo_filter, api_key: [])
     monkeypatch.setattr(pd, "_discover_osm", lambda dest, resolved, bounds=None: {
         "must_visit": [], "food": [], "activities": [], "stays": [],
@@ -35,6 +47,7 @@ def offline_no_network(monkeypatch):
         c: [] for c in pd.MAP_CATEGORIES
     })
     monkeypatch.setattr(pd, "_geocode_destination", lambda dest, state=None: None)
+    monkeypatch.setattr(geo_svc, "text_search", lambda q, geo_filter, limit=30, offset=0, lang="en": [])
 
 
 def test_index_has_all_our_test_destinations():
@@ -326,6 +339,134 @@ def test_discover_map_rejects_places_outside_destination(monkeypatch):
         origin=(11.4102, 76.6950), dest_radius_km=25.0, core_km=2.0,
     )
     assert res["shopping"] == [], "far-away real places are filtered out"; return
+
+
+# ── Gemini search-INTENT tier (model plans what to search, GeoApify verifies) ──
+
+class _FakeResp:
+    def __init__(self, status, payload):
+        self.status_code = status
+        self._payload = payload
+    def json(self):
+        return self._payload
+
+
+def test_sanitize_intents_keeps_only_valid_short_queries():
+    raw = {
+        "shopping": ["handicraft bazaars", "123", "https://evil.example/market",
+                      "<script>alert(1)</script>", "markets", "markets", "x" * 200],
+        "not_a_category": ["anything"],
+        "healthcare": "not-a-list",
+        "transport": ["bus stations", ""],
+        "food": ["street food stalls"],
+    }
+    cleaned = pd._sanitize_intents(raw)
+    assert cleaned["shopping"] == ["handicraft bazaars", "markets"]
+    assert cleaned["transport"] == ["bus stations"]
+    assert cleaned["food"] == ["street food stalls"]
+    assert "not_a_category" not in cleaned
+    assert "healthcare" not in cleaned
+
+
+def test_extract_intents_json_handles_prose_and_fences():
+    assert pd._extract_intents_json('```json\n{"food": ["street food"]}\n```') == {"food": ["street food"]}
+    assert pd._extract_intents_json('Here you go: {"food": ["street food"]}') == {"food": ["street food"]}
+    assert pd._extract_intents_json("no json here at all") == {}
+    assert pd._extract_intents_json("") == {}
+    assert pd._extract_intents_json("[]") == {}
+
+
+def test_gemini_search_intents_empty_without_key(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    assert pd.gemini_search_intents("Hyderabad", {"experience": ["Food & Culture"]}) == {}
+
+
+def test_gemini_search_intents_parses_valid_model_json(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-gemini-key")
+    body = {"shopping": ["handicraft bazaars", "lac bangle markets"],
+            "transport": ["bus stands"], "food": ["biryani restaurants"]}
+    monkeypatch.setattr(
+        pd.requests, "post",
+        lambda *a, **k: _FakeResp(200, {"candidates": [{"content": {"parts": [{"text": json.dumps(body)}]}}]}),
+    )
+    out = pd.gemini_search_intents("Hyderabad", {"experience": ["Food & Culture"], "interests": "Food & Culture"})
+    assert out == body
+
+
+def test_gemini_search_intents_degrades_on_non_json_reply(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(
+        pd.requests, "post",
+        lambda *a, **k: _FakeResp(200, {"candidates": [{"content": {"parts": [{"text": "Sure! Let me think..."}]}}]}),
+    )
+    assert pd.gemini_search_intents("Hyderabad") == {}
+
+
+def test_gemini_search_intents_degrades_on_http_error(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(pd.requests, "post", lambda *a, **k: _FakeResp(500, {"error": "boom"}))
+    assert pd.gemini_search_intents("Hyderabad") == {}
+
+
+def test_discover_map_intent_tier_adds_only_provider_verified_pois(monkeypatch):
+    """Gemini search-intent tier: the model's query string runs against real
+    GeoApify text search; only provider-verified features enter the bucket."""
+    from app.core.config import settings
+    from app.services import geoapify as geo_svc
+
+    monkeypatch.setattr(settings, "GEOAPIFY_API_KEY", "test-geo-key")
+    monkeypatch.setattr(pd, "gemini_search_intents", lambda dest, prefs=None: {"shopping": ["handicraft bazaars"]})
+    monkeypatch.setattr(pd, "_discover_geoapify_map", lambda resolved, api_key, bounds=None: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(pd, "_discover_google_map", lambda *a, **k: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda *a, **k: {c: [] for c in pd.MAP_CATEGORIES})
+
+    def fake_text_search(q, geo_filter, limit=30, offset=0, lang="en"):
+        assert q == "handicraft bazaars"
+        assert geo_filter.startswith("circle:")
+        return [{
+            "properties": {
+                "name": "Laad Bazaar", "formatted": "Laad Bazaar, Hyderabad",
+                "categories": ["commercial.marketplace"], "place_id": "gp_laad",
+                "lat": 17.3616, "lon": 78.4757,
+            },
+        }]
+    monkeypatch.setattr(geo_svc, "text_search", fake_text_search)
+
+    res = pd.discover_map(
+        "Hyderabad", {"name": "Hyderabad", "lat": 17.3850, "lng": 78.4867, "kind": "city"},
+        origin=(17.3850, 78.4867), dest_radius_km=25.0, core_km=3.0, preferences={"experience": ["Food & Culture"]},
+    )
+    assert res["shopping"], "Gemini intent must surface provider-verified shopping POIs"
+    assert res["shopping"][0]["name"] == "Laad Bazaar"
+    assert res["shopping"][0]["source"] == "geoapify"
+    assert res["shopping"][0]["verified"] is True
+    for cat in ("healthcare", "education", "transport", "other"):
+        assert res[cat] == []
+
+
+def test_discover_map_intent_tier_falls_back_when_model_fails(monkeypatch):
+    """Model unavailable (or malformed) -> deterministic real search hints run;
+    and when even text search returns nothing the bucket stays honestly empty."""
+    from app.core.config import settings
+    from app.services import geoapify as geo_svc
+
+    monkeypatch.setattr(settings, "GEOAPIFY_API_KEY", "test-geo-key")
+    monkeypatch.setattr(pd, "gemini_search_intents", lambda dest, prefs=None: {})
+    monkeypatch.setattr(pd, "_discover_geoapify_map", lambda resolved, api_key, bounds=None: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(pd, "_discover_google_map", lambda *a, **k: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(pd, "_discover_map_osm", lambda *a, **k: {c: [] for c in pd.MAP_CATEGORIES})
+    monkeypatch.setattr(geo_svc, "text_search", lambda q, geo_filter, limit=30, offset=0, lang="en": [])
+
+    res = pd.discover_map(
+        "Ontiny Town", {"name": "Ontiny Town", "lat": 11.0, "lng": 77.0, "kind": "town"},
+        origin=(11.0, 77.0), dest_radius_km=12.0, core_km=1.0,
+    )
+    for cat in pd.MAP_CATEGORIES:
+        assert res[cat] == [], "no verified data must mean empty, never invented marks"
 
 
 # ── GUARANTEED 10 per section: real places, every destination ────────────────

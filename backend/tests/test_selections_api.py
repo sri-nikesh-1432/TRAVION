@@ -36,6 +36,9 @@ def offline_no_network(monkeypatch):
         c: [] for c in pd.MAP_CATEGORIES
     })
     monkeypatch.setattr(pd, "_geocode_destination", lambda dest, state=None: None)
+    from app.services import geoapify as geo_svc
+    monkeypatch.setattr(pd, "gemini_search_intents", lambda dest, prefs=None: {})
+    monkeypatch.setattr(geo_svc, "text_search", lambda q, geo_filter, limit=30, offset=0, lang="en": [])
 
 
 def _catalog(trip_id, headers):

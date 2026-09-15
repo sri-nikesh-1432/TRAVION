@@ -235,6 +235,10 @@ def _places_query_key(categories: List[str], geo_filter: str, offset: int) -> tu
     return (tuple(categories), str(geo_filter), int(offset))
 
 
+def _text_query_key(text: str, geo_filter: str, offset: int) -> tuple:
+    return ("text", str(text).strip().lower(), str(geo_filter), int(offset))
+
+
 def last_request_total() -> int:
     """Total number of results the provider reports for the LAST executed
     /v2/places request — independent of the page limit. 0 when unknown.
@@ -278,6 +282,41 @@ def places(categories: List[str], geo_filter: str, limit: int = 60,
         _last_total = 0
     out = data.get("features") or []
     _totals_by_query[_places_query_key(categories, geo_filter, offset)] = _last_total
+    _cache_set(cache_key, (out, _last_total))
+    return out
+
+
+@_safe(default=[])
+def text_search(text: str, geo_filter: str, limit: int = 30,
+                offset: int = 0, lang: str = "en") -> List[Dict[str, Any]]:
+    """Real POI free-text search inside a destination area (GeoApify /v2/places
+    `text` parameter). Used to turn Gemini-generated SEARCH INTENTS into real,
+    provider-verified places — the query is only a search hint; existence,
+    coordinates and metadata always come from GeoApify, never from the model."""
+    if not has_key() or not str(text or "").strip() or not geo_filter:
+        return []
+    q = str(text).strip()
+    cache_key = f"textsearch::{q.lower()}::{geo_filter}::{limit}::{offset}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        feats, tot = cached
+        global _last_total
+        _last_total = int(tot)
+        _totals_by_query[_text_query_key(q, geo_filter, offset)] = _last_total
+        return feats
+    data = _get(f"{API}/v2/places", {
+        "text": q,
+        "filter": geo_filter,
+        "limit": min(int(limit), 100),
+        "offset": max(int(offset), 0),
+        "lang": lang,
+    }) or {}
+    try:
+        _last_total = int(data.get("features_nb") or len(data.get("features") or []))
+    except Exception:
+        _last_total = 0
+    out = data.get("features") or []
+    _totals_by_query[_text_query_key(q, geo_filter, offset)] = _last_total
     _cache_set(cache_key, (out, _last_total))
     return out
 

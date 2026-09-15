@@ -45,6 +45,7 @@ Ratings, addresses, hotel star tiers and prices are surfaced ONLY when the
 source provides them — never guessed.
 """
 
+import json
 import math
 import re
 import time
@@ -1242,6 +1243,138 @@ def _discover_geoapify_map(
     return buckets
 
 
+# ── Gemini search-intent enrichment ─────────────────────────────────────────
+# The model NEVER decides place existence (spec §C–§F). Gemini is only asked to
+# read the traveller's structured preferences and produce SHORT SEARCH QUERIES
+# per map category tuned to this destination ("handicraft bazaars", "coffee
+# plantation estates"). Those intents are then run against the REAL GeoApify
+# /v2/places free-text search, which alone determines what exists and where.
+# Any failure anywhere (no key, network, malformed JSON, bad shapes) degrades to
+# {} so the normal provider pipeline keeps working untouched.
+_GEMINI_INTENT_MODEL = "gemini-1.5-flash"
+_GEMINI_INTENT_MAX_QUERIES = 5
+_GEMINI_INTENT_MAX_QUERY_CHARS = 64
+
+# Deterministic baseline hints used when the model is unavailable — real
+# GeoApify queries that always make sense, so intent search still adds value
+# without a key. Never place names; always search phrases.
+_INTENT_FALLBACKS: Dict[str, List[str]] = {
+    "shopping": ["markets", "shopping malls", "bazaars", "handicraft stores"],
+    "healthcare": ["hospitals", "clinics", "pharmacies"],
+    "education": ["universities", "colleges", "schools", "libraries"],
+    "transport": ["bus stations", "railway stations", "airports", "metro stations"],
+    "other": ["cinemas", "parks", "wellness spas", "ayurveda centres"],
+}
+
+
+def _extract_intents_json(text: str) -> dict:
+    """Parse a model reply that may wrap JSON in prose/markdown. Returns a dict
+    (never None/raises) — callers re-validate keys and value types."""
+    body = (text or "").strip()
+    if not body:
+        return {}
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", body, re.IGNORECASE)
+    if m:
+        body = m.group(1).strip()
+    if not body.startswith("{"):
+        start = body.find("{")
+        if start < 0:
+            return {}
+        body = body[start:]
+        depth = 0
+        for i, ch in enumerate(body):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    body = body[: i + 1]
+                    break
+    try:
+        data = json.loads(body)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _sanitize_intents(raw: dict) -> Dict[str, List[str]]:
+    """Validate/harden model output: only known categories, only short
+    list-of-string values, no HTML/URLs/commands, deduped per category."""
+    out: Dict[str, List[str]] = {}
+    allowed = set(MAP_CATEGORIES) | {"must_visit", "activities", "food", "stays"}
+    for key, value in (raw or {}).items():
+        cat = str(key).strip().lower()
+        if cat not in allowed or not isinstance(value, list):
+            continue
+        clean: List[str] = []
+        for v in value:
+            if not isinstance(v, str):
+                continue
+            s = v.strip()
+            if not s or len(s) > _GEMINI_INTENT_MAX_QUERY_CHARS:
+                continue
+            if re.search(r"[\"'`]|```|javascript:|https?://|\.\./|</", s, re.IGNORECASE):
+                continue
+            if not re.search(r"[a-z]", s, re.IGNORECASE):
+                continue
+            if s not in clean:
+                clean.append(s)
+        if clean:
+            out[cat] = clean[:_GEMINI_INTENT_MAX_QUERIES]
+    return out
+
+
+def gemini_search_intents(destination: str, preferences: Optional[Dict[str, Any]] = None) -> Dict[str, List[str]]:
+    """Destination-aware SEARCH INTENTS per map category, or {} on any failure.
+    The model may only reason over the traveller's structured preferences; it
+    never emits names/coordinates to be trusted — each returned string is a
+    GeoApify free-text query the pipeline will verify against the real API."""
+    try:
+        from app.core.config import settings
+        api_key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+    except Exception:
+        api_key = ""
+    if not api_key:
+        return {}
+    prefs = preferences or {}
+    trav = prefs.get("travellers") or {}
+    profile = {
+        "destination": destination,
+        "experience": prefs.get("interests") or prefs.get("experience") or [],
+        "restrictions": prefs.get("restrictions") or [],
+        "traveller_count": trav.get("totalMembers") or trav.get("adults"),
+        "duration_days": prefs.get("durationDays"),
+        "budget": prefs.get("budget"),
+    }
+    prompt = (
+        "You are Travion's destination discovery planner for a real travel product. "
+        "Read the traveller's structured preferences and produce ONLY short GeoApify "
+        "SEARCH QUERIES (4 to 15 words each) for the categories that matter, tuned to "
+        "this destination's real character.\n\n"
+        "RULES:\n"
+        "- Return STRICT JSON: an object keyed by category -> array of query strings.\n"
+        "- Categories: must_visit, activities, food, stays, shopping, healthcare, education, transport, other.\n"
+        "- Include only categories you can give at least one useful, concrete query for.\n"
+        "- Queries are about the TYPE of place (e.g. Hyderabad -> \"handicraft bazaars\", "
+        "Coorg -> \"coffee plantation estates\"). NEVER invent specific business or place "
+        "names, addresses, ratings or coordinates.\n"
+        "- No markdown, no code fences, no extra keys.\n\n"
+        f"PREFERENCES: {json.dumps(profile)}\n\nJSON:"
+    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{_GEMINI_INTENT_MODEL}:generateContent?key={api_key}"
+    try:
+        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=12)
+        if resp.status_code != 200:
+            return {}
+        parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        text = (parts[0].get("text", "") if parts else "").strip()
+    except Exception:
+        return {}
+    if not text:
+        return {}
+    return _sanitize_intents(_extract_intents_json(text))
+
+
 def discover_map(
     destination: str,
     resolved: Dict[str, Any],
@@ -1249,13 +1382,15 @@ def discover_map(
     dest_radius_km: float = 12.0,
     core_km: float = 1.0,
     bounds: Optional[Dict[str, Any]] = None,
+    preferences: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """The map's REAL broader dataset (shopping / healthcare / education /
     transport / other) — destination-wide, provider-verified only. Never
-    fabricates a marker. GeoApify is the fast primary tier; the slow free
-    Overpass query runs ONLY for categories it could not fill. When no live
-    tier is reachable the category is honestly empty and the map shows the
-    recommendation data instead."""
+    fabricates a marker. GeoApify is the fast primary tier; Gemini search
+    intents (model plans WHAT to search, GeoApify verifies WHAT exists) enrich
+    any category still under target; the slow free Overpass query runs as the
+    final top-up. When no live tier is reachable the category is honestly empty
+    and the map shows the recommendation data instead."""
     if not resolved or resolved.get("lat") is None or resolved.get("lng") is None:
         return {c: [] for c in MAP_CATEGORIES}
     api_key: Optional[str] = None
@@ -1282,6 +1417,57 @@ def discover_map(
                 buckets[k].extend(v)
         except Exception:
             pass
+    # ── Gemini search-INTENT tier (spec: the model plans what to search for,
+    # GeoApify alone verifies what actually exists there) ─────────────────────
+    # Gemini is never a source of place existence: it only returns short
+    # destination-aware QUERIES per category, which are then run against the
+    # REAL GeoApify free-text search inside the destination area. Categories
+    # already at MAP_TARGET are skipped, so this tier can only ever add real,
+    # in-footprint, provider-verified POIs to genuinely thin categories. Any
+    # model/network failure degrades to {} and the OSM top-up below proceeds.
+    if geoapify_key and any(len(buckets[c]) < MAP_TARGET for c in MAP_CATEGORIES):
+        try:
+            intents = gemini_search_intents(destination, preferences)
+        except Exception:
+            intents = {}
+        # Without a model (or on any model failure) fall back to the deterministic
+        # real search hints — the GeoApify text search still authenticates results.
+        if not intents:
+            intents = {
+                c: _INTENT_FALLBACKS.get(c, [])[:2]
+                for c in MAP_CATEGORIES if len(buckets[c]) < MAP_TARGET
+            }
+        if intents:
+            geo_filter = _geoapify_filter(bounds, resolved)
+            for cat, queries in intents.items():
+                if geo_filter is None or cat not in buckets or len(buckets[cat]) >= MAP_TARGET:
+                    continue
+                if len(buckets[cat]) >= MAP_TARGET:
+                    continue
+                slack = MAP_TARGET - len(buckets[cat])
+                hits: List[Dict[str, Any]] = []
+                used_names = {str(i.get("name", "")) for i in buckets[cat]}
+                for q in queries:
+                    if len(hits) >= slack:
+                        break
+                    try:
+                        from app.services import geoapify as _geo_txt
+                        page = _geo_txt.text_search(q, geo_filter, limit=40) or []
+                    except Exception:
+                        continue
+                    for feature in page:
+                        if len(hits) >= slack:
+                            break
+                        item = _geoapify_item(feature, cat)
+                        if not item:
+                            continue
+                        nm = str(item.get("name", ""))
+                        if nm in used_names:
+                            continue
+                        used_names.add(nm)
+                        hits.append(item)
+                if hits:
+                    buckets[cat].extend(hits)
     # Overpass top-up for any category still UNDER TARGET (not just empty):
     # small destinations legitimately have fewer POIs per category in the
     # keyed tier, and OSM's community-mapped data (bars, cinemas, clinics,
@@ -2490,6 +2676,7 @@ def discover_destination(
             destination, anchor,
             origin=origin, dest_radius_km=dest_radius_km,
             core_km=core_km, bounds=bounds,
+            preferences=preferences,
         )
         for _cat, _items in map_places.items():
             map_counts[_cat] = len(_items)
