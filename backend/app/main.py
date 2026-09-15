@@ -5,7 +5,7 @@ from app.core.config import settings
 from app.core.db import engine, Base, SessionLocal
 from app.api.v1 import (
     auth, locations, trips, discovery, planning, guides, managers, admin,
-    payments, replanning, offline, reviews, chat, trip_edit, geoapify
+    payments, replanning, offline, reviews, chat, trip_edit, geoapify, support
 )
 from app.services.verified_data import VERIFIED_LOCATIONS
 from app.models.entities import Location, Identity, Guide, Manager, Admin, TripProfile, Itinerary
@@ -298,6 +298,7 @@ app.include_router(reviews.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
 app.include_router(geoapify.router, prefix=settings.API_V1_STR)
+app.include_router(support.router, prefix=settings.API_V1_STR)
 
 
 # ── WebSocket for real-time trip chat ────────────────────────────────────────

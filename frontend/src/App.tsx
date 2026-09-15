@@ -1,14 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { Compass } from 'lucide-react';
 import { AuthSession } from './types';
 import { api, authStorage } from './services/api';
 import { LandingPage } from './views/LandingPage';
-import { UserDomain } from './views/UserDomain';
-import { GuideDomain } from './views/GuideDomain';
-import { GuideVerification } from './views/GuideVerification';
-import { GuideRegistration } from './views/GuideRegistration';
-import { GuideSignIn } from './views/GuideSignIn';
-import { ManagerDomain } from './views/ManagerDomain';
-import { AdminDomain } from './views/AdminDomain';
+
+// Heavy role views load on demand — keeps the first paint and the landing page
+// authoritative bundle lean instead of shipping every portal at once.
+const UserDomain = lazy(() => import('./views/UserDomain').then((m) => ({ default: m.UserDomain })));
+const GuideDomain = lazy(() => import('./views/GuideDomain').then((m) => ({ default: m.GuideDomain })));
+const GuideVerification = lazy(() => import('./views/GuideVerification').then((m) => ({ default: m.GuideVerification })));
+const GuideRegistration = lazy(() => import('./views/GuideRegistration').then((m) => ({ default: m.GuideRegistration })));
+const GuideSignIn = lazy(() => import('./views/GuideSignIn').then((m) => ({ default: m.GuideSignIn })));
+const ManagerDomain = lazy(() => import('./views/ManagerDomain').then((m) => ({ default: m.ManagerDomain })));
+const AdminDomain = lazy(() => import('./views/AdminDomain').then((m) => ({ default: m.AdminDomain })));
+
+const SuspenseShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Suspense
+    fallback={
+      <div className="min-h-screen bg-[#faf7f0] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center animate-pulse">
+            <Compass className="w-5 h-5 text-white" />
+          </span>
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Loading Travion…</p>
+        </div>
+      </div>
+    }
+  >
+    {children}
+  </Suspense>
+);
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -126,19 +147,21 @@ export const App: React.FC = () => {
   // 2. Guide-specific standalone views (register/signin without session)
   if (showGuideRegister || showGuideSignIn) {
     return (
-      <div className="min-h-screen bg-white">
-        {showGuideRegister ? (
-          <GuideRegistration
-            onRegisterSuccess={handleGuideRegistrationComplete}
-            onSwitchToSignIn={() => { setShowGuideRegister(false); setShowGuideSignIn(true); }}
-          />
-        ) : (
-          <GuideSignIn
-            onSignInSuccess={handleGuideSignInComplete}
-            onSwitchToRegistration={() => { setShowGuideSignIn(false); setShowGuideRegister(true); }}
-          />
-        )}
-      </div>
+      <SuspenseShell>
+        <div className="min-h-screen bg-white">
+          {showGuideRegister ? (
+            <GuideRegistration
+              onRegisterSuccess={handleGuideRegistrationComplete}
+              onSwitchToSignIn={() => { setShowGuideRegister(false); setShowGuideSignIn(true); }}
+            />
+          ) : (
+            <GuideSignIn
+              onSignInSuccess={handleGuideSignInComplete}
+              onSwitchToRegistration={() => { setShowGuideSignIn(false); setShowGuideRegister(true); }}
+            />
+          )}
+        </div>
+      </SuspenseShell>
     );
   }
 
@@ -146,18 +169,22 @@ export const App: React.FC = () => {
   if (session.role === 'GUIDE') {
     if (guideView === 'verification' || guideView === 'update_profile') {
       return (
-        <GuideVerification
-          onDashboardAccess={() => setGuideView('dashboard')}
-          onResubmitProfile={() => setGuideView('update_profile')}
-        />
+        <SuspenseShell>
+          <GuideVerification
+            onDashboardAccess={() => setGuideView('dashboard')}
+            onResubmitProfile={() => setGuideView('update_profile')}
+          />
+        </SuspenseShell>
       );
     }
     // After verification approved, show guide dashboard
     return (
-      <GuideDomain
-        session={session}
-        onLogout={handleLogout}
-      />
+      <SuspenseShell>
+        <GuideDomain
+          session={session}
+          onLogout={handleLogout}
+        />
+      </SuspenseShell>
     );
   }
 
@@ -165,27 +192,33 @@ export const App: React.FC = () => {
   switch (session.role) {
     case 'USER':
       return (
-        <UserDomain
-          session={session}
-          onLogout={handleLogout}
-          isSandboxDemo={isSandboxDemo}
-        />
+        <SuspenseShell>
+          <UserDomain
+            session={session}
+            onLogout={handleLogout}
+            isSandboxDemo={isSandboxDemo}
+          />
+        </SuspenseShell>
       );
 
     case 'MANAGER':
       return (
-        <ManagerDomain
-          session={session}
-          onLogout={handleLogout}
-        />
+        <SuspenseShell>
+          <ManagerDomain
+            session={session}
+            onLogout={handleLogout}
+          />
+        </SuspenseShell>
       );
 
     case 'ADMIN':
       return (
-        <AdminDomain
-          session={session}
-          onLogout={handleLogout}
-        />
+        <SuspenseShell>
+          <AdminDomain
+            session={session}
+            onLogout={handleLogout}
+          />
+        </SuspenseShell>
       );
 
     default:

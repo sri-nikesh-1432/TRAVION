@@ -21,7 +21,9 @@ export default defineConfig({
         },
       },
     },
-    // Raise the warning threshold so CI doesn't choke on individual chunks
-    chunkSizeWarningLimit: 600,
+    // Raise the warning threshold so CI doesn't choke on individual chunks.
+    // Heavy role portals are lazy-loaded (see App.tsx); the entry bundle here
+    // is the landing experience plus shared UI, ~168 kB gzipped.
+    chunkSizeWarningLimit: 700,
   },
 })

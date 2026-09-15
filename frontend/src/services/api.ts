@@ -516,4 +516,8 @@ export const api = {
 
   sendChatMessage: (tripId: string, message: string, channel: 'AI' | 'GUIDE', position?: { lat: number; lng: number } | null) =>
     request<ChatMessageItem>(`/trips/${tripId}/chat-message`, { method: 'POST', body: JSON.stringify({ message, channel, lat: position?.lat, lng: position?.lng }) }),
+
+  // Contact / Support (public form — no account required)
+  submitContactMessage: (data: { name: string; email: string; topic: string; priority: string; message: string }) =>
+    request<{ id: string; name: string; email: string; topic: string; priority: string; message: string; status: string; created_at: string }>('/support/contact', { method: 'POST', body: JSON.stringify(data) }),
 };

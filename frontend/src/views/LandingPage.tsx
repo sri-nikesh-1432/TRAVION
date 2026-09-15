@@ -104,16 +104,6 @@ const MarqueeRibbon: React.FC = () => {
   );
 };
 
-/* ─── Destinations for discovery section ─── */
-const FEATURED_DESTINATIONS = [
-  { name: 'Munnar', state: 'Kerala', description: 'Lush tea plantations, cool mountain air, and winding roads through the Western Ghats.', hero_image: 'https://images.unsplash.com/photo-1592322585812-2afed89e2a59?auto=format&fit=crop&w=800&q=80' },
-  { name: 'Goa', state: 'Goa', description: 'Golden beaches, Portuguese heritage, vibrant food scene, and unforgettable sunsets.', hero_image: 'https://images.unsplash.com/photo-1583422409516-2895a77efded?auto=format&fit=crop&w=800&q=80' },
-  { name: 'Rajasthan', state: 'Rajasthan', description: 'Royal palaces, desert adventures, vibrant markets, and centuries of living history.', hero_image: 'https://images.unsplash.com/photo-1470601500940-4a638a1cfea3?auto=format&fit=crop&w=800&q=80' },
-  { name: 'Varanasi', state: 'Uttar Pradesh', description: 'Ancient ghats, spiritual energy, morning boat rides on the Ganges, and timeless rituals.', hero_image: 'https://images.unsplash.com/photo-1622474752919-7ebe9227b78c?auto=format&fit=crop&w=800&q=80' },
-  { name: 'Andaman Islands', state: 'Andaman & Nicobar', description: 'Crystal-clear waters, pristine beaches, coral reefs, and unforgettable underwater experiences.', hero_image: 'https://images.unsplash.com/photo-1573843981267-be1999ff37cd?auto=format&fit=crop&w=800&q=80' },
-  { name: 'Hampi', state: 'Karnataka', description: 'Stunning boulder landscapes, ancient Vijayanagara ruins, and a surreal otherworldly terrain.', hero_image: 'https://images.unsplash.com/photo-1473494808687-61e41250e296?auto=format&fit=crop&w=800&q=80' }
-];
-
 /* ─────────────────────────────────────────────────────────────
    Shared primitives
 ───────────────────────────────────────────────────────────── */
@@ -138,12 +128,30 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; y?: number; 
 );
 
 const NAV_LINKS = [
+  { href: '#about', label: 'About' },
   { href: '#discover', label: 'Discover' },
   { href: '#how', label: 'How It Works' },
   { href: '#modes', label: 'Modes' },
-  { href: '#guides', label: 'Guides' },
-  { href: '#faq', label: 'About' }
+  { href: '#guides', label: 'Guides' }
 ];
+
+/* Every footer link resolves to a real section on this page — no dead anchors. */
+const FOOTER_HREFS: Record<string, string> = {
+  'How it works': '#how',
+  'Modes': '#modes',
+  'Destinations': '#discover',
+  'Pricing': '#fees',
+  'Verified hubs': '#discover',
+  'Live trip map': '#live',
+  'Offline mode': '#adapt',
+  'Trip assistant': '#assistant',
+  'Guide network': '#guide-network',
+  'Verification': '#guide-network',
+  'Guide Mode': '#modes',
+  'About': '#about',
+  'Contact': '#contact',
+  'Help': '#faq'
+};
 
 const HERO_IMAGE =
   'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=2200&q=80';
@@ -170,6 +178,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+
+  /* Legal overlays + contact form */
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', topic: 'General', priority: 'Normal', message: '' });
+  const [contactState, setContactState] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [contactError, setContactError] = useState<string | null>(null);
 
   const openAuth = (loginMode: boolean, role: 'USER' | 'GUIDE' = 'USER') => {
     setIsLoginMode(loginMode);
@@ -215,6 +230,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  /* Nav scrollspy: highlight the section currently in view */
+  const [activeSection, setActiveSection] = useState('top');
+  useEffect(() => {
+    const SECTION_IDS = ['top', 'about', 'discover', 'personalize', 'features', 'live', 'guides', 'guide-network', 'adapt', 'assistant', 'modes', 'preferences', 'how', 'fees', 'trust', 'faq', 'contact'];
+    let raf = 0;
+    const compute = () => {
+      const probe = window.scrollY + 150;
+      let current = 'top';
+      for (const id of SECTION_IDS) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top + window.scrollY <= probe) current = id;
+      }
+      setActiveSection(current);
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(compute);
+    };
+    compute();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 24);
@@ -330,6 +372,39 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
     return () => { alive = false; };
   }, []);
 
+  /* Legal overlays: close on Escape only while one of them is open */
+  useEffect(() => {
+    if (!showTerms && !showPrivacy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowTerms(false);
+        setShowPrivacy(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showTerms, showPrivacy]);
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (contactState === 'sending') return;
+    setContactState('sending');
+    setContactError(null);
+    try {
+      await api.submitContactMessage({
+        name: contactForm.name.trim(),
+        email: contactForm.email.trim(),
+        topic: contactForm.topic,
+        priority: contactForm.priority,
+        message: contactForm.message.trim(),
+      });
+      setContactState('success');
+    } catch (err: any) {
+      setContactState('error');
+      setContactError(err?.message || 'Could not send your message. Please try again in a moment.');
+    }
+  };
+
   /* Personalization concept demo */
   const preferenceDims = [
     { key: 'budget', label: 'Budget', icon: <Wallet className="w-4 h-4" />, note: 'Bands from backpacker to premium reshape stays, dining and pacing.' },
@@ -412,17 +487,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
 
             {/* Desktop nav */}
             <nav className="hidden lg:flex items-center gap-8" aria-label="Primary">
-              {NAV_LINKS.map((l) => (
-                <a
-                  key={l.href}
-                  href={l.href}
-                  className={`text-[13px] font-semibold transition-colors ${
-                    scrolled ? 'text-slate-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
-                  }`}
-                >
-                  {l.label}
-                </a>
-              ))}
+              {NAV_LINKS.map((l) => {
+                const active = activeSection === l.href.slice(1);
+                return (
+                  <span key={l.href} className="relative">
+                    <a
+                      href={l.href}
+                      className={`text-[13px] font-semibold transition-colors ${
+                        active
+                          ? scrolled ? 'text-travion-700' : 'text-white'
+                          : scrolled ? 'text-slate-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
+                      }`}
+                    >
+                      {l.label}
+                    </a>
+                    {active && (
+                      <span className={`absolute -bottom-2 left-0 right-0 h-0.5 rounded-full ${scrolled ? 'bg-travion-500' : 'bg-white/80'}`} />
+                    )}
+                  </span>
+                );
+              })}
             </nav>
 
             <div className="flex items-center gap-2.5">
@@ -480,7 +564,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                     key={l.href}
                     href={l.href}
                     onClick={() => setMobileOpen(false)}
-                    className="px-3 py-3 rounded-xl text-[15px] font-semibold text-slate-700 hover:bg-travion-50 hover:text-travion-700"
+                    className={`px-3 py-3 rounded-xl text-[15px] font-semibold transition-colors ${
+                      activeSection === l.href.slice(1)
+                        ? 'bg-travion-50 text-travion-700'
+                        : 'text-slate-700 hover:bg-travion-50 hover:text-travion-700'
+                    }`}
                   >
                     {l.label}
                   </a>
@@ -556,7 +644,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
           {/* Editorial copy */}
           <div>
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.25, ease: EASE }}>
-              <Eyebrow light>An adaptive AI travel orchestration platform</Eyebrow>
+              <Eyebrow light>Travion — travel without the uncertainty</Eyebrow>
             </motion.div>
 
             <motion.h1
@@ -617,12 +705,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 Plan My Trip
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
               </button>
-              <a
-                href="#how"
+              <button
+                onClick={() => openGuideRegistration()}
                 className="inline-flex items-center gap-2 h-12 px-6 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
               >
-                See How Travion Works
-              </a>
+                Become a Guide
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
             </motion.div>
 
             <motion.div
@@ -1384,7 +1473,7 @@ experiences you know best.
       </section>
 
       {/* ══════════════════ GUIDE NETWORK ══════════════════ */}
-      <section id="guides" className="py-24 md:py-32 bg-white">
+      <section id="guide-network" className="py-24 md:py-32 bg-white">
         <div className="max-w-7xl mx-auto px-5 md:px-8">
           <Reveal className="text-center max-w-2xl mx-auto">
             <div className="flex justify-center"><Eyebrow>Guide network</Eyebrow></div>
@@ -1643,13 +1732,12 @@ experiences you know best.
           <div className="mt-16 relative">
             <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gradient-to-b from-travion-200 via-slate-200 to-slate-100" />
             {[
-              { n: '01', t: 'Plan', d: 'Choose source, destination and dates — any real place, anywhere in the world.' },
-              { n: '02', t: 'Reach', d: 'Verified transport, stays, dining and activities are assembled day by day within your budget, so you know how to get there and what to expect.' },
-              { n: '03', t: 'Navigate', d: 'A live trip map with real GPS, turn-by-turn guidance and every stop pinned professionally on the route.' },
-              { n: '04', t: 'Communicate', d: 'A trip-scoped AI assistant that understands your journey, remembers your conversation and helps you speak the local language.' },
-              { n: '05', t: 'Discover', d: 'Local food, hidden gems and lesser-known experiences matched to your interests, budget and the time you have.' },
-              { n: '06', t: 'Adapt', d: 'Weather, delays and plan changes trigger dynamic replanning with a clear explanation — plus a full offline package when connectivity drops.' },
-              { n: '07', t: 'Return', d: 'Safety contacts, emergency support and your guide at your side until the journey is complete and settled.' }
+              { n: '01', t: 'Plan your journey', d: 'Tell Travion where you are going, when, and how you like to travel — grounded in verified hubs with real routes and stays.' },
+              { n: '02', t: 'Stay like a host', d: 'Pick a verified stay matched to your budget and travel style, in the neighbourhood that fits how you will spend your days.' },
+              { n: '03', t: 'Navigate day-to-day', d: 'A live trip map with real GPS, turn-by-turn guidance and every stop pinned professionally on your route.' },
+              { n: '04', t: 'Communicate with travellers', d: 'A trip-scoped AI assistant that remembers your plan and helps you speak the local language when you are on the ground.' },
+              { n: '05', t: 'Discover local food', d: 'Local food, hidden gems and lesser-known experiences matched to your interests, budget and the time you have.' },
+              { n: '06', t: 'Adapt to change', d: 'Weather, delays and plan changes trigger dynamic replanning — plus a full offline package when connectivity drops.' }
             ].map((step, i) => (
               <Reveal key={step.n} delay={i * 0.04}>
                 <div className="relative flex gap-6 pb-10 last:pb-0">
@@ -1840,6 +1928,55 @@ experiences you know best.
         </div>
       </section>
 
+      {/* ══════════════════ ABOUT ══════════════════ */}
+      <section id="about" className="py-24 md:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 grid lg:grid-cols-2 gap-14 items-center">
+          <Reveal>
+            <Eyebrow>About Travion</Eyebrow>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              The whole journey, orchestrated around you.
+            </h2>
+            <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
+              Most planners hand you a fixed itinerary. Travion treats a journey as a system —
+              destination, stays, transport, dining, activities and real local help — and coordinates
+              every part around the way you actually travel.
+            </p>
+            <ul className="mt-8 space-y-3">
+              {[
+                'Map-first planning: choose the exact places you want, then pick the experience.',
+                'Real verified data: schedules, stays, dining and emergency contacts are never invented.',
+                'AI that changes your plan when the plan changes — with the reason explained.',
+                'Guides, managers and payments are verified at every step, end to end.'
+              ].map((line) => (
+                <li key={line} className="flex items-start gap-2.5 text-[14px] font-semibold text-slate-700">
+                  <CheckCircle2 className="w-4.5 h-4.5 text-travion-500 shrink-0 mt-0.5" />
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+
+          <Reveal delay={0.15}>
+            <div className="relative">
+              <div className="absolute -inset-3 rounded-[32px] bg-gradient-to-br from-travion-100/70 via-sky-50 to-amber-50/40 blur-xl" />
+              <img
+                src="https://images.unsplash.com/photo-1506003094589-53954a26283f?auto=format&fit=crop&w=1200&q=80"
+                alt="Travellers reviewing a trip plan over a live destination map"
+                loading="lazy"
+                decoding="async"
+                className="relative rounded-[28px] border border-slate-200 shadow-soft-lg w-full h-[420px] object-cover"
+              />
+              <div className="absolute -bottom-5 left-6 right-6 sm:left-auto sm:right-8 sm:w-72 rounded-2xl bg-white border border-slate-200 shadow-floating p-5">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">One journey, one system</p>
+                <p className="mt-2 text-[13px] font-semibold text-slate-600 leading-relaxed">
+                  Real places, real routes, real people — orchestrated and verified, not generated from a template.
+                </p>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       {/* ══════════════════ FAQ ══════════════════ */}
       <section id="faq" className="py-24 md:py-32 bg-slate-50/80">
         <div className="max-w-3xl mx-auto px-5 md:px-8">
@@ -1928,6 +2065,136 @@ experiences you know best.
         </div>
       </section>
 
+      {/* ══════════════════ CONTACT ══════════════════ */}
+      <section id="contact" className="py-24 md:py-32 bg-sky-50/60">
+        <div className="max-w-5xl mx-auto px-5 md:px-8 grid lg:grid-cols-[0.9fr_1.1fr] gap-14 items-start">
+          <Reveal>
+            <Eyebrow>Contact</Eyebrow>
+            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-[-0.02em] leading-[1.06]">
+              Talk to a human.
+            </h2>
+            <p className="mt-5 text-slate-500 font-medium leading-relaxed max-w-md">
+              Questions about planning, payments, the guide network or a bug on your screen — the
+              message below goes straight to the Travion support queue for triage.
+            </p>
+            <ul className="mt-8 space-y-3.5">
+              {[
+                { icon: <Clock className="w-4 h-4" />, title: 'Response time', text: 'Urgent reports are queued ahead of general questions and triaged by staff.' },
+                { icon: <ShieldCheck className="w-4 h-4" />, title: 'Private by default', text: 'Your email is only used to respond to your request — never sold or shared.' },
+                { icon: <Users className="w-4 h-4" />, title: 'Human review', text: 'Every message is read by a person in the operations team.' }
+              ].map((c) => (
+                <li key={c.title} className="flex gap-3">
+                  <span className="w-9 h-9 shrink-0 rounded-xl bg-white border border-slate-200 text-travion-600 flex items-center justify-center shadow-soft">
+                    {c.icon}
+                  </span>
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900">{c.title}</p>
+                    <p className="text-[12px] font-medium text-slate-500 leading-relaxed">{c.text}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+
+          <Reveal delay={0.15}>
+            <div className="rounded-[28px] border border-slate-200 bg-white shadow-soft-lg p-6 md:p-8">
+              {contactState === 'success' ? (
+                <div className="py-10 text-center">
+                  <span className="mx-auto flex w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 items-center justify-center">
+                    <Check className="w-6 h-6" />
+                  </span>
+                  <h3 className="mt-5 text-lg font-extrabold text-slate-900 tracking-tight">Message sent</h3>
+                  <p className="mt-2 text-[13px] font-medium text-slate-500 leading-relaxed max-w-sm mx-auto">
+                    Thanks {contactForm.name.split(' ')[0] || 'there'} — your message is in the support
+                    queue. We reply to the email you provided.
+                  </p>
+                  <button
+                    onClick={() => { setContactState('idle'); setContactForm({ name: '', email: '', topic: 'General', priority: 'Normal', message: '' }); }}
+                    className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:border-travion-300 hover:text-travion-700 transition-colors"
+                  >
+                    Send another message
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit} className="space-y-4">
+                  {contactError && (
+                    <div className="flex items-center gap-2.5 rounded-xl bg-red-50 border border-red-100 px-3.5 py-2.5 text-red-600 text-[12px] font-bold">
+                      <AlertIcon />
+                      {contactError}
+                    </div>
+                  )}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <Field label="Your name">
+                      <input
+                        type="text" required minLength={2} maxLength={120}
+                        placeholder="Aarav Patel"
+                        value={contactForm.name}
+                        onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))}
+                        className={inputCls}
+                        aria-required="true"
+                      />
+                    </Field>
+                    <Field label="Email address">
+                      <input
+                        type="email" required
+                        placeholder="you@example.com"
+                        value={contactForm.email}
+                        onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))}
+                        className={inputCls}
+                        aria-required="true"
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <Field label="Topic">
+                      <select
+                        value={contactForm.topic}
+                        onChange={(e) => setContactForm((f) => ({ ...f, topic: e.target.value }))}
+                        className={inputCls}
+                      >
+                        {['General', 'Trip planning', 'Payments', 'Guide network', 'Help', 'Bug report'].map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Priority">
+                      <select
+                        value={contactForm.priority}
+                        onChange={(e) => setContactForm((f) => ({ ...f, priority: e.target.value }))}
+                        className={inputCls}
+                      >
+                        <option value="Normal">Normal</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <Field label="Message">
+                    <textarea
+                      required minLength={10} maxLength={2000} rows={5}
+                      placeholder="How can we help?"
+                      value={contactForm.message}
+                      onChange={(e) => setContactForm((f) => ({ ...f, message: e.target.value }))}
+                      className={`${inputCls} h-auto min-h-[120px] py-3 resize-y`}
+                      aria-required="true"
+                    />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={contactState === 'sending'}
+                    className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold shadow-soft transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                  >
+                    {contactState === 'sending' ? 'Sending...' : 'Send message'}
+                  </button>
+                  <p className="text-center text-[10.5px] font-semibold text-slate-400">
+                    No account needed. Messages are stored securely and read by the support team only.
+                  </p>
+                </form>
+              )}
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       {/* ══════════════════ FOOTER ══════════════════ */}
       <footer className="bg-white border-t border-slate-200">
         <div className="max-w-7xl mx-auto px-5 md:px-8 py-16">
@@ -1955,7 +2222,7 @@ experiences you know best.
                 <ul className="space-y-2.5">
                   {col.links.map((l) => (
                     <li key={l}>
-                      <a href={l === 'Pricing' ? '#fees' : l === 'Modes' ? '#modes' : l === 'Destinations' ? '#discover' : l === 'Verified hubs' ? '#discover' : l === 'Live trip map' ? '#live' : l === 'Offline mode' ? '#live' : l === 'Trip assistant' ? '#assistant' : l === 'Guide network' || l === 'Verification' || l === 'Guide Mode' ? '#guides' : '#top'} className="text-[12.5px] font-semibold text-slate-500 hover:text-travion-700 transition-colors">
+                      <a href={FOOTER_HREFS[l] || '#about'} className="text-[12.5px] font-semibold text-slate-500 hover:text-travion-700 transition-colors">
                         {l}
                       </a>
                     </li>
@@ -1967,11 +2234,11 @@ experiences you know best.
 
           <div className="mt-14 pt-7 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4 text-[11.5px] font-semibold text-slate-400">
-              <a href="#top" className="hover:text-slate-600 transition-colors">Privacy</a>
+              <button onClick={() => setShowPrivacy(true)} className="hover:text-slate-600 transition-colors">Privacy</button>
               <span className="w-px h-3 bg-slate-200" />
-              <a href="#top" className="hover:text-slate-600 transition-colors">Terms</a>
+              <button onClick={() => setShowTerms(true)} className="hover:text-slate-600 transition-colors">Terms</button>
               <span className="w-px h-3 bg-slate-200" />
-              <a href="#top" className="hover:text-slate-600 transition-colors">Contact</a>
+              <a href="#contact" className="hover:text-slate-600 transition-colors">Contact</a>
             </div>
             <p className="text-[11.5px] font-semibold text-slate-400">© 2026 Travion Inc. Software-only platform.</p>
             {/* Hidden dot — 7 clicks opens the authorized gateway; no hints in UI */}
@@ -2350,6 +2617,141 @@ experiences you know best.
                   {isSubmitting ? 'Verifying...' : 'Authenticate'}
                 </button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══════════════════ TERMS MODAL ══════════════════ */}
+      <AnimatePresence>
+        {showTerms && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[75] flex items-center justify-center p-4"
+            onClick={(e) => e.target === e.currentTarget && setShowTerms(false)}
+          >
+            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={{ duration: 0.4, ease: EASE }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Terms and conditions"
+              className="relative w-full max-w-2xl max-h-[86vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl"
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
+                    <Compass className="w-4 h-4 text-white" />
+                  </span>
+                  <div>
+                    <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight">Terms &amp; Conditions</h3>
+                    <p className="text-[10.5px] font-semibold text-slate-400">Travion · last updated February 2026</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowTerms(false)}
+                  aria-label="Close terms"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-6 md:px-8 py-6 space-y-5">
+                {[
+                  { t: '1. Acceptance of terms', d: 'By using Travion ("the platform") you agree to these Terms. If you do not agree, please do not use the service. The platform is currently provided for software demonstration and launch evaluation purposes.' },
+                  { t: '2. Services we provide', d: 'Travion orchestrates travel journeys: trip planning, verified place discovery, itinerary editing, optional verified-guide coordination, transparent fee calculation via our payment partner Razorpay, live navigation, trip-scoped AI assistance, dynamic replanning and offline trip packages. The platform sells orchestration services, not the transport, stays, food or activities themselves.' },
+                  { t: '3. Accounts and eligibility', d: 'You need an account to plan and join trips. You must be at least 18 years old or have a guardian’s consent. You are responsible for keeping your credentials confidential — one account per email, and phone numbers are masked except to staff who need them for coordination and emergencies.' },
+                  { t: '4. Payments and fees', d: 'Travion collects the applicable platform fee and, in Guide Mode, the guide fee for your trip. These are computed server-side and shown as a full breakdown before you pay. Your travel budget is an estimate of your overall travel spending and is never charged as a service fee. All payments are processed securely through Razorpay and every payment signature is verified.' },
+                  { t: '5. Verification promise', d: 'Places shown on plans are checked against verified local data before they appear. Guides are onboarded, assessed and approved by an operations manager before they can operate. Where data has not yet been verified, the platform says so rather than inventing details.' },
+                  { t: '6. Your responsibilities', d: 'You agree to use the platform lawfully, provide accurate information during onboarding, respect the people and places you visit, and not misuse the service to defraud travellers, guides or the platform.' },
+                  { t: '7. Liability and disclaimers', d: 'Travion makes reasonable efforts to keep plans and data accurate but does not guarantee third-party services such as transport schedules, property conditions or weather. The platform is not responsible for travel decisions made against verified advisories, nor for losses arising outside the orchestration services it controls.' },
+                  { t: '8. Changes and contact', d: 'We may update these Terms as the platform evolves; continuing to use Travion after a change means you accept the revised Terms. Questions about these Terms can be raised through the contact form on this page.' }
+                ].map((s) => (
+                  <div key={s.t}>
+                    <h4 className="text-[13.5px] font-extrabold text-slate-900">{s.t}</h4>
+                    <p className="mt-1.5 text-[13px] font-medium text-slate-500 leading-relaxed">{s.d}</p>
+                  </div>
+                ))}
+                <button
+                  onClick={() => { setShowTerms(false); document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }); }}
+                  className="mt-2 inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-travion-600 text-white text-sm font-bold hover:bg-travion-700 transition-colors"
+                >
+                  Ask a question
+                  <ArrowUpRight className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══════════════════ PRIVACY MODAL ══════════════════ */}
+      <AnimatePresence>
+        {showPrivacy && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[75] flex items-center justify-center p-4"
+            onClick={(e) => e.target === e.currentTarget && setShowPrivacy(false)}
+          >
+            <div className="fixed inset-0 bg-travion-800/55 backdrop-blur-md" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={{ duration: 0.4, ease: EASE }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Privacy policy"
+              className="relative w-full max-w-2xl max-h-[86vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl"
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white/95 backdrop-blur px-6 md:px-8 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center">
+                    <Compass className="w-4 h-4 text-white" />
+                  </span>
+                  <div>
+                    <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight">Privacy Policy</h3>
+                    <p className="text-[10.5px] font-semibold text-slate-400">Travion · last updated February 2026</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPrivacy(false)}
+                  aria-label="Close privacy policy"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-6 md:px-8 py-6 space-y-5">
+                {[
+                  { t: '1. What we collect', d: 'When you create an account we collect your name, email, phone and basic profile details. Trip planning collects your destination, dates, budget and preferences. Chat messages, support requests and device-reported location during navigation are stored to provide the service you asked for.' },
+                  { t: '2. How we use it', d: 'Your data is used to build and coordinate your trip, verify guides, process payments, provide AI trip context, run replanning, support you, and keep the platform safe. We do not sell your personal data.' },
+                  { t: '3. Phone numbers and masking', d: 'Phone numbers are required for guide coordination and emergencies. They are displayed masked (for example +91 83095****) to everyone except staff who need the real number to help you, and they are never shown on public profiles.' },
+                  { t: '4. Sharing', d: 'We share only what a trip needs: your name, route and preferences with your assigned guide, payment details with our payment provider Razorpay for the transaction, and — only when required — information with relevant authorities. Trip AI memory is isolated per trip.' },
+                  { t: '5. Storage and security', d: 'Passwords are hashed, payments go through Razorpay’s verified signatures, and access to staff functions is role-gated and audited. Data is stored on our production database; local demo environments keep their own data.' },
+                  { t: '6. Your rights', d: 'You can request a copy of your personal data, ask for corrections, or request deletion of your account and associated trip data. Contact us via the contact form and we will respond within a reasonable time.' },
+                  { t: '7. Contact', d: 'For privacy questions or requests, use the contact form on this page or reach Travion directly at support@travion.in. We will verify your identity before acting on account-level requests.' }
+                ].map((s) => (
+                  <div key={s.t}>
+                    <h4 className="text-[13.5px] font-extrabold text-slate-900">{s.t}</h4>
+                    <p className="mt-1.5 text-[13px] font-medium text-slate-500 leading-relaxed">{s.d}</p>
+                  </div>
+                ))}
+                <button
+                  onClick={() => { setShowPrivacy(false); document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }); }}
+                  className="mt-2 inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-travion-600 text-white text-sm font-bold hover:bg-travion-700 transition-colors"
+                >
+                  Privacy questions
+                  <ArrowUpRight className="w-4 h-4" />
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

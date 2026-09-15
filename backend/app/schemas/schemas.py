@@ -570,3 +570,46 @@ class ChatMessageResponse(BaseModel):
     message: str
     channel: str
     created_at: datetime
+
+# --- Contact / Support ---
+ALLOWED_CONTACT_TOPICS = {"General", "Trip planning", "Payments", "Guide network", "Help", "Bug report"}
+ALLOWED_CONTACT_PRIORITIES = {"Normal", "Urgent"}
+
+class ContactMessageCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    email: EmailStr
+    topic: str = Field(default="General")
+    priority: str = Field(default="Normal")
+    message: str = Field(..., min_length=10, max_length=2000)
+
+    @field_validator("topic")
+    @classmethod
+    def topic_must_be_allowed(cls, v: str) -> str:
+        if v not in ALLOWED_CONTACT_TOPICS:
+            raise ValueError("Please choose a valid topic.")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def priority_must_be_allowed(cls, v: str) -> str:
+        if v not in ALLOWED_CONTACT_PRIORITIES:
+            raise ValueError("Please choose a valid priority.")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_placeholder(cls, v: str) -> str:
+        if not v.strip() or v.strip().lower() in {"test", "asdf", "john doe", "name"}:
+            raise ValueError("Please enter your real name so we can respond to you.")
+        return v.strip()
+
+class ContactMessageResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    topic: str
+    priority: str
+    message: str
+    status: str
+    created_at: datetime
+    handled_at: Optional[datetime] = None

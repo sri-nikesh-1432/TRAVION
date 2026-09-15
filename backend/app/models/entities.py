@@ -374,3 +374,23 @@ class ChatMessage(Base):
     lat = Column(Float, nullable=True)  # traveller's real GPS position (device-reported)
     lng = Column(Float, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
+
+
+class ContactMessage(Base):
+    """Support messages submitted from the landing page contact form.
+
+    Public submitters never create an account, so no identity_id is stored.
+    Managers/admins read and (via the audit rail) action these records.
+    """
+
+    __tablename__ = "contact_messages"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(120), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    topic = Column(String(50), nullable=False, default="General")  # General | Trip planning | Payments | Guide network | Help | Bug report
+    priority = Column(String(20), nullable=False, default="Normal")  # Normal | Urgent
+    message = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="NEW")  # NEW | OPEN | RESOLVED
+    created_at = Column(DateTime, default=get_utc_now)
+    handled_at = Column(DateTime, nullable=True)

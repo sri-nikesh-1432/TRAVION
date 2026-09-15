@@ -92,3 +92,19 @@
 .travion-avatar-pulse {
   animation: markerPulse 2s infinite ease-in-out;
 }
+
+/* A11y: users who prefer reduced motion get a calm page — no marquee drift,
+   no pulsing skeletons, no auto-scrolling. Interactive elements still work. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
