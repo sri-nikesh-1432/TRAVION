@@ -529,7 +529,26 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           if (rec.length > 0) setSelected(new Set(rec));
         }
       })
-      .catch(() => { if (alive) setLoadError('Could not load verified places for this destination.'); });
+      .catch((err) => {
+        if (!alive) return;
+        // Classified failures (PART I): the user must see WHY discovery failed,
+        // not one generic message for every kind of breakdown.
+        const status = Number((err as { status?: number })?.status
+          ?? (err as { extra?: { status?: number } })?.extra?.status
+          ?? 0);
+        const msg = String((err as Error)?.message || '');
+        if (msg.includes('Trip not found')) {
+          setLoadError('Your trip session expired — please start planning again.');
+        } else if (status === 429 || msg.includes('429') || /rate limit/i.test(msg)) {
+          setLoadError('The place provider is rate-limiting us right now — please retry in a few seconds.');
+        } else if (status === 401 || status === 403 || msg.includes('401') || msg.includes('403')) {
+          setLoadError('Your session needs to be re-authenticated to load verified places.');
+        } else if (msg.includes('not found in geocoding')) {
+          setLoadError(`We couldn't identify "${destinationName}" as a destination — check the spelling.`);
+        } else {
+          setLoadError('Verified places could not be loaded — the place provider may be temporarily down.');
+        }
+      });
     return () => { alive = false; };
   }, [tripId, autoSelected, catalogRetry]);
 

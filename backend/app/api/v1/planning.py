@@ -8,7 +8,7 @@ from app.schemas.schemas import PlanTripRequest, ItineraryResponse
 from app.services.ai_orchestrator import AIOrchestrator, PACKAGE_DESTINATIONS
 from app.services.india_planner import build_estimate_plan
 from app.services.verified_data import VERIFIED_TRANSPORT
-from app.services.multi_plan_engine import build_plans, normalize_plan_totals
+from app.services.multi_plan_engine import build_plans, normalize_plan_totals, enforce_chronology
 from app.services.budget_service import sanitize_envelope
 
 
@@ -49,6 +49,20 @@ def generate_base_plan(trip: Trip, mode: str, db: Session) -> dict:
     geography, destination coverage and verified data — one engine, never a
     parallel implementation. Returns {version, total_cost, cost_breakdown, days}.
     """
+
+    def _first_day_start_label(t: Trip) -> Optional[str]:
+        """Trip's real Day-1 start clock label (PART U); naive = IST."""
+        try:
+            from zoneinfo import ZoneInfo
+            s = t.start_datetime
+            if not s:
+                return None
+            if s.tzinfo is None:
+                s = s.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+            return s.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p")
+        except Exception:
+            return None
+
     profile_dict = trip.profile.questions_answers if trip.profile else {}
 
     # Real geography from the traveller's selected locations — never a default city.
@@ -140,6 +154,10 @@ def generate_base_plan(trip: Trip, mode: str, db: Session) -> dict:
         raise
     except ValueError as exc:
         _raise_uncovered("DESTINATION_NOT_COVERED", str(exc))
+
+    # Hard chronology floor on EVERY generated plan (PART U): Day 1 can never
+    # start before the trip's real start time; other days never before 08:00.
+    enforce_chronology(itinerary_plan.get("days") or [], first_day_start=_first_day_start_label(trip))
 
     return itinerary_plan
 

@@ -369,6 +369,7 @@ def build_plans(
     stay_required: Optional[bool] = None,
     mode: str = "ADVENTUROUS_MODE",
     verbose: bool = True,
+    first_day_start: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Create the three differentiated plans. See module docstring for rules.
 
@@ -380,6 +381,10 @@ def build_plans(
     `stay_required` is the traveller's EXPLICIT stay choice: `False` is the
     "Continue without a stay" rule — accommodation is ₹0 and no hotel is ever
     auto-added, even when the budget could afford one. `True` means keep a stay
+
+    `first_day_start` (e.g. "04:00 PM") is the trip's real start time on Day 1:
+    no Day-1 stop may be scheduled earlier (PART U). Other days start at 08:00
+    at the earliest (PART V).
     (the budget/allowed flags still apply). `None` = not specified: behave as
     before (stay if the budget allows it, else no-stay).
 
@@ -527,8 +532,14 @@ def build_plans(
                 lightest.setdefault("stops", []).append(extra)
                 activities += float(extra["estimated_cost"])
 
-        # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps.
+        # 4. LIVE RESCHEDULING: re-sequence every day so nothing overlaps, then
+        #    enforce the hard chronology floor (Day 1 >= the trip's real start
+        #    time, travel-time gaps between stops) — the 4 PM → 8:30 AM bug is
+        #    made impossible here, server-side, for EVERY plan variant.
         _resequence(days)
+        chronology_notes = enforce_chronology(days, first_day_start=first_day_start)
+        if chronology_notes:
+            warnings.extend(chronology_notes[:3])
 
         # 5. HARD BUDGET: the budget range is the TRAVEL-SPEND range. In
         #    GUIDE_MODE the 12.5% guide fee + 3% platform fee are charged ON TOP
@@ -655,7 +666,13 @@ def build_plans(
 
 
 def _resequence(days: List[Dict[str, Any]]) -> None:
-    """Push overlapping stops later so every day is a feasible schedule."""
+    """Push overlapping stops later so every day is a feasible schedule.
+
+    Never pushes a start past midnight: a wrapped '01:02 AM' label would sort
+    BEFORE the evening stops that caused it (the 4 PM → 8:30 AM bug in
+    disguise). Overflowing stops are left untouched here; enforce_chronology
+    defers them to the next day.
+    """
     for d in days:
         stops = sorted(
             [s for s in d.get("stops", []) if _to_minutes(str(s.get("time", ""))) is not None],
@@ -666,10 +683,162 @@ def _resequence(days: List[Dict[str, Any]]) -> None:
             start = _to_minutes(str(s.get("time", ""))) or 0
             dur = int(s.get("duration_minutes", 60) or 60)
             if cursor is not None and start < cursor:
+                if cursor >= 1440:
+                    break  # midnight overflow — defer to enforce_chronology
                 s["time"] = _from_minutes(cursor)
                 s["ai_note"] = "Rescheduled automatically to avoid overlapping activities."
                 start = cursor
             cursor = start + dur
+
+
+DAY_START_FLOOR_MINUTES = 8 * 60  # 08:00 — days never start earlier than this
+
+
+def validate_schedule(
+    days: List[Dict[str, Any]],
+    first_day_start: Optional[str] = None,
+) -> List[str]:
+    """Deterministic schedule audit (PART Y) — returns violations, changes nothing.
+
+    Rejects: unparseable times, stops before the Day-1 trip start, stops before
+    08:00 on later days, out-of-order stops and overlapping stops. Runs before
+    payment and activation so an impossible itinerary can never be bought.
+    """
+    violations: List[str] = []
+    floor1 = _to_minutes(first_day_start or "") if first_day_start else None
+    if floor1 is None:
+        floor1 = DAY_START_FLOOR_MINUTES
+    for d in sorted(days, key=lambda x: int(x.get("day", 0) or 0)):
+        day_num = int(d.get("day", 0) or 0)
+        floor = floor1 if day_num <= 1 else DAY_START_FLOOR_MINUTES
+        stops = [s for s in d.get("stops", []) if _to_minutes(str(s.get("time", ""))) is not None]
+        if len(stops) != len(d.get("stops", []) or []):
+            violations.append(f"Day {day_num}: a stop has an invalid time.")
+        stops.sort(key=lambda s: _to_minutes(str(s.get("time", ""))) or 0)
+        prev_end: Optional[int] = None
+        prev_title = ""
+        for s in stops:
+            start = _to_minutes(str(s.get("time", ""))) or 0
+            dur = int(s.get("duration_minutes", 60) or 60)
+            title = str(s.get("title", "Stop"))
+            if start < floor:
+                violations.append(
+                    f"Day {day_num}: '{title}' at {s.get('time')} is before the "
+                    f"{'trip start' if day_num == 1 else 'earliest day start'} ({_from_minutes(floor)})."
+                )
+            if prev_end is not None and start < prev_end:
+                violations.append(
+                    f"Day {day_num}: '{title}' overlaps the previous stop ('{prev_title}')."
+                )
+            prev_end = start + dur
+            prev_title = title
+    return violations
+
+
+def enforce_chronology(
+    days: List[Dict[str, Any]],
+    first_day_start: Optional[str] = None,
+) -> List[str]:
+    """Make the 4 PM → 8:30 AM class of bugs mathematically impossible.
+
+    Deterministic post-scheduling pass (PART R–W of the spec), applied to EVERY
+    generated or edited plan:
+      1. DAY 1 FLOOR: the first day starts no earlier than the trip's real
+         start time (e.g. a 4:00 PM arrival can never yield an 8:30 AM Day-1
+         item). Any earlier stop is pushed to >= that time.
+      2. GENERAL FLOOR: other days never begin before 08:00 (PART V).
+      3. CHRONOLOGY + TRAVEL: stops within a day are ordered; each stop starts
+         at or after the previous stop's end + travel time (haversine at a
+         conservative 30 km/h city average, minimum 15 min — PART W).
+    Returns human-readable notes for stops that were moved.
+    """
+    notes: List[str] = []
+    floor1 = _to_minutes(first_day_start or "") if first_day_start else None
+    if floor1 is None:
+        floor1 = DAY_START_FLOOR_MINUTES
+    for d in sorted(days, key=lambda x: int(x.get("day", 0) or 0)):
+        day_num = int(d.get("day", 0) or 0)
+        floor = floor1 if day_num <= 1 else DAY_START_FLOOR_MINUTES
+        stops = [s for s in d.get("stops", []) if _to_minutes(str(s.get("time", ""))) is not None]
+        # Clamp every stated time to the day's floor FIRST, then stable-sort by
+        # the clamped time — the generator's narrative order is preserved for
+        # stops that share a slot and no early stop can steal the Day-1 start.
+        for s in stops:
+            stated = _to_minutes(str(s.get("time", ""))) or 0
+            s["_chrono_start"] = max(stated, floor)
+        stops.sort(key=lambda s: s["_chrono_start"])
+        def _is_transport(s: Dict[str, Any]) -> bool:
+            cat = str(s.get("category", "")).lower()
+            title = str(s.get("title", "")).lower()
+            return "transport" in cat or "depart" in title or "board" in title or "return" in title or "arrival" in title
+
+        cursor: Optional[int] = None
+        prev_geo: Optional[Tuple[float, float]] = None
+        overflow: List[Dict[str, Any]] = []
+        kept: List[Dict[str, Any]] = []
+        for s in stops:
+            start = s["_chrono_start"]
+            dur = int(s.get("duration_minutes", 60) or 60)
+            earliest = cursor or 0
+            # Travel time from the previous stop (PART W): conservative 30 km/h
+            # city average with a 15-minute minimum for any real move.
+            if cursor is not None and prev_geo is not None:
+                try:
+                    km = _haversine_km(
+                        prev_geo,
+                        (float(s.get("lat", 0) or 0), float(s.get("lng", 0) or 0)),
+                    )
+                except Exception:
+                    km = 0.0
+                if km > 0.3:  # under ~300 m = same complex, no travel needed
+                    earliest = max(earliest, cursor + max(15, int(km / 30.0 * 60.0)))
+            final_start = max(start, earliest)
+            # Midnight overflow (PART S): a start at/after 24:00 would wrap into
+            # a small-hours label that sorts BEFORE the evening stops that
+            # caused it. Defer the stop to the next day instead. Transport legs
+            # keep their explicit schedule (clamped inside the day).
+            if final_start >= 1440 and not _is_transport(s):
+                s.pop("_chrono_start", None)
+                overflow.append(s)
+                continue
+            if final_start >= 1440:
+                final_start = 1439
+            if final_start > start:
+                s["time"] = _from_minutes(final_start)
+                s["ai_note"] = "Rescheduled to keep the day chronological."
+                notes.append(f"Day {day_num}: '{s.get('title', 'Stop')}' moved to {s['time']} (chronological order)")
+            else:
+                s["time"] = _from_minutes(final_start)
+            cursor = final_start + dur
+            try:
+                prev_geo = (float(s.get("lat", 0) or 0), float(s.get("lng", 0) or 0))
+            except Exception:
+                prev_geo = None
+            s.pop("_chrono_start", None)
+            # A stop whose own duration spills past midnight is also deferred
+            # (non-transport only) so the day stays inside its calendar date.
+            if cursor > 1440 and not _is_transport(s):
+                overflow.append(s)
+                kept = [k for k in kept if k is not s]
+                cursor = final_start  # day ends at this stop
+                continue
+            kept.append(s)
+        # The day's stored order now IS chronological order.
+        d["stops"] = kept
+        if overflow:
+            target = next((x for x in days if int(x.get("day", 0) or 0) == day_num + 1), None)
+            if target is None:
+                target = {"day": day_num + 1, "title": f"Day {day_num + 1}", "stops": []}
+                days.append(target)
+                days.sort(key=lambda x: int(x.get("day", 0) or 0))
+            morning = DAY_START_FLOOR_MINUTES
+            for i, s in enumerate(overflow):
+                s["day"] = day_num + 1
+                s["time"] = _from_minutes(min(morning + i * 120, 20 * 60))
+                s["ai_note"] = f"Moved to Day {day_num + 1} — Day {day_num} was fully committed."
+                notes.append(f"Day {day_num}: '{s.get('title', 'Stop')}' deferred to Day {day_num + 1} (day overflow).")
+                target.setdefault("stops", []).append(s)
+    return notes
 
 
 def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List[Dict[str, Any]]:

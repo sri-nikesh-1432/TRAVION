@@ -57,12 +57,16 @@ export class ApiError extends Error {
   errorCode?: string;
   field?: string;
   extra?: any;
-  constructor(message: string, errorCode?: string, field?: string, extra?: any) {
+  /** HTTP status of the failed response — lets callers classify failures
+   *  (401 re-auth, 429 rate-limit, 404 destination, 5xx provider outage). */
+  status?: number;
+  constructor(message: string, errorCode?: string, field?: string, extra?: any, status?: number) {
     super(message);
     this.name = 'ApiError';
     this.errorCode = errorCode;
     this.field = field;
     this.extra = extra;
+    this.status = status;
   }
 }
 
@@ -113,11 +117,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
     const detail = errorData.detail;
     if (typeof detail === 'object' && detail !== null) {
-      throw new ApiError(detail.message || 'An error occurred', detail.error_code, detail.field, detail);
+      throw new ApiError(detail.message || 'An error occurred', detail.error_code, detail.field, detail, response.status);
     } else if (typeof detail === 'string') {
-      throw new ApiError(detail);
+      throw new ApiError(detail, undefined, undefined, undefined, response.status);
     } else {
-      throw new ApiError('Request failed');
+      throw new ApiError('Request failed', undefined, undefined, undefined, response.status);
     }
   }
 

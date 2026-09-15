@@ -179,11 +179,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
   };
 
   const openGuideRegistration = () => {
-    // Open auth modal with guide mode already selected for registration
-    setIsLoginMode(false);
-    setAuthRole('GUIDE');
-    setAuthError(null);
-    setShowAuthModal(true);
+    // "Become a Guide" MUST open the dedicated Guide Registration flow —
+    // never the traveller auth modal (the modal only offers Traveller
+    // signup, so opening it for guides showed the WRONG role's form).
+    onOpenGuideRegistration();
   };
 
   /* Strong-password helpers */

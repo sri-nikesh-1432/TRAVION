@@ -75,6 +75,32 @@ def create_trip_checkout(
         )
     acknowledged_at = get_utc_now()
 
+    # PART Y: the itinerary must pass the schedule validator BEFORE payment —
+    # an impossible itinerary (pre-trip-start Day-1 item, overlapping stops,
+    # unparseable times) can never be paid for. Runs on the authoritative
+    # stored days (the user's finalItinerary).
+    try:
+        from app.services.multi_plan_engine import validate_schedule
+        from zoneinfo import ZoneInfo
+        _s = trip.start_datetime
+        if _s and _s.tzinfo is None:
+            _s = _s.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        _fd = _s.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p") if _s else None
+        violations = validate_schedule(itinerary.days_data or [], first_day_start=_fd)
+        if violations:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "INVALID_ITINERARY_SCHEDULE",
+                    "message": "The itinerary has scheduling problems that must be fixed before payment.",
+                    "violations": violations[:5],
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # a malformed stored itinerary still fails loudly at pricing below
+
     # Server-side truth: THE authoritative backend pricing (never client input).
     pricing = calculate_trip_pricing(**_pricing_context(trip, itinerary, db))
     payable = float(pricing["amount_payable"])

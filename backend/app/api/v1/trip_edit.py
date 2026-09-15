@@ -35,7 +35,7 @@ from app.schemas.schemas import (
 from app.api.v1.planning import generate_base_plan, effective_breakdown
 from app.services.multi_plan_engine import (
     build_plans, recalculate_change, _resequence, _haversine_km, validate_days,
-    _norm, normalize_plan_totals,
+    _norm, normalize_plan_totals, enforce_chronology,
 )
 from app.services.verified_data import VERIFIED_ATTRACTIONS, VERIFIED_STAYS, VERIFIED_FOOD
 from app.services.places_discovery import discover_destination, discover_nearby
@@ -380,6 +380,24 @@ def _trip_days(trip: Trip) -> int:
     except Exception:
         pass
     return 2
+
+
+def _first_day_start_label(trip: Trip) -> Optional[str]:
+    """The trip's real Day-1 start time as a clock label (e.g. '04:00 PM').
+
+    Fed to the plan engine so a 4:00 PM arrival can NEVER produce an 8:30 AM
+    Day-1 itinerary item (PART U). Naive datetimes are treated as IST.
+    """
+    try:
+        s = trip.start_datetime
+        if not s:
+            return None
+        from zoneinfo import ZoneInfo
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        return s.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p")
+    except Exception:
+        return None
 
 
 def _raw_budget(profile: dict, trip_budget: float) -> float:
@@ -1128,6 +1146,7 @@ def plan_multi(
         stay_required=req_stay_required,
         mode=req.mode,
         verbose=False,
+        first_day_start=_first_day_start_label(trip),
     )
 
     # Belt-and-braces: the plan engine already clamps, but the fee/total math
@@ -1246,6 +1265,7 @@ def choose_plan(
         stay_required=profile.get("stay_required"),
         mode=mode,
         verbose=False,
+        first_day_start=_first_day_start_label(trip),
     )
     chosen = next((p for p in plans if p["type"] == req.plan_type), None)
     if not chosen:
@@ -1396,6 +1416,11 @@ def edit_itinerary(
     )
     if not result["applied"]:
         raise HTTPException(status_code=400, detail="Change could not be applied (stop not found).")
+    # Every user edit also passes the hard chronology floor (PART U/W): no
+    # Day-1 item before the trip's real start time, no time-travel ordering.
+    chron_notes = enforce_chronology(result["days"], first_day_start=_first_day_start_label(trip))
+    if chron_notes:
+        result["warnings"] = list(result.get("warnings") or []) + chron_notes[:3]
 
     # GUIDE-FEE REPRICING (single source of truth): an edit that changed the
     # guided-day count (add/remove day, move to a new day) changes what the
@@ -1802,6 +1827,8 @@ def optimize_day(
         ordered.append(remaining.pop(best_idx))
     target["stops"] = ordered
     _resequence(days)
+    # Hard chronology floor also applies to optimizer output (PART U/W).
+    enforce_chronology(days, first_day_start=_first_day_start_label(trip))
 
     if not req.apply:
         return OptimizeDayResponse(
