@@ -3,6 +3,7 @@ import { Compass } from 'lucide-react';
 import { AuthSession } from './types';
 import { api, authStorage } from './services/api';
 import { LandingPage } from './views/LandingPage';
+import { TravionToastProvider } from './components/ui';
 
 // Heavy role views load on demand — keeps the first paint and the landing page
 // authoritative bundle lean instead of shipping every portal at once.
@@ -17,7 +18,7 @@ const AdminDomain = lazy(() => import('./views/AdminDomain').then((m) => ({ defa
 const SuspenseShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Suspense
     fallback={
-      <div className="min-h-screen bg-[#faf7f0] flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center animate-pulse">
             <Compass className="w-5 h-5 text-white" />
@@ -132,9 +133,11 @@ export const App: React.FC = () => {
     });
   };
 
-  // 1. If not authenticated and not in sandbox, show Landing Page
+  // Compute the root view, then wrap it in the toast provider.
+  let view: React.ReactNode;
+
   if (!session) {
-    return (
+    view = (
       <LandingPage
         onLoginSuccess={handleLoginSuccess}
         onExploreDemo={handleLaunchSandboxDemo}
@@ -142,11 +145,8 @@ export const App: React.FC = () => {
         onOpenGuideSignIn={() => setShowGuideSignIn(true)}
       />
     );
-  }
-
-  // 2. Guide-specific standalone views (register/signin without session)
-  if (showGuideRegister || showGuideSignIn) {
-    return (
+  } else if (showGuideRegister || showGuideSignIn) {
+    view = (
       <SuspenseShell>
         <div className="min-h-screen bg-white">
           {showGuideRegister ? (
@@ -163,12 +163,9 @@ export const App: React.FC = () => {
         </div>
       </SuspenseShell>
     );
-  }
-
-  // 3. If guide is logged in, check verification status
-  if (session.role === 'GUIDE') {
+  } else if (session.role === 'GUIDE') {
     if (guideView === 'verification' || guideView === 'update_profile') {
-      return (
+      view = (
         <SuspenseShell>
           <GuideVerification
             onDashboardAccess={() => setGuideView('dashboard')}
@@ -176,61 +173,49 @@ export const App: React.FC = () => {
           />
         </SuspenseShell>
       );
+    } else {
+      view = (
+        <SuspenseShell>
+          <GuideDomain session={session} onLogout={handleLogout} />
+        </SuspenseShell>
+      );
     }
-    // After verification approved, show guide dashboard
-    return (
-      <SuspenseShell>
-        <GuideDomain
-          session={session}
-          onLogout={handleLogout}
-        />
-      </SuspenseShell>
-    );
+  } else {
+    switch (session.role) {
+      case 'USER':
+        view = (
+          <SuspenseShell>
+            <UserDomain session={session} onLogout={handleLogout} isSandboxDemo={isSandboxDemo} />
+          </SuspenseShell>
+        );
+        break;
+      case 'MANAGER':
+        view = (
+          <SuspenseShell>
+            <ManagerDomain session={session} onLogout={handleLogout} />
+          </SuspenseShell>
+        );
+        break;
+      case 'ADMIN':
+        view = (
+          <SuspenseShell>
+            <AdminDomain session={session} onLogout={handleLogout} />
+          </SuspenseShell>
+        );
+        break;
+      default:
+        view = (
+          <LandingPage
+            onLoginSuccess={handleLoginSuccess}
+            onExploreDemo={handleLaunchSandboxDemo}
+            onOpenGuideRegistration={() => setShowGuideRegister(true)}
+            onOpenGuideSignIn={() => setShowGuideSignIn(true)}
+          />
+        );
+    }
   }
 
-  // 4. Role-Based Navigation Routing for other roles
-  switch (session.role) {
-    case 'USER':
-      return (
-        <SuspenseShell>
-          <UserDomain
-            session={session}
-            onLogout={handleLogout}
-            isSandboxDemo={isSandboxDemo}
-          />
-        </SuspenseShell>
-      );
-
-    case 'MANAGER':
-      return (
-        <SuspenseShell>
-          <ManagerDomain
-            session={session}
-            onLogout={handleLogout}
-          />
-        </SuspenseShell>
-      );
-
-    case 'ADMIN':
-      return (
-        <SuspenseShell>
-          <AdminDomain
-            session={session}
-            onLogout={handleLogout}
-          />
-        </SuspenseShell>
-      );
-
-    default:
-      return (
-        <LandingPage
-          onLoginSuccess={handleLoginSuccess}
-          onExploreDemo={handleLaunchSandboxDemo}
-          onOpenGuideRegistration={() => setShowGuideRegister(true)}
-          onOpenGuideSignIn={() => setShowGuideSignIn(true)}
-        />
-      );
-  }
+  return <TravionToastProvider>{view}</TravionToastProvider>;
 };
 
 export default App;

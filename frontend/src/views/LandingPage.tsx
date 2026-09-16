@@ -11,6 +11,7 @@ import {
 import { LocationItem } from '../types';
 import { api, authStorage, resolveApiBaseUrl } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
+import { TravionLogo, TravionButton } from '../components/ui';
 
 interface LandingPageProps {
   onLoginSuccess: (session: any) => void;
@@ -437,81 +438,78 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
 
   return (
     <div className="min-h-screen bg-ivory-50 text-charcoal-900 antialiased overflow-x-hidden">
-      {/* ══════════════════ NAVBAR ══════════════════ */}
+      {/* ══════════════════ NAVBAR — floating glass ══════════════════ */}
       <header
         className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
-          scrolled || mobileOpen
-            ? 'bg-ivory-50/90 backdrop-blur-xl border-b border-charcoal-100/90 shadow-[0_10px_30px_-18px_rgba(27,35,44,0.18)]'
-            : 'bg-transparent'
+          scrolled || mobileOpen ? 'glass-strong shadow-glass border-b border-white/50' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-5 md:px-8">
-          <div className="flex items-center justify-between h-[74px]">
+        <div className="container-site">
+          <div className={`flex items-center justify-between ${scrolled || mobileOpen ? 'h-16' : 'h-[74px]'} transition-[height] duration-500`}>
             {/* Brand */}
-            <a href="#top" className="flex items-center gap-2.5 group" aria-label="Travion home">
-              <span className="w-9.5 h-9.5 rounded-xl bg-gradient-to-br from-travion-500 to-travion-700 flex items-center justify-center shadow-soft">
-                <Compass className="w-5 h-5 text-white" />
-              </span>
-              <span className={`text-[17px] font-extrabold tracking-[0.08em] ${scrolled || mobileOpen ? 'text-charcoal-900' : 'text-white'}`}>
-                TRAVION
-              </span>
+            <a href="#top" className="flex items-center group aria-hidden-false" aria-label="Travion home">
+              <TravionLogo mark={scrolled || mobileOpen ? 'dark' : 'ivory'} className="transition-opacity" />
             </a>
 
             {/* Desktop nav */}
-            <nav className="hidden lg:flex items-center gap-9" aria-label="Primary">
+            <nav className="hidden lg:flex items-center gap-8" aria-label="Primary">
               {NAV_LINKS.map((l) => {
                 const active = activeSection === l.href.slice(1);
                 return (
-                  <span key={l.href} className="relative">
-                    <a
-                      href={l.href}
-                      className={`text-[13.5px] font-semibold transition-colors ${
-                        active
-                          ? scrolled ? 'text-travion-700' : 'text-white'
-                          : scrolled ? 'text-charcoal-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
-                      }`}
-                    >
-                      {l.label}
-                    </a>
+                  <a
+                    key={l.href}
+                    href={l.href}
+                    className={`relative text-[13.5px] font-semibold transition-colors ${
+                      active
+                        ? scrolled ? 'text-travion-700' : 'text-white'
+                        : scrolled ? 'text-charcoal-600 hover:text-travion-700' : 'text-white/85 hover:text-white'
+                    }`}
+                  >
+                    {l.label}
                     {active && (
                       <span className={`absolute -bottom-2 left-0 right-0 h-0.5 rounded-full ${scrolled ? 'bg-travion-500' : 'bg-gold-300'}`} />
                     )}
-                  </span>
+                  </a>
                 );
               })}
             </nav>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => openAuth(true)}
                 className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
-                  scrolled ? 'text-charcoal-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
+                  scrolled ? 'text-charcoal-700 hover:bg-charcoal-100/60' : 'text-white hover:bg-white/10'
                 }`}
               >
                 Sign In
               </button>
               <button
                 onClick={() => openGuideRegistration()}
-                className={`hidden sm:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
-                  scrolled ? 'text-charcoal-700 hover:text-travion-700' : 'text-white hover:bg-white/10'
+                className={`hidden md:inline-flex items-center px-4 h-10 rounded-xl text-[13px] font-bold transition-colors ${
+                  scrolled ? 'text-charcoal-700 hover:bg-charcoal-100/60' : 'text-white hover:bg-white/10'
                 }`}
               >
                 Become a Guide
               </button>
-              <button
+              <TravionButton
+                size="sm"
+                variant="primary"
                 onClick={() => openAuth(false)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-5 h-10 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-[13px] font-bold shadow-soft transition-all hover:-translate-y-px"
+                className={`hidden sm:inline-flex ${scrolled ? 'shadow-soft' : 'shadow-floating'}`}
               >
                 Plan My Trip
                 <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              </TravionButton>
               {/* Mobile trigger */}
               <button
                 onClick={() => setMobileOpen((o) => !o)}
                 aria-label="Toggle menu"
                 aria-expanded={mobileOpen}
-                className={`lg:hidden inline-flex w-10 h-10 items-center justify-center rounded-xl transition-colors ${
-                  scrolled || mobileOpen ? 'text-charcoal-700 hover:bg-ivory-200' : 'text-white hover:bg-white/10'
+                aria-controls="travion-mobile-nav"
+                className={`lg:hidden inline-flex w-11 h-11 touch-manipulation items-center justify-center rounded-2xl border transition-colors ${
+                  scrolled || mobileOpen
+                    ? 'border-charcoal-200/70 bg-white/70 text-charcoal-700'
+                    : 'border-white/20 bg-white/10 text-white'
                 }`}
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -519,58 +517,80 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
             </div>
           </div>
         </div>
+      </header>
 
-        {/* Mobile drawer */}
-        <AnimatePresence>
-          {mobileOpen && (
+      {/* Mobile navigation — full-screen glass sheet (bottom anchored) */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              onClick={() => setMobileOpen(false)}
+              className="absolute inset-0 bg-charcoal-950/35 backdrop-blur-sm"
+            />
             <motion.nav
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.35, ease: EASE }}
-              className="lg:hidden overflow-hidden bg-ivory-50/98 border-t border-charcoal-100"
+              id="travion-mobile-nav"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.4, ease: EASE }}
+              className="absolute inset-x-3 bottom-3 rounded-[30px] glass-strong shadow-floating px-5 pt-3 pb-5 pb-safe overflow-hidden"
               aria-label="Mobile"
             >
-              <div className="px-5 py-4 flex flex-col gap-1">
-                {NAV_LINKS.map((l) => (
+              <div className="flex items-center justify-between px-1 pt-2 pb-3">
+                <TravionLogo />
+                <button
+                  onClick={() => setMobileOpen(false)}
+                  aria-label="Close menu"
+                  className="inline-flex w-11 h-11 items-center justify-center rounded-2xl border border-charcoal-200/60 bg-white/70 text-charcoal-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {NAV_LINKS.map((l, i) => (
                   <a
                     key={l.href}
                     href={l.href}
                     onClick={() => setMobileOpen(false)}
-                    className={`px-3 py-3 rounded-xl text-[15px] font-semibold transition-colors ${
+                    className={`group flex items-center justify-between px-4 py-3.5 rounded-2xl text-[15px] transition-colors ${
                       activeSection === l.href.slice(1)
                         ? 'bg-travion-50 text-travion-700'
                         : 'text-charcoal-700 hover:bg-travion-50 hover:text-travion-700'
                     }`}
                   >
-                    {l.label}
+                    <span className="font-bold">{l.label}</span>
+                    <span className="text-[10px] font-black tracking-widest text-charcoal-300 group-hover:text-travion-500">0{i + 1}</span>
                   </a>
                 ))}
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  <button
-                    onClick={() => { setMobileOpen(false); openAuth(true); }}
-                    className="h-11 rounded-xl border border-charcoal-200 text-charcoal-700 font-bold text-sm"
-                  >
-                    Sign In
-                  </button>
-                  <button
-                    onClick={() => { setMobileOpen(false); openGuideRegistration(); }}
-                    className="h-11 rounded-xl border border-travion-300 text-travion-700 font-bold text-sm hover:bg-travion-50"
-                  >
-                    Become a Guide
-                  </button>
-                  <button
-                    onClick={() => { setMobileOpen(false); openAuth(false); }}
-                    className="h-11 rounded-xl bg-travion-600 text-white font-bold text-sm col-span-2"
-                  >
-                    Plan My Trip
-                  </button>
-                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-charcoal-100 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => { setMobileOpen(false); openAuth(true); }}
+                  className="h-12 rounded-2xl border border-charcoal-200/80 bg-white/70 text-charcoal-700 font-bold text-sm"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => { setMobileOpen(false); openGuideRegistration(); }}
+                  className="h-12 rounded-2xl border border-travion-300 bg-travion-50 text-travion-700 font-bold text-sm hover:bg-travion-100"
+                >
+                  Become a Guide
+                </button>
+                <button
+                  onClick={() => { setMobileOpen(false); openAuth(false); }}
+                  className="h-12 rounded-2xl bg-travion-600 text-white font-bold text-sm col-span-2 shadow-soft"
+                >
+                  Plan My Trip
+                </button>
               </div>
             </motion.nav>
-          )}
-        </AnimatePresence>
-      </header>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ══════════════════ HERO ══════════════════ */}
       <section id="top" className="relative min-h-[100svh] flex flex-col overflow-hidden bg-travion-900">
@@ -605,7 +625,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
           )}
         </div>
 
-        <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[130px] pb-16 grid lg:grid-cols-[1.06fr_0.94fr] items-end gap-12">
+        <div className="relative flex-1 w-full max-w-7xl mx-auto px-5 md:px-8 pt-[132px] pb-16 grid lg:grid-cols-[1.06fr_0.94fr] items-end gap-12">
           {/* Editorial copy */}
           <div>
             <motion.div style={reduceMotion ? undefined : { opacity: heroFade }}>
@@ -617,11 +637,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 initial={{ opacity: 0, y: 26 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1, delay: 0.35, ease: EASE }}
-                className="mt-6 text-white text-[clamp(2.5rem,6vw,4.7rem)] font-extrabold leading-[1.04] tracking-[-0.03em]"
+                className="mt-6 text-white font-semibold type-display"
               >
                 Travel without{' '}
                 <br />
-                <em className="font-editorial font-normal italic tracking-[-0.01em] bg-clip-text text-transparent bg-gradient-to-r from-ivory-200 via-sky-200 to-gold-200">
+                <em className="font-editorial italic font-normal tracking-[-0.01em] bg-clip-text text-transparent bg-gradient-to-r from-ivory-200 via-sky-200 to-gold-200">
                   the uncertainty.
                 </em>
               </motion.h1>
@@ -664,16 +684,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 transition={{ duration: 0.9, delay: 0.72, ease: EASE }}
                 className="mt-8 flex flex-wrap items-center gap-3.5"
               >
-                <button
+                <TravionButton
+                  size="lg"
                   onClick={() => openAuth(false)}
-                  className="group inline-flex items-center gap-2 h-13 px-7 rounded-2xl bg-travion-500 hover:bg-travion-400 text-white text-sm font-bold shadow-floating transition-all hover:-translate-y-0.5"
+                  className="bg-travion-500 hover:bg-travion-400 shadow-floating"
                 >
                   Plan My Trip
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                </button>
+                  <ArrowRight className="w-4 h-4" />
+                </TravionButton>
                 <button
                   onClick={() => openGuideRegistration()}
-                  className="inline-flex items-center gap-2 h-13 px-7 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
+                  className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl border border-white/25 bg-white/5 backdrop-blur text-white text-sm font-bold hover:bg-white/15 transition-all"
                 >
                   Become a Guide
                   <ArrowUpRight className="w-4 h-4" />

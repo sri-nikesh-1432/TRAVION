@@ -1,19 +1,25 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   TRAVION — Design system · "Ivory · Soft Sky · Deep Charcoal"
-   Premium, editorial, calm. Warm-window light; no neon, no cyber.
-   Token names keep legacy aliases (travion/cream/beige/cognac) so
-   every existing screen re-themes automatically when values change.
+   TRAVION — Design system · "Warm Ivory · Soft Sky · Deep Charcoal"
+   Premium, editorial, calm. Apple-level structure, travel-magazine warmth.
+   Mix: 70% soft/minimal · 15% glass · 8% bento · 5% neumorphic · 2% accents.
+
+   Token names keep legacy aliases (travion/cream/beige/cognac) so every
+   existing screen re-themes automatically when values change.
    ═══════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* Soft sky — the primary brand channel */
+  /* Brand ivory surface — the page paper (#F8F6F0) */
+  --color-surface: #f8f6f0;
+  --color-surface-2: #f1eee6;
+
+  /* Soft sky — the primary brand channel (#BFDDF3 → #6F9FBE deep sky) */
   --color-travion-50: #f3f9fd;
   --color-travion-100: #e4f2fa;
-  --color-travion-200: #c9e6f5;
+  --color-travion-200: #bfddf3;
   --color-travion-300: #9bd1ec;
-  --color-travion-400: #64b4dc;
+  --color-travion-400: #6f9fbe;
   --color-travion-500: #3d94c4;
   --color-travion-600: #267aa8;
   --color-travion-700: #1e6287;
@@ -34,7 +40,7 @@
 
   /* Sand · muted warm neutral */
   --color-sand-50: #faf6ee;
-  --color-sand-100: #f3ecE0;
+  --color-sand-100: #f3ece0;
   --color-sand-200: #e9dbc2;
   --color-sand-300: #d9c49d;
   --color-sand-400: #c3a978;
@@ -63,6 +69,24 @@
   --color-cognac-600: #84633d;
   --color-cognac-700: #654b2e;
 
+  /* sage — natural green accent (#DCE4D9 → #7F9B82) */
+  --color-sage-50: #f5f8f4;
+  --color-sage-100: #e7eee5;
+  --color-sage-200: #dce4d9;
+  --color-sage-300: #c3d0bf;
+  --color-sage-400: #9eb49b;
+  --color-sage-500: #7f9b82;
+  --color-sage-600: #678169;
+  --color-sage-700: #4f6653;
+  --color-sage-800: #3b4e3e;
+
+  /* blush · baby pink subtle highlight (#F2D8D8) */
+  --color-blush-50: #fcf7f7;
+  --color-blush-100: #f8ebeb;
+  --color-blush-200: #f2d8d8;
+  --color-blush-300: #e6bbbc;
+  --color-blush-400: #d49698;
+
   /* Charcoal · deep neutrals for type + structure */
   --color-charcoal-50: #f5f7f8;
   --color-charcoal-100: #e7ebee;
@@ -73,7 +97,7 @@
   --color-charcoal-600: #47545f;
   --color-charcoal-700: #36414b;
   --color-charcoal-800: #27303a;
-  --color-charcoal-900: #1b232c;
+  --color-charcoal-900: #202629;
   --color-charcoal-950: #11181f;
 
   /* A refined editorial serif for the italic accent words */
@@ -83,6 +107,20 @@
   --shadow-soft: 0 2px 6px -1px rgba(27, 35, 44, 0.05), 0 12px 28px -12px rgba(27, 35, 44, 0.12);
   --shadow-soft-lg: 0 4px 12px -2px rgba(27, 35, 44, 0.08), 0 24px 48px -16px rgba(27, 35, 44, 0.16);
   --shadow-floating: 0 18px 40px -14px rgba(20, 55, 78, 0.24), 0 6px 16px -6px rgba(27, 35, 44, 0.10);
+  --shadow-glass: 0 1px 1px rgba(27, 35, 44, 0.03), 0 8px 28px -8px rgba(20, 55, 78, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow-neumorphic: 6px 6px 14px rgba(201, 213, 220, 0.6), -6px -6px 14px rgba(255, 255, 255, 0.9);
+
+  /* Radial glow usable with bg-[radial-gradient(...)] and apply helpers */
+  --glow-sky: radial-gradient(1100px 560px at 12% -8%, rgba(191, 221, 243, 0.5), transparent 58%);
+  --glow-sand: radial-gradient(900px 520px at 98% 4%, rgba(240, 228, 205, 0.65), transparent 52%);
+
+  /* Motion system — durations+easing map to tailwind `duration-*` / `ease-*` */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-emphasis: 450ms;
+  --duration-page: 400ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @layer base {
@@ -91,30 +129,190 @@
   }
 
   body {
-    background-color: #fbf7ef;
+    background-color: #f8f6f0;
     background-image:
-      radial-gradient(1100px 560px at 12% -8%, rgba(155, 209, 236, 0.28), transparent 58%),
+      radial-gradient(1100px 560px at 12% -8%, rgba(191, 221, 243, 0.42), transparent 58%),
       radial-gradient(900px 520px at 98% 4%, rgba(240, 228, 205, 0.55), transparent 52%),
-      linear-gradient(#fbf7ef, #fffdf8);
+      linear-gradient(#f8f6f0, #fffdf8);
     background-attachment: fixed;
-    color: #1b232c;
+    color: #202629;
     font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow-x: hidden;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: balance;
   }
 
   section[id] {
-    scroll-margin-top: 84px;
+    scroll-margin-top: 88px;
   }
 
   :focus-visible {
-    outline: 2px solid #3d94c4;
+    outline: 2px solid #267aa8;
     outline-offset: 2px;
   }
 
   ::selection {
-    background: #c9e6f5;
+    background: #bfddf3;
     color: #14374e;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ═══════════════════ Layout · grid · spacing ═══════════════════ */
+@layer components {
+  /* Content column: desktop min(100% − 64px, 1280px), tablet/mobile 40/20px gutters */
+  .container-site {
+    width: min(100% - 2.5rem, 80rem);
+    margin-inline: auto;
+  }
+  @media (max-width: 1023px) {
+    .container-site {
+      width: min(100% - 2rem, 80rem);
+    }
+  }
+
+  /* Vertical section rhythm — generous, editorial */
+  .section-pad {
+    padding-block: clamp(3.5rem, 8vw, 6.5rem);
+  }
+
+  /* Hairline structural divider (brutalist accent, used sparingly) */
+  .rule {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(32, 38, 41, 0.16), transparent);
+  }
+
+  /* Safe-area helpers for mobile navs & sheets */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* ═══════════════════ Surfaces · glass · soft URL ═══════════════════ */
+@layer components {
+  /* Liquid glass panel — for nav, search, maps controls, sheets, assistant */
+  .glass {
+    background: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+  }
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    backdrop-filter: blur(28px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+  }
+  .glass-dark {
+    background: rgba(20, 55, 78, 0.6);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    backdrop-filter: blur(22px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  /* Soft flat card — the workhorse surface */
+  .card-soft {
+    background: #ffffff;
+    border: 1px solid rgba(205, 213, 219, 0.5);
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* Neumorphic control — ONLY small buttons/toggles, never whole panels */
+  .neumo {
+    background: #eef0ec;
+    box-shadow: var(--shadow-neumorphic);
+    transition: box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+  }
+  .neumo:active {
+    box-shadow: inset 4px 4px 10px rgba(201, 213, 220, 0.7), inset -4px -4px 10px rgba(255, 255, 255, 0.9);
+  }
+
+  /* Editorial big number (brutalist accent) */
+  .numeral {
+    font-variant-numeric: tabular-nums;
+    -webkit-text-stroke: 1px rgba(32, 38, 41, 0.14);
+    color: transparent;
+  }
+}
+
+/* ═══════════════════ Typographic scale ═══════════════════ */
+@layer components {
+  .type-display {
+    font-size: clamp(2.6rem, 6.2vw, 4.6rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+  }
+  .type-h1 {
+    font-size: clamp(1.9rem, 4.2vw, 3rem);
+    line-height: 1.08;
+    letter-spacing: -0.028em;
+    font-weight: 700;
+  }
+  .type-h2 {
+    font-size: clamp(1.45rem, 3vw, 2.15rem);
+    line-height: 1.14;
+    letter-spacing: -0.022em;
+    font-weight: 700;
+  }
+  .type-h3 {
+    font-size: clamp(1.1rem, 1.9vw, 1.4rem);
+    line-height: 1.25;
+    letter-spacing: -0.014em;
+    font-weight: 650;
+  }
+  .type-body {
+    font-size: 15px;
+    line-height: 1.72;
+    font-weight: 400;
+  }
+  .type-body-sm {
+    font-size: 13.5px;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+  .type-caption {
+    font-size: 11.5px;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    font-weight: 500;
+  }
+  .type-label {
+    font-size: 10.5px;
+    line-height: 1.2;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 800;
+  }
+}
+
+/* Skeleton shimmer — layout-mirroring loading, not giant spinners */
+@keyframes travionShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@layer components {
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: rgba(205, 213, 219, 0.35);
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+    background-size: 200% 100%;
+    animation: travionShimmer 1.6s ease-in-out infinite;
   }
 }
 
@@ -142,6 +340,7 @@
     height: 100%;
     border-radius: inherit;
     z-index: 1;
+    background: #eef1f2;
   }
 }
 

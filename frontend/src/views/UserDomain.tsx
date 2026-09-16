@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
+import { TravionLogo } from '../components/ui';
 import { DiscoveryCard } from '../components/trip-discovery/DiscoveryCard';
 import { BrandedLoader } from '../components/loading/BrandedLoader';
 import { SplitView } from '../components/live-map/SplitView';
@@ -722,25 +723,21 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   return (
     <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
       
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-charcoal-200/80 px-6 py-3.5">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      {/* Top Header — floating glass */}
+      <header className="sticky top-0 z-40 w-full glass-strong border-b border-white/50 shadow-soft">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setCurrentView('search')}
               className="flex items-center gap-2.5 focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-2xl bg-travion-600 text-white flex items-center justify-center shadow-soft">
-                <Compass className="w-5 h-5" />
-              </div>
-              <span className="text-lg font-black text-charcoal-900 tracking-tight">TRAVION</span>
+              <TravionLogo mark="dark" />
+              {isSandboxDemo && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider">
+                  Sandboxed Demo
+                </span>
+              )}
             </button>
-
-            {isSandboxDemo && (
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider">
-                Sandboxed Demo
-              </span>
-            )}
           </div>
 
           <div className="flex items-center gap-4">

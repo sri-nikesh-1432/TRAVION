@@ -8,6 +8,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { DestinationCatalog, CatalogPlace, CatalogFood, CatalogStay, CatalogActivity, SelectedPlaceItem, SelectedFoodItem, SelectedStay, MapPlacesPayload, MapPlace, TripEventItem, GeoViewportPlace } from '../../types';
 import { api } from '../../services/api';
+import { useToast } from '../ui';
 
 interface DiscoverySelectProps {
   tripId: string;
@@ -191,10 +192,28 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // view) or from a card (→ already visible, don't scroll-jump the panel).
   const lastFocusFromMap = useRef(false);
 
+  const { toast } = useToast();
+
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, name: string) => {
     const next = new Set(set);
-    if (next.has(name)) next.delete(name); else next.add(name);
+    const removing = next.has(name);
+    if (removing) next.delete(name); else next.add(name);
     setter(next);
+    if (set === selected) {
+      if (removing) {
+        toast({
+          tone: 'info',
+          title: 'Removed from your plan',
+          desc: name,
+          action: {
+            label: 'Undo',
+            onAction: () => setSelected((prev) => { const n = new Set(prev); n.add(name); return n; }),
+          },
+        });
+      } else {
+        toast({ tone: 'success', title: 'Added to your plan', desc: name });
+      }
+    }
   };
 
   // Step 3 interactive map (raw Leaflet — leaflet is the only map dependency).
