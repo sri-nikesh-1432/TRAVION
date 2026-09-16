@@ -82,7 +82,15 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
     setActiveLayer(layer);
     mapRef.current = map;
 
+    // Keep Leaflet's internal size in sync when the panel that hosts the map is
+    // resized (e.g. the tour map expands/collapses). Without this Leaflet keeps
+    // the stale size and tiles render grey/blank until the next interaction.
+    const onResize = () => map.invalidateSize({ animate: false, pan: false });
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(mapContainerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };

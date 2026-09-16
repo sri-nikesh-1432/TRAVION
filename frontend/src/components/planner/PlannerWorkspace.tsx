@@ -37,6 +37,14 @@ interface PlannerWorkspaceProps {
 
 const inr = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
+/** "Day N" → physical calendar date: trip start + (N-1) days. */
+const dayDate = (tripStart: string, dayNo: number): string | null => {
+  const d = new Date(tripStart);
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + (dayNo - 1));
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
 const changeTypeLabel: Record<string, string> = {
   plan_selected: 'Plan selected',
   edit: 'Edited',
@@ -359,6 +367,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
         tripId={tripId}
         itinerary={itinerary}
         budgetMax={budgetMax}
+        tripStart={tripInfo?.start}
         onItineraryChange={onItineraryChange}
       />
 
@@ -586,6 +595,11 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                         <div className="px-3.5 py-2 bg-ivory-50 border-b border-charcoal-100 flex items-center gap-2">
                           <span className="w-6 h-6 rounded-lg bg-travion-600 text-white text-[10px] font-black flex items-center justify-center">{day.day}</span>
                           <span className="text-[12px] font-extrabold text-charcoal-700">Day {day.day}</span>
+                          {tripInfo?.start && dayDate(tripInfo.start, day.day) && (
+                            <span className="text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-50 border border-sky-100 text-sky-700">
+                              {dayDate(tripInfo.start, day.day)}
+                            </span>
+                          )}
                         </div>
                         <ul className="divide-y divide-charcoal-50">
                           {(day.stops || []).map((s) => (

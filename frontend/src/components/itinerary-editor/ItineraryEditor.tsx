@@ -11,6 +11,8 @@ interface ItineraryEditorProps {
   itinerary: TripItinerary;
   budgetMax: number;
   onItineraryChange: (itinerary: TripItinerary, warnings: string[]) => void;
+  /** Trip start datetime (ISO) used to label days with real calendar dates. */
+  tripStart?: string;
 }
 
 const CATEGORY_STYLES: Record<string, string> = {
@@ -23,8 +25,17 @@ const CATEGORY_STYLES: Record<string, string> = {
 
 const inr = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
+/** "Day N" → physical calendar date: trip start + (N-1) days. */
+const dayDate = (tripStart: string | undefined, dayNo: number): string | null => {
+  if (!tripStart) return null;
+  const d = new Date(tripStart);
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + (dayNo - 1));
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
 export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
-  tripId, itinerary, budgetMax, onItineraryChange,
+  tripId, itinerary, budgetMax, onItineraryChange, tripStart,
 }) => {
   const [dragStopId, setDragStopId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
@@ -190,10 +201,15 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({
               <span className="w-8 h-8 rounded-xl bg-travion-600 text-white text-[12px] font-black flex items-center justify-center">
                 {day.day}
               </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-extrabold text-charcoal-900 truncate">Day {day.day}</p>
-                <p className="text-[11px] font-semibold text-charcoal-400 truncate">{day.title}</p>
+              <div className="min-w-0 flex items-center gap-2">
+                <p className="text-[13px] font-extrabold text-charcoal-900">Day {day.day}</p>
+                {dayDate(tripStart, day.day) && (
+                  <span className="text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-50 border border-sky-100 text-sky-700">
+                    {dayDate(tripStart, day.day)}
+                  </span>
+                )}
               </div>
+              <p className="text-[11px] font-semibold text-charcoal-400 truncate">{day.title}</p>
             </div>
 
             {(day.routes?.length ?? 0) > 0 && (

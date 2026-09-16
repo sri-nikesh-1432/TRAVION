@@ -111,6 +111,13 @@ interface TripSearchBarProps {
 
 type FieldKind = 'source' | 'destination';
 
+const LOADING_COPY = [
+  'Finding your route…',
+  'Checking real places…',
+  'Building your destination map…',
+  'Preparing your journey…',
+];
+
 export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoading = false }) => {
   const [sourceQuery, setSourceQuery] = useState('');
   const [destQuery, setDestQuery] = useState('');
@@ -669,171 +676,223 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
   const sourceDropdownOpen = showSourceDropdown;
   const destDropdownOpen = showDestDropdown;
 
-  return (
-    <div className="w-full max-w-5xl mx-auto">
-      {/* Outer Sky-Blue Container */}
-      <div className="p-3 md:p-4 rounded-3xl bg-travion-600/90 backdrop-blur-md shadow-floating border border-travion-400/30">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-3 items-center bg-white rounded-2xl p-2.5 shadow-sm">
+  const dayLabel = (iso: string) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return { day: '—', mon: '', time: '' };
+    const day = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
+    return {
+      day,
+      weekday: d.toLocaleDateString('en-IN', { weekday: 'short' }),
+      time: d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
+    };
+  };
+  const startLabel = dayLabel(startDateTime);
+  const endLabel = dayLabel(endDateTime);
 
-          {/* 1. Source — live worldwide location search */}
-          <div ref={sourceRef} className="relative md:col-span-3">
-            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'source' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
-              <MapPin className="w-5 h-5 text-travion-500 shrink-0" />
-              <div className="w-full min-w-0">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Where are you starting?</label>
-                <input
-                  type="text"
-                  value={sourceQuery}
-                  onChange={(e) => onTyped(e.target.value, 'source')}
-                  onFocus={() => setShowSourceDropdown(true)}
-                  placeholder="Search any location"
-                  autoComplete="off"
-                  className="w-full font-semibold text-charcoal-800 text-sm focus:outline-none bg-transparent placeholder:text-charcoal-300"
-                />
-              </div>
-            </div>
-            <AnimatePresence>
-              {sourceDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-charcoal-100 py-1.5 z-50 max-h-80 overflow-y-auto"
-                >
-                  {sourceQuery.trim().length < 1 ? renderSourceEmpty() : renderResults('source', sourceResults)}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+  const [loadingStep, setLoadingStep] = useState(0);
+  useEffect(() => {
+    if (!isLoading) return;
+    const id = setInterval(() => setLoadingStep(s => (s + 1) % LOADING_COPY.length), 1500);
+    return () => clearInterval(id);
+  }, [isLoading]);
 
-          {/* Swap Button */}
-          <div className="flex justify-center md:col-span-1">
-            <motion.button
-              type="button"
-              animate={{ rotate: swapRotation }}
-              transition={{ duration: 0.35, ease: "easeInOut" }}
-              onClick={handleSwap}
-              className="p-2.5 rounded-full bg-travion-50 text-travion-600 hover:bg-travion-500 hover:text-white border border-travion-200 transition-all shadow-sm focus:outline-none"
-              title="Swap source and destination"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
-            </motion.button>
-          </div>
-
-          {/* 2. Destination — live worldwide location search */}
-          <div ref={destRef} className="relative md:col-span-3">
-            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'destination' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
-              <MapPin className="w-5 h-5 text-red-500 shrink-0" />
-              <div className="w-full min-w-0">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Where are you going?</label>
-                <input
-                  type="text"
-                  value={destQuery}
-                  onChange={(e) => onTyped(e.target.value, 'destination')}
-                  onFocus={() => setShowDestDropdown(true)}
-                  placeholder="Search any city, region, landmark or place"
-                  autoComplete="off"
-                  className="w-full font-semibold text-charcoal-800 text-sm focus:outline-none bg-transparent placeholder:text-charcoal-300"
-                />
-              </div>
-            </div>
-            <AnimatePresence>
-              {destDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-soft-lg border border-charcoal-100 py-1.5 z-50 max-h-80 overflow-y-auto"
-                >
-                  {destQuery.trim().length < 1 ? renderDestinationEmpty() : renderResults('destination', destResults)}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* 3. Start Datetime */}
-          <div className="md:col-span-2">
-            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'start' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
-              <Calendar className="w-4 h-4 text-travion-500 shrink-0" />
-              <div className="w-full overflow-hidden">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">Start date & time</label>
-                <input
-                  type="datetime-local"
-                  min={minDateTimeStr}
-                  value={startDateTime}
-                  onChange={(e) => setStartDateTime(e.target.value)}
-                  className="w-full text-xs font-semibold text-charcoal-700 focus:outline-none bg-transparent"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 4. End Datetime */}
-          <div className="md:col-span-2">
-            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${errorField === 'end' ? 'border-red-400 bg-red-50/40' : 'border-charcoal-200 hover:border-travion-300 focus-within:border-travion-500 focus-within:ring-2 focus-within:ring-travion-100'}`}>
-              <Calendar className="w-4 h-4 text-travion-500 shrink-0" />
-              <div className="w-full overflow-hidden">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-charcoal-400">End date & time</label>
-                <input
-                  type="datetime-local"
-                  min={startDateTime || minDateTimeStr}
-                  value={endDateTime}
-                  onChange={(e) => setEndDateTime(e.target.value)}
-                  className="w-full text-xs font-semibold text-charcoal-700 focus:outline-none bg-transparent"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 5. Search Action Button */}
-          <div className="md:col-span-1 flex items-center justify-center">
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={handleValidateAndSearch}
-              className="w-full h-[46px] rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-sm shadow-md hover:shadow-soft flex items-center justify-center gap-1.5 transition-all disabled:opacity-60"
-            >
-              {isLoading ? (
-                <>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                    className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
-                  />
-                  <span className="hidden lg:inline text-xs">Planning…</span>
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4" />
-                  <span className="hidden lg:inline">Search</span>
-                </>
-              )}
-            </button>
-          </div>
-
+  const locationField = (kind: FieldKind) => {
+    const isSource = kind === 'source';
+    const ref = isSource ? sourceRef : destRef;
+    const query = isSource ? sourceQuery : destQuery;
+    const selected = isSource ? selectedSource : selectedDest;
+    const error = errorField === kind;
+    const open = isSource ? sourceDropdownOpen : destDropdownOpen;
+    const render = () => (query.trim().length < 1
+      ? (isSource ? renderSourceEmpty() : renderDestinationEmpty())
+      : renderResults(kind, isSource ? sourceResults : destResults));
+    return (
+      <div ref={ref} className="relative">
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`w-6 h-6 rounded-lg flex items-center justify-center ${isSource ? 'bg-travion-100 text-travion-600' : 'bg-sand-100 text-cognac-600'}`}>
+            <MapPin className="w-3.5 h-3.5" />
+          </span>
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-charcoal-500">{isSource ? 'From' : 'To'}</span>
+          {selected && (
+            <span className="ml-auto hidden sm:block text-[11px] font-semibold text-charcoal-400 truncate max-w-[160px]">
+              {[selected.state, selected.country].filter(Boolean).join(', ')}
+            </span>
+          )}
         </div>
-      </div>
-
-      {/* Duration Hint or Inline Validation Error */}
-      <div className="mt-2.5 px-4 min-h-[24px] flex items-center justify-between text-xs">
-        {errorMessage ? (
-          <motion.div
-            initial={{ opacity: 0, x: -6 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-1.5 text-red-600 font-semibold"
-          >
-            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-            <span>{errorMessage}</span>
-          </motion.div>
-        ) : (
-          <div className="text-charcoal-500 font-medium flex items-center gap-2">
-            <span>{getDurationHint() || "Every Indian state, district, city and town — plus live worldwide places"}</span>
+        <div className={[
+          'flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-white/70 transition-all',
+          error ? 'border-red-400 bg-red-50/50 ring-2 ring-red-100'
+            : open ? 'border-travion-400 shadow-soft ring-2 ring-travion-100'
+              : 'border-charcoal-200 hover:border-travion-300 lg:hover:translate-y-[-1px]',
+        ].join(' ')}>
+          <div className="w-full min-w-0">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => onTyped(e.target.value, kind)}
+              onFocus={() => (isSource ? setShowSourceDropdown(true) : setShowDestDropdown(true))}
+              placeholder={isSource ? 'Search any location' : 'Search any city, region, landmark or place'}
+              autoComplete="off"
+              aria-label={isSource ? 'Starting location' : 'Destination'}
+              className="w-full font-bold text-charcoal-800 text-[15px] focus:outline-none bg-transparent placeholder:text-charcoal-300 placeholder:font-semibold"
+            />
           </div>
-        )}
+          {isSource && (
+            <span className="shrink-0">
+              <button
+                type="button"
+                onClick={useCurrentLocation}
+                disabled={geoState === 'locating'}
+                title="Use my current location"
+                aria-label="Use my current location"
+                className={`p-2 rounded-xl transition-colors ${geoState === 'locating' ? 'bg-travion-100 text-travion-600 animate-pulse' : 'text-charcoal-300 hover:text-travion-600 hover:bg-travion-50'}`}
+              >
+                {geoState === 'locating' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+              </button>
+            </span>
+          )}
+        </div>
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className="absolute left-0 right-0 top-full mt-2.5 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-floating border border-charcoal-100 py-1.5 z-50 max-h-80 overflow-y-auto"
+            >
+              {render()}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
 
-        <div className="hidden sm:flex items-center gap-2 text-charcoal-400 text-[11px]">
-          <Globe className="w-3 h-3 text-travion-400" />
-          <span>{mapsReady ? 'Full India index · live worldwide search' : 'Full India index loaded · worldwide live search unavailable'}</span>
+  const dateField = (kind: 'start' | 'end') => {
+    const isStart = kind === 'start';
+    const value = isStart ? startDateTime : endDateTime;
+    const label = isStart ? startLabel : endLabel;
+    const error = errorField === kind;
+    return (
+      <div className={`relative rounded-2xl border bg-ivory-50 px-4 py-3 transition-all focus-within:ring-2 focus-within:ring-travion-100 ${error ? 'border-red-400 ring-2 ring-red-100' : 'border-charcoal-100 hover:border-travion-300'}`}>
+        <div className="flex items-center gap-3">
+          <Calendar className="w-4.5 h-4.5 text-travion-500 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[9.5px] font-black uppercase tracking-[0.16em] text-charcoal-400">{isStart ? 'Start' : 'End'}</p>
+            <p className="font-extrabold text-charcoal-800 text-[15px] leading-tight truncate">{label.day}<span className="text-charcoal-400 font-semibold mx-1">·</span>{label.time}</p>
+          </div>
+        </div>
+        <input
+          type="datetime-local"
+          min={isStart ? minDateTimeStr : startDateTime || minDateTimeStr}
+          value={value}
+          onChange={(e) => (isStart ? setStartDateTime(e.target.value) : setEndDateTime(e.target.value))}
+          aria-label={(isStart ? 'Start' : 'End') + ' date and time'}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          tabIndex={0}
+        />
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full max-w-4xl mx-auto">
+      {/* Premium glass planner surface */}
+      <div className="relative rounded-[30px] bg-white/80 backdrop-blur-2xl border border-white/70 shadow-floating overflow-visible">
+        <div className="pointer-events-none absolute -top-px inset-x-12 h-px bg-gradient-to-r from-transparent via-sky-200 to-transparent" />
+        <div className="p-4 sm:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-start">
+            {locationField('source')}
+            <div className="hidden md:flex pt-9">
+              <motion.button
+                type="button"
+                animate={{ rotate: swapRotation }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                onClick={handleSwap}
+                className="p-2.5 rounded-full bg-travion-50 text-travion-600 hover:bg-travion-500 hover:text-white border border-travion-200 transition-all shadow-sm focus:outline-none"
+                title="Swap source and destination"
+                aria-label="Swap source and destination"
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+              </motion.button>
+            </div>
+            {locationField('destination')}
+            <div className="flex justify-center md:hidden -my-1">
+              <motion.button
+                type="button"
+                animate={{ rotate: swapRotation }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                onClick={handleSwap}
+                className="p-2 rounded-full bg-travion-50 text-travion-600 hover:bg-travion-500 hover:text-white border border-travion-200 transition-all shadow-sm focus:outline-none"
+                title="Swap destination and starting point"
+                aria-label="Swap destination and starting point"
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+              </motion.button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col lg:flex-row lg:items-stretch gap-3">
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-stretch gap-3">
+              {dateField('start')}
+              <div className="hidden sm:flex items-center justify-center">
+                <span className="text-charcoal-300 font-black text-sm">→</span>
+              </div>
+              {dateField('end')}
+            </div>
+
+            <div className="lg:w-[240px]">
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleValidateAndSearch}
+                aria-label="Explore trip"
+                className="w-full h-full min-h-[58px] rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-extrabold text-[15px] shadow-soft hover:shadow-floating flex items-center justify-center gap-2.5 transition-all disabled:opacity-70 disabled:cursor-wait active:scale-[0.99] px-5"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                    <span className="text-[13px] font-bold">{LOADING_COPY[loadingStep]}</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4.5 h-4.5" />
+                    <span>Explore trip</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Duration / trust hint */}
+          <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs min-h-[20px]">
+            {errorMessage ? (
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-1.5 text-red-600 font-semibold flex-1"
+              >
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>{errorMessage}</span>
+              </motion.div>
+            ) : (
+              <div className="flex items-center gap-2 text-charcoal-500 font-semibold flex-1">
+                {getDurationHint() ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-travion-50 text-travion-700 text-[11.5px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-travion-500" />
+                    {getDurationHint()}
+                  </span>
+                ) : (
+                  <span>Every Indian state, district, city and town — plus live worldwide places</span>
+                )}
+              </div>
+            )}
+            <div className="hidden sm:flex items-center gap-2 text-charcoal-400 text-[11px] font-semibold">
+              <Globe className="w-3 h-3 text-travion-400" />
+              <span>{mapsReady ? 'Full India index · live worldwide search' : 'Full India index loaded · worldwide live search unavailable'}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

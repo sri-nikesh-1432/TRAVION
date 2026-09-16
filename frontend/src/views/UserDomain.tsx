@@ -144,6 +144,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // flow (product rule): users plan in Adventurous Mode; guides join later via
   // manager assignment. The guide signup stays a separate landing-page flow.
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   // Step 3 selections held while the traveller picks the trip experience
   // (Guide / Adventurous). Nothing is lost between discovery and planning —
   // these ride the plan-multi request once the mode is chosen (spec §6).
@@ -379,6 +380,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     endDate: string;
   }) => {
     setPlanError(null);
+    setIsSearching(true);
     try {
       const source = await ensureRegistered(searchData.source);
       const destination = await ensureRegistered(searchData.destination);
@@ -392,6 +394,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     } catch (err: any) {
       // e.g. same source/destination or past dates — surface inline instead of silently failing
       setPlanError(getPlanErrorMessage(err));
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -773,16 +777,22 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           )}
         </AnimatePresence>
 
-        {/* VIEW 1: Search & Home */}
+        {/* VIEW 1: Search & Home — the beginning of a journey */}
         {currentView === 'search' && (
-          <div className="pt-6">
-            <div className="text-center max-w-2xl mx-auto mb-8">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-travion-600">AI Travel Hub</span>
-              <h2 className="text-3xl sm:text-4xl font-black text-charcoal-900 tracking-tight mt-1">
-                Where would you like to go?
-              </h2>
-              <p className="text-xs sm:text-sm text-charcoal-500 mt-2 font-medium">
-                Start anywhere, go anywhere. Search any city, region, landmark or place — Travion orchestrates the journey around you.
+          <div className="pt-8 md:pt-12">
+            {/* Editorial hero */}
+            <div className="relative max-w-3xl mx-auto text-center mb-9">
+              <div aria-hidden="true" className="absolute -top-20 left-1/2 -translate-x-1/2 w-[620px] h-[260px] rounded-full bg-gradient-to-r from-sky-200/50 via-travion-100/60 to-sand-200/50 blur-3xl -z-10" />
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase tracking-[0.18em] text-travion-700 bg-white/70 backdrop-blur border border-travion-100 rounded-full px-3.5 py-1.5 shadow-sm">
+                <Sparkles className="w-3.5 h-3.5" />
+                AI Travel Planner · India & beyond
+              </span>
+              <h1 className="font-black text-charcoal-900 tracking-tight mt-5 text-[2.35rem] leading-[1.04] sm:text-5xl sm:leading-[1.03]">
+                Plan a trip that feels{' '}
+                <span className="font-editorial italic font-medium text-travion-600">effortless.</span>
+              </h1>
+              <p className="text-charcoal-500 mt-4 text-[15px] sm:text-base font-medium leading-relaxed max-w-xl mx-auto">
+                Where would you like to go? Tell us where you're coming from, where you're going, and when — Travion plans, adapts and supports the whole journey.
               </p>
             </div>
 
@@ -807,7 +817,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               )}
             </AnimatePresence>
 
-            <TripSearchBar onSearch={handleTripSearch} />
+            <TripSearchBar onSearch={handleTripSearch} isLoading={isSearching} />
+
+            {/* Trust strip — factual product capabilities, never invented stats */}
+            <div className="mt-7 flex flex-wrap items-center justify-center gap-x-7 gap-y-2.5 text-[11.5px] font-semibold text-charcoal-500">
+              <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Verified real places</span>
+              <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-travion-500" /> AI planning</span>
+              <span className="flex items-center gap-1.5"><BadgeCheck className="w-3.5 h-3.5 text-cognac-500" /> Human guide support</span>
+              <span className="flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-charcoal-400" /> Secure payments</span>
+            </div>
 
             {/* Recent Trips Section */}
             {myTrips.length > 0 && (

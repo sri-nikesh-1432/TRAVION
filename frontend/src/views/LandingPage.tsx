@@ -619,7 +619,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 transition={{ duration: 1, delay: 0.35, ease: EASE }}
                 className="mt-6 text-white text-[clamp(2.5rem,6vw,4.7rem)] font-extrabold leading-[1.04] tracking-[-0.03em]"
               >
-                Travel without
+                Travel without{' '}
                 <br />
                 <em className="font-editorial font-normal italic tracking-[-0.01em] bg-clip-text text-transparent bg-gradient-to-r from-ivory-200 via-sky-200 to-gold-200">
                   the uncertainty.
