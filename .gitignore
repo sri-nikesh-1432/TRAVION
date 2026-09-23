@@ -18,3 +18,6 @@ Thumbs.db
 
 # Netlify CLI local state
 .netlify/
+
+# Landing-page QA screenshots (local only)
+frontend/qa-screenshots/

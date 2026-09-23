@@ -136,16 +136,7 @@ export const App: React.FC = () => {
   // Compute the root view, then wrap it in the toast provider.
   let view: React.ReactNode;
 
-  if (!session) {
-    view = (
-      <LandingPage
-        onLoginSuccess={handleLoginSuccess}
-        onExploreDemo={handleLaunchSandboxDemo}
-        onOpenGuideRegistration={() => setShowGuideRegister(true)}
-        onOpenGuideSignIn={() => setShowGuideSignIn(true)}
-      />
-    );
-  } else if (showGuideRegister || showGuideSignIn) {
+  if (showGuideRegister || showGuideSignIn) {
     view = (
       <SuspenseShell>
         <div className="min-h-screen bg-white">
@@ -162,6 +153,15 @@ export const App: React.FC = () => {
           )}
         </div>
       </SuspenseShell>
+    );
+  } else if (!session) {
+    view = (
+      <LandingPage
+        onLoginSuccess={handleLoginSuccess}
+        onExploreDemo={handleLaunchSandboxDemo}
+        onOpenGuideRegistration={() => setShowGuideRegister(true)}
+        onOpenGuideSignIn={() => setShowGuideSignIn(true)}
+      />
     );
   } else if (session.role === 'GUIDE') {
     if (guideView === 'verification' || guideView === 'update_profile') {
