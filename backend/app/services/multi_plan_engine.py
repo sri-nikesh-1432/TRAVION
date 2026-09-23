@@ -11,9 +11,19 @@ exactly three differentiated in-budget variants:
   PLAN C — PREMIUM      richest real stay tier, private transport, premium dining
 
 Hard rules enforced here (server-side, never just UI):
-  * base_plan_cost x 1.03 <= budget_max  → the 3% platform fee is computed
-    INSIDE the user's ceiling, because the budget means total spending.
-  * platform_fee = round(0.03 x base_plan_cost); final_total = base + fee.
+  * FINAL PLANNED AMOUNT (spec §23-26): every mode prices
+    final_total = base + guide_fee (12.5% GUIDE_MODE only) + platform_fee
+    (3% ALWAYS) + safety_reserve (15% ALWAYS) + insurance (₹50 fixed,
+    every booking) — fees stack ON TOP of the base travel spend, never
+    hidden inside it. No card may show platform fee ₹0 unless the base is
+    genuinely ₹0.
+  * safety_reserve is RESERVED funds for emergencies — shown as its own
+    line, never silently merged into another amount or allocated to
+    fake bookings.
+  * Meal windows (breakfast 07:00–10:30, lunch 12:00–15:00, snacks
+    15:30–18:00, dinner 19:00–22:00) are enforced on every day where the
+    trip hours allow: real selected restaurants keep their slots; generic
+    meal holds are inserted when a window is otherwise missed.
   * Every selected place is injected into EVERY plan. If one genuinely cannot
     fit the schedule, a visible warning is returned — never a silent drop.
   * Stay tiers come from real verified stays (name, tier, per-night price).
@@ -30,8 +40,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.verified_data import VERIFIED_STAYS, VERIFIED_ATTRACTIONS, VERIFIED_FOOD
 
-PLATFORM_FEE_RATE = 0.03  # explicit product rule: 3% of the generated plan cost
-GUIDE_FEE_RATE = 0.125  # product rule: 12.5% of plan base cost in GUIDE_MODE
+PLATFORM_FEE_RATE = 0.03  # explicit product rule: 3% of the base trip cost, ALWAYS
+GUIDE_FEE_RATE = 0.125  # product rule: 12.5% of base trip cost in GUIDE_MODE only
+SAFETY_RESERVE_RATE = 0.15  # product rule: 15% of base trip cost, ALWAYS reserved
+INSURANCE_FEE = 50.0  # fixed ₹50 insurance in EVERY booking (TRAVION Refund Protection)
+
+# Realistic meal windows (minutes from midnight) — spec §9 defaults.
+MEAL_WINDOWS = [
+    ("Breakfast", 7 * 60, 10 * 60 + 30),
+    ("Lunch", 12 * 60, 15 * 60),
+    ("Snacks", 15 * 60 + 30, 18 * 60),
+    ("Dinner", 19 * 60, 22 * 60),
+]
 
 
 # ── Time helpers (existing planners use "%I:%M %p", e.g. "10:00 AM") ────────
@@ -52,6 +72,101 @@ def _from_minutes(m: int) -> str:
 def _bump(label: str, minutes: int) -> str:
     m = _to_minutes(label)
     return _from_minutes((m if m is not None else 600) + minutes)
+
+
+def _meal_label_from_minutes(m: int) -> str:
+    """Minute-of-day → 'h:mm AM/PM' meal-hold label ('12:30 PM')."""
+    return _from_minutes(m)
+
+
+def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
+    """Guarantee every travel day's meals land INSIDE their realistic windows
+    (spec §8/§9) without touching real selected restaurants.
+
+    For each day and each meal window (breakfast 07:00–10:30, lunch
+    12:00–15:00, snacks 15:30–18:00, dinner 19:00–22:00):
+      1. A real restaurant stop (category 'food') already inside the window
+         satisfies it — untouched, exactly where the traveller chose it.
+      2. Otherwise a clearly-labelled meal hold ('Lunch — local cuisine') is
+         inserted at a free slot inside the window, so no day ever shows
+         lunch at 10:25 PM or a meal-less day when the trip hours allow it.
+    Meal holds are skippable placeholders — a real nearby eatery replaces
+    them naturally when the traveller adds one from discovery.
+    Returns the number of holds inserted (informational).
+    """
+    inserted = 0
+    seen_holds: set = set()
+    for d in days:
+        stops = d.get("stops") or []
+        day_num = int(d.get("day", 0) or 0)
+        food_stops = [s for s in stops if str(s.get("category", "")) == "food"]
+        day_min = min(
+            (_to_minutes(str(s.get("time", ""))) for s in stops
+             if _to_minutes(str(s.get("time", ""))) is not None),
+            default=None,
+        )
+        if day_min is None:
+            continue
+        used = []
+        for label, lo, hi in MEAL_WINDOWS:
+            # The trip hours genuinely exclude this window (e.g. a 4 PM Day-1
+            # start can never include breakfast) — skipping is CORRECT.
+            if hi <= day_min:
+                used.append(None)
+                continue
+            satisfied = False
+            for s in food_stops:
+                sm = _to_minutes(str(s.get("time", "")))
+                if sm is None:
+                    continue
+                if lo <= sm <= hi:
+                    used.append(sm)
+                    satisfied = True
+                    break
+            if satisfied:
+                continue
+            # Prefer the window midpoint; nudge later in 30-min steps while a
+            # real stop occupies that minute (overlap-free placement).
+            t = (lo + hi) // 2
+            while any(u is not None and abs(u - t) < 40 for u in used) or any(
+                abs(( _to_minutes(str(s.get("time", ""))) or -1) - t) < 40
+                for s in stops if _to_minutes(str(s.get("time", ""))) is not None
+            ):
+                t += 30
+                if t > hi:
+                    t = hi
+                    break
+            hold_key = (day_num, label.lower())
+            if hold_key in seen_holds or any(
+                str(s.get("id", "")).startswith("meal-")
+                and str(s.get("title", "")).lower().startswith(label.lower())
+                for s in stops
+            ):
+                used.append(None)
+                continue
+            seen_holds.add(hold_key)
+            used.append(t)
+            stops.append({
+                "id": f"meal-{day_num}-{label.lower()}",
+                "day": day_num or 1,
+                "time": _meal_label_from_minutes(t),
+                "title": f"{label} — local cuisine",
+                "description": (
+                    f"{label} break near the day's route. Add a real restaurant "
+                    "from discovery to fill this slot."
+                ),
+                "category": "meal_hold",
+                "location_name": str(d.get("title", "") or ""),
+                "lat": 0.0,
+                "lng": 0.0,
+                "estimated_cost": 0,
+                "duration_minutes": 45,
+                "source": "meal_window",
+                "verified": False,
+            })
+            inserted += 1
+        d["stops"] = stops
+    return inserted
 
 
 def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
@@ -402,9 +517,12 @@ def build_plans(
     guide_mode = mode == "GUIDE_MODE"
     plans: List[Dict[str, Any]] = []
     n_selected = len(selected_places or [])
-    # Fee total factor over the plan's base cost (travel spend): GUIDE_MODE adds
-    # the 12.5% guide fee + 3% platform fee on top; otherwise only 3% platform.
-    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
+    # FINAL PLANNED AMOUNT factor over the plan's base cost (travel spend):
+    # fees stack ON TOP in EVERY mode (spec §23-26) — GUIDE_MODE adds the
+    # 12.5% guide fee, the 3% platform + 15% safety reserve apply always, and
+    # the fixed ₹50 insurance sits on every booking.
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE) if guide_mode \
+        else (1.0 + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
 
     budget_stay_tiers = ["Budget Guesthouse", "2 Star", "Homestay", "3 Star"]
     span = max(0.0, float(budget_max or 0.0) - float(budget_min or 0.0))
@@ -541,13 +659,13 @@ def build_plans(
         if chronology_notes:
             warnings.extend(chronology_notes[:3])
 
-        # 5. HARD BUDGET: the budget range is the TRAVEL-SPEND range. In
-        #    GUIDE_MODE the 12.5% guide fee + 3% platform fee are charged ON TOP
-        #    of that spend (budget 10,000 → guide 1,250 → total 11,550), so the
+        # 5. HARD BUDGET: the budget range is the TRAVEL-SPEND range in every
+        #    mode. Fees (12.5% guide in GUIDE_MODE; 3% platform + 15% safety
+        #    reserve always) stack ON TOP of that spend (spec §23-26), so the
         #    plan's base cost fills the chosen rung directly
-        #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling). In ADVENTUROUS
-        #    the 3% platform fee lives INSIDE the rung (spend backed out).
-        base_ceiling = variant_target if guide_mode else variant_target / fee_factor
+        #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling) and the final
+        #    planned amount is spend × fee_factor.
+        base_ceiling = variant_target
         fixed = transport
         flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
@@ -583,7 +701,9 @@ def build_plans(
         spend = round(base_cost, 0)
         guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
         platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
-        final_total = spend + guide_fee + platform_fee
+        safety_reserve = round(spend * SAFETY_RESERVE_RATE, 0)
+        insurance_fee = INSURANCE_FEE
+        final_total = spend + guide_fee + platform_fee + safety_reserve + insurance_fee
 
         # Honest budget-range communication — never padding prices to hit a rung.
         if variant == "VALUE" and verbose:
@@ -614,7 +734,9 @@ def build_plans(
             "travel_spend": spend,
             "guide_fee": round(guide_fee, 0),
             "platform_fee": platform_fee,
-            "payable": round(guide_fee + platform_fee, 0),
+            "safety_reserve": safety_reserve,
+            "insurance_fee": insurance_fee,
+            "payable": round(final_total, 0),
             "base_plan_cost": spend,
             "final_total": round(final_total, 0),
             "total": round(final_total, 0),
@@ -647,14 +769,16 @@ def build_plans(
             "tagline": p["tagline"],
             "base_plan_cost": spend,
             "platform_fee": platform_fee,
+            "safety_reserve": safety_reserve,
+            "insurance_fee": insurance_fee,
             "final_total": round(final_total, 0),
             "total_cost": round(final_total, 0),
             "cost_breakdown": breakdown,
             "days": days,
             "budget_min": budget_min,
             "budget_max": budget_max,
-            "remaining_budget": round(budget_max - (spend if guide_mode else final_total), 0),
-            "within_budget": bool((spend if guide_mode else final_total) <= budget_max),
+            "remaining_budget": round(budget_max - spend, 0),
+            "within_budget": bool(spend <= budget_max),
             "highlights": highlights,
             "warnings": warnings,
             "recommended": variant == "RECOMMENDED",
@@ -838,6 +962,16 @@ def enforce_chronology(
                 s["ai_note"] = f"Moved to Day {day_num + 1} — Day {day_num} was fully committed."
                 notes.append(f"Day {day_num}: '{s.get('title', 'Stop')}' deferred to Day {day_num + 1} (day overflow).")
                 target.setdefault("stops", []).append(s)
+    # MEAL WINDOWS (spec §8/§9): after chronology, ensure each day's breakfast/
+    # lunch/snacks/dinner sit inside realistic windows — real selected
+    # restaurants are untouched; clear meal holds fill otherwise-missed windows.
+    _insert_missing_meal_stops(days)
+    # Re-sort each day so inserted holds sit in chronological position.
+    for d in days:
+        d["stops"] = sorted(
+            [s for s in (d.get("stops") or []) if _to_minutes(str(s.get("time", ""))) is not None],
+            key=lambda s: _to_minutes(str(s.get("time", ""))) or 0,
+        ) + [s for s in (d.get("stops") or []) if _to_minutes(str(s.get("time", ""))) is None]
     return notes
 
 
@@ -846,14 +980,14 @@ def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List
     by_type = {p["type"]: p for p in plans}
     budget_max = float(plans[0]["budget_max"]) if plans else 0.0
     # The traveller's selected maximum budget is the HARD ceiling for the
-    # plan's TRAVEL SPEND. In GUIDE_MODE the guide (12.5%) and platform (3%)
-    # fees are added ON TOP of the spend, so the premium plan may reach a
-    # final_total of budget_max × fee_factor; otherwise fees stay inside
-    # budget_max (ADVENTUROUS = 3% platform only, inside the ceiling).
+    # plan's TRAVEL SPEND in every mode. Fees (guide 12.5% in GUIDE_MODE;
+    # platform 3% + safety 15% always) stack ON TOP of the spend, so the
+    # premium plan may reach final_total = budget_max × fee_factor.
     def _final_cap(p: Dict[str, Any]) -> float:
-        fac = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE)
-        fac = fac if (p["cost_breakdown"] or {}).get("guide_mode") else (1.0 + PLATFORM_FEE_RATE)
-        return float(budget_max * fac)
+        fac = (1.0 + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
+        if (p["cost_breakdown"] or {}).get("guide_mode"):
+            fac = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
+        return float(budget_max * fac + INSURANCE_FEE)
     prem_cap = _final_cap(by_type["PREMIUM"])
     prem = min(by_type["PREMIUM"]["final_total"], prem_cap)
     rec = min(by_type["RECOMMENDED"]["final_total"], prem)
@@ -863,12 +997,10 @@ def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List
     for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
         if plan["final_total"] > target:
             _shave_final_to(plan, float(target), verbose=verbose)
-    # within_budget is exact (no tolerance): in GUIDE_MODE the TRAVEL SPEND
-    # must sit within the budget (fees are on top); otherwise the total must.
+    # within_budget is exact (no tolerance): the TRAVEL SPEND must sit within
+    # the budget in every mode (fees are on top per spec §23-26).
     for plan in plans:
-        guide_mode = bool((plan.get("cost_breakdown") or {}).get("guide_mode"))
-        comparable = plan["base_plan_cost"] if guide_mode else float(plan["final_total"])
-        plan["within_budget"] = bool(comparable <= float(plan["budget_max"]))
+        plan["within_budget"] = bool(float(plan["base_plan_cost"]) <= float(plan["budget_max"]))
     return plans
 
 
@@ -877,10 +1009,11 @@ def _shave_final_to(plan: Dict[str, Any], target: float, verbose: bool = True) -
     bd = plan["cost_breakdown"]
     guide_mode = bool(bd.get("guide_mode"))
     # Target is the final total (incl. fees). The plan's base spend must satisfy
-    # spend × (1 + guide_rate + platform_rate) <= target in GUIDE_MODE, else
-    # spend × (1 + platform_rate) <= target.
-    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
-    spend_target = target / fee_factor
+    # spend × fee_factor <= target, where fee_factor stacks guide (GUIDE_MODE
+    # only) + platform + safety over the base (spec §23-26).
+    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE) if guide_mode \
+        else (1.0 + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
+    spend_target = (target - INSURANCE_FEE) / fee_factor
     transport = float(bd.get("transport", 0) or 0)
     stay = float(bd.get("stay", 0) or 0)
     food = float(bd.get("food", 0) or 0)
@@ -895,26 +1028,30 @@ def _shave_final_to(plan: Dict[str, Any], target: float, verbose: bool = True) -
             take = min(transport, excess); transport -= take; excess -= take
 
     spend = round(transport + stay + food + activities, 0)
-    spend = min(spend, int(target / fee_factor))
+    spend = min(spend, int(max(0.0, target - INSURANCE_FEE) / fee_factor))
     guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
     platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
-    final_total = spend + guide_fee + platform_fee
+    safety_reserve = round(spend * SAFETY_RESERVE_RATE, 0)
+    insurance_fee = INSURANCE_FEE
+    final_total = spend + guide_fee + platform_fee + safety_reserve + insurance_fee
     bd.update({
         "stay": round(stay, 0), "food": round(food, 0), "activities": round(activities, 0),
         "travel_spend": spend,
         "guide_fee": round(guide_fee, 0),
-        "platform_fee": platform_fee, "base_plan_cost": spend,
+        "platform_fee": platform_fee,
+        "safety_reserve": safety_reserve,
+        "insurance_fee": insurance_fee,
+        "base_plan_cost": spend,
         "final_total": round(final_total, 0), "total": round(final_total, 0),
-        "payable": round(guide_fee + platform_fee, 0),
+        "payable": round(final_total, 0),
     })
     plan.update({
         "base_plan_cost": spend, "platform_fee": platform_fee,
+        "safety_reserve": safety_reserve, "insurance_fee": insurance_fee,
         "final_total": round(final_total, 0), "total_cost": round(final_total, 0),
-        # GUIDE_MODE: fees sit on top of the travel spend; what remains of the
-        # traveller's budget is budget − spend. ADVENTUROUS: budget − total.
-        "remaining_budget": round(
-            plan["budget_max"] - (spend if guide_mode else final_total), 0
-        ),
+        # Fees sit on top of the travel spend in EVERY mode (spec §23-26);
+        # what remains of the traveller's budget is budget − spend.
+        "remaining_budget": round(plan["budget_max"] - spend, 0),
     })
     plan.setdefault("warnings", [])
     if verbose:
@@ -962,41 +1099,42 @@ def validate_days(days: List[Dict[str, Any]], budget_max: float, total_cost: flo
 def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     """Mode-aware belt-and-braces clamp, shared by EVERY plan surface.
 
-    Recomputs a plan's fee/total from the single rule — base cost = travel
-    spend, guide fee 12.5% of it in GUIDE_MODE, platform fee 3% of it.
-    In GUIDE_MODE the fees are added ON TOP of the travel spend (budget 10,000
-    → guide 1,250, platform 300, total 11,550), so the spend is clamped to the
-    budget while the final total may exceed it. In ADVENTUROUS the 3% platform
-    fee lives INSIDE the budget (spend backed out). Guarantees the invariant:
-        final_total == base_plan_cost + guide_fee + platform_fee.
+    Recomputs a plan's fees/total from the single rule (spec §23-26): base
+    cost = travel spend in EVERY mode; fees stack ON TOP — guide fee 12.5%
+    in GUIDE_MODE only, platform fee 3% always, safety reserve 15% always.
+    Guarantees the invariant:
+        final_total == base + guide_fee + platform_fee + safety_reserve.
     """
     bd = plan["cost_breakdown"]
     guide_mode = bool(bd.get("guide_mode"))
-    fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE) if guide_mode else (1.0 + PLATFORM_FEE_RATE)
     raw_spend = float(plan["base_plan_cost"])
     if float(budget_max) > 0:
-        # GUIDE_MODE: budget = travel spend, fees added on top.
-        # ADVENTUROUS: 3% platform fee backed out of the budget ceiling.
-        divider = 1.0 if guide_mode else fee_factor
-        spend = int(min(raw_spend, float(budget_max) / divider))
+        # The budget is the travel-spend ceiling in every mode; fees are on top.
+        spend = int(min(raw_spend, float(budget_max)))
     else:
         spend = round(raw_spend, 0)
     guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
     guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else guid_fee_seed
     platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
-    final_total = round(spend + guide_fee + platform_fee, 0)
+    safety_reserve = round(spend * SAFETY_RESERVE_RATE, 0)
+    insurance_fee = float(bd.get("insurance_fee", INSURANCE_FEE) or INSURANCE_FEE)
+    final_total = round(spend + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
     plan["base_plan_cost"] = spend
     plan["platform_fee"] = platform_fee
+    plan["safety_reserve"] = safety_reserve
+    plan["insurance_fee"] = insurance_fee
     plan["final_total"] = final_total
     plan["total_cost"] = final_total
-    plan["remaining_budget"] = round(float(budget_max) - (spend if guide_mode else final_total), 0)
-    plan["within_budget"] = bool((spend if guide_mode else final_total) <= float(budget_max))
+    plan["remaining_budget"] = round(float(budget_max) - spend, 0)
+    plan["within_budget"] = bool(spend <= float(budget_max))
     bd["base_plan_cost"] = spend
     bd["guide_fee"] = round(guide_fee, 0)
     bd["platform_fee"] = platform_fee
+    bd["safety_reserve"] = safety_reserve
+    bd["insurance_fee"] = insurance_fee
     bd["final_total"] = final_total
     bd["total"] = final_total
-    bd["payable"] = round(guide_fee + platform_fee, 0)
+    bd["payable"] = final_total
 
 
 def recalculate_change(
@@ -1030,13 +1168,17 @@ def recalculate_change(
         spend = _base_total()
         guide_fee = round(spend * GUIDE_FEE_RATE, 0) if guide_mode else float(breakdown.get("guide_fee", 0) or 0)
         platform_fee = round(spend * PLATFORM_FEE_RATE, 0)
-        final_total = spend + guide_fee + platform_fee
+        safety_reserve = round(spend * SAFETY_RESERVE_RATE, 0)
+        insurance_fee = float(breakdown.get("insurance_fee", INSURANCE_FEE) or INSURANCE_FEE)
+        final_total = spend + guide_fee + platform_fee + safety_reserve + insurance_fee
         breakdown["guide_fee"] = round(guide_fee, 0)
         breakdown["platform_fee"] = platform_fee
+        breakdown["safety_reserve"] = safety_reserve
+        breakdown["insurance_fee"] = insurance_fee
         breakdown["base_plan_cost"] = round(spend, 0)
         breakdown["final_total"] = round(final_total, 0)
         breakdown["total"] = round(final_total, 0)
-        breakdown["payable"] = round(guide_fee + platform_fee, 0)
+        breakdown["payable"] = round(final_total, 0)
         breakdown["travel_spend"] = round(spend, 0)
 
     def _shift_bucket(cat: str, delta: float) -> None:

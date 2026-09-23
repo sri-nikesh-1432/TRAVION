@@ -50,17 +50,30 @@ GUIDE_MIN_FEE = 1500.0
 GUIDE_MAX_FEE = 30000.0
 
 # Guide fee as a percentage of the plan's base cost (travel spend) in GUIDE_MODE.
-# Product spec: e.g. a ₹15,000 plan -> 12.5% guide fee = ₹1,875, plus a 3%
-# platform fee. Only ever charged in GUIDE_MODE.
+# Product spec: e.g. a ₹15,000 plan -> 12.5% of base = ₹1,875 guide fee. Only
+# ever charged in GUIDE_MODE — Adventurous Mode pays NO guide fee.
 GUIDE_FEE_RATE = 0.125
 
-# Platform fee: percentage bands over the estimated travel spend by budget tier.
+# Platform fee: flat 3% of the base trip cost — ALWAYS applied in every mode
+# (product rule: no card may ever show platform fee ₹0 unless the base is ₹0).
+PLATFORM_FEE_RATE = 0.03
+
+# Safety reserve: flat 15% of the base trip cost — ALWAYS reserved in every
+# mode. It is NOT a fee the platform collects; it is shown as reserved funds
+# for unexpected travel or emergency needs and never silently merged into
+# another line.
+SAFETY_RESERVE_RATE = 0.15
+
+# Insurance: fixed ₹50 included in EVERY trip booking (TRAVION Refund
+# Protection). If a trip is cancelled or cannot be fulfilled due to an issue
+# attributable to TRAVION, the ₹50 Insurance Fee + the 3% Platform Fee are
+# refunded to the traveller. See travion_caused_refund() below.
+INSURANCE_FEE = 50.0
+
+# Legacy percentage bands retained for compatibility (the product rule is the
+# flat 3% above; platform_rate_for_budget now always returns it).
 PLATFORM_RATE_BANDS = [
-    (10000, 0.06),   # up to ~10k budget
-    (25000, 0.055),  # up to ~25k
-    (50000, 0.05),   # up to ~50k
-    (100000, 0.045),  # up to ~1L
-    (float("inf"), 0.04),  # 1L+
+    (float("inf"), 0.03),
 ]
 PLATFORM_MIN_FEE = 149.0
 PLATFORM_MAX_FEE = 7499.0
@@ -166,13 +179,39 @@ def compute_guide_fee(
     return round(max(GUIDE_MIN_FEE, min(fee, GUIDE_MAX_FEE)), 0)
 
 
+def compute_safety_reserve(base_budget: float) -> float:
+    """Safety reserve: 15% of the base trip budget, ALWAYS included.
+
+    Reserved for unexpected travel or emergency needs — never a collected fee,
+    never merged into the guide or platform fee. Shown separately everywhere.
+    """
+    return round(max(0.0, float(base_budget or 0)) * SAFETY_RESERVE_RATE, 0)
+
+
+def compute_insurance_fee() -> float:
+    """Insurance fee: fixed ₹50, included in every trip booking."""
+    return INSURANCE_FEE
+
+
+def travion_caused_refund(platform_fee: float, insurance_fee: Optional[float] = None) -> float:
+    """TRAVION Refund Protection (product policy).
+
+    When a trip is cancelled or cannot be fulfilled due to an issue
+    attributable to TRAVION, the traveller is refunded the 3% Platform Fee
+    plus the ₹50 Insurance Fee. This protection applies specifically to
+    TRAVION-caused cancellation/non-fulfilment — not to traveller-initiated
+    cancellations or circumstances outside TRAVION's responsibility.
+    """
+    return round(float(platform_fee or 0) + (INSURANCE_FEE if insurance_fee is None else insurance_fee), 0)
+
+
 def compute_platform_fee(budget: float) -> float:
-    """Platform fee: rate-band percentage over the declared trip budget."""
-    if budget <= 0:
-        budget = 10000.0
-    rate = platform_rate_for_budget(budget)
-    fee = budget * rate
-    return round(max(PLATFORM_MIN_FEE, min(fee, PLATFORM_MAX_FEE)), 0)
+    """Platform fee: flat 3% of the base trip cost — always applied.
+
+    Product rule (spec §22): the platform fee is ALWAYS 3% of the complete
+    base trip budget. It is never ₹0 for a non-zero budget and never banded.
+    """
+    return round(max(0.0, float(budget or 0)) * PLATFORM_FEE_RATE, 0)
 
 
 def compute_fees(
@@ -183,22 +222,32 @@ def compute_fees(
     party_type: Optional[str] = None,
     luxury_level: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Compute full Travion fee structure for a trip. Never charges the trip budget."""
-    guide_fee = compute_guide_fee(mode, days, destination, party_type, luxury_level)
+    """Compute the full Travion fee structure for a trip (legacy estimator).
+
+    The payable figure is the FINAL PLANNED AMOUNT: base + 12.5% guide (Guide
+    Mode only) + 3% platform + 15% safety reserve — matching the authoritative
+    calculate_trip_pricing object exactly.
+    """
+    guide_fee = compute_guide_fee(mode, days, destination, party_type, luxury_level, base_cost=budget)
     platform_fee = compute_platform_fee(budget)
-    payable = round(guide_fee + platform_fee, 0)
+    safety_reserve = compute_safety_reserve(budget)
+    insurance_fee = compute_insurance_fee()
+    final_planned = round(float(budget or 0) + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
 
     return {
         "guide_fee": guide_fee,
         "platform_fee": platform_fee,
-        "payable": payable,
+        "safety_reserve": safety_reserve,
+        "insurance_fee": insurance_fee,
+        "payable": final_planned,
         "rules": {
             "mode": mode,
             "days": max(1, int(days)),
             "destination_multiplier": destination_multiplier(destination),
             "party_multiplier": party_multiplier(party_type),
             "guide_base_per_day": GUIDE_BASE_PER_DAY,
-            "platform_rate": platform_rate_for_budget(budget),
+            "platform_rate": PLATFORM_FEE_RATE,
+            "safety_reserve_rate": SAFETY_RESERVE_RATE,
         },
     }
 
@@ -279,14 +328,27 @@ def reprice_breakdown(
             travel_spend = round(transport + stay + food + activities, 0)
 
     guide_fee = guide_fee_for(mode, days, destination, party_type, guide, base_cost=travel_spend)
-    # base_cost in GUIDE_MODE = travel spend; both fees are %s over it.
+    # base_cost in every mode = travel spend; ALL fees are %s over it (spec
+    # §23-26) plus the fixed ₹50 insurance (TRAVION Refund Protection).
     fee_base = travel_spend
     platform_fee = round(fee_base * PLATFORM_FEE_RATE, 0)
-    final_total = round(fee_base + guide_fee + platform_fee, 0)
+    safety_reserve = round(fee_base * SAFETY_RESERVE_RATE, 0)
+    insurance_fee = INSURANCE_FEE
+    final_total = round(fee_base + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
     bd.update({
         "guide_fee": round(guide_fee, 0),
         "platform_fee": platform_fee,
-        "payable": round(guide_fee + platform_fee, 0),
+        "safety_reserve": safety_reserve,
+        "insurance_fee": insurance_fee,
+        "refund_policy": {
+            "travion_caused_refund": travion_caused_refund(platform_fee, insurance_fee),
+            "rule": (
+                "If a trip is cancelled or cannot be fulfilled due to an issue "
+                "attributable to TRAVION, the ₹50 Insurance Fee and the 3% "
+                "Platform Fee are refunded."
+            ),
+        },
+        "payable": final_total,
         "travel_spend": travel_spend,
         "base_plan_cost": round(fee_base, 0),
         "final_total": final_total,
@@ -311,9 +373,17 @@ def calculate_trip_pricing(
 
     Returns the exact numbers every surface must render/charge:
       transport_cost, stay_cost, food_cost, activity_cost, travel_spend,
-      guide_fee, platform_fee, amount_payable, currency, total_cost plus the
-      breakdown + rules. `amount_payable` (the ONLY thing Razorpay charges) is
-      guide_fee + platform_fee — the local travel spend is never collected.
+      guide_fee, platform_fee, safety_reserve, final_planned_amount,
+      amount_payable, currency, total_cost plus the breakdown + rules.
+
+    Spec §26/§34: ONE centralized object — the Review page and the Razorpay
+    order BOTH read `amount_payable` == final_planned_amount ==
+    base + guide (12.5% Guide Mode only) + platform (3% always) + safety
+    reserve (15% always) + insurance (₹50 fixed, every booking). Fees stack
+    ON TOP of the base travel budget in every mode; the safety reserve is
+    reserved funds, never a hidden spend. The breakdown carries the TRAVION
+    Refund Protection rule (platform fee + insurance refunded on
+    TRAVION-caused cancellation).
     """
     bd = reprice_breakdown(
         breakdown, mode=mode, days=days,
@@ -321,18 +391,25 @@ def calculate_trip_pricing(
     )
     guide_fee = float(bd["guide_fee"])
     platform_fee = float(bd["platform_fee"])
+    safety_reserve = float(bd["safety_reserve"])
+    insurance_fee = float(bd["insurance_fee"])
+    final_planned = round(float(bd["final_total"]), 0)
     return {
         "transport_cost": float(bd.get("transport", 0) or 0),
         "stay_cost": float(bd.get("stay", 0) or 0),
         "food_cost": float(bd.get("food", 0) or 0),
         "activity_cost": float(bd.get("activities", 0) or 0),
         "travel_spend": float(bd["travel_spend"]),
+        "base_budget": float(bd["base_plan_cost"]),
         "guide_fee": guide_fee,
         "platform_fee": platform_fee,
-        "amount_payable": round(guide_fee + platform_fee, 0),
+        "safety_reserve": safety_reserve,
+        "insurance_fee": insurance_fee,
+        "final_planned_amount": final_planned,
+        "amount_payable": final_planned,
         "currency": "INR",
         "days": max(1, int(days)),
-        "total_cost": float(bd["total_cost"]),
+        "total_cost": final_planned,
         "breakdown": bd,
         "rules": {
             "mode": mode,
@@ -340,6 +417,9 @@ def calculate_trip_pricing(
             "guide_base_per_day": GUIDE_BASE_PER_DAY,
             "guide_min_fee": GUIDE_MIN_FEE,
             "guide_max_fee": GUIDE_MAX_FEE,
+            "guide_fee_rate": GUIDE_FEE_RATE if mode == "GUIDE_MODE" else 0.0,
             "platform_fee_rate": PLATFORM_FEE_RATE,
+            "safety_reserve_rate": SAFETY_RESERVE_RATE,
+            "insurance_fee": INSURANCE_FEE,
         },
     }

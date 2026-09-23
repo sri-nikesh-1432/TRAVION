@@ -23,6 +23,7 @@ import { ReplanningNotice } from '../components/replanning/ReplanningNotice';
 import { TripChatDrawer } from '../components/chat/TripChatDrawer';
 import { OfflineManager } from '../components/offline/OfflineManager';
 import { ReviewModal } from '../components/review/ReviewModal';
+import { FinalReviewStep, ReviewEditTarget } from '../components/review/FinalReviewStep';
 import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
 import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
 import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
@@ -33,17 +34,19 @@ import { resolveBudgetMax } from '../utils/budget';
 
 /* ─── Booking flow stepper: the visible 7-step journey ─────────────
    Steps 01–03 choose WHAT the trip contains (trip, travellers, explore);
-   steps 04–06 choose HOW it runs (plan, itinerary, experience); step 07
-   is the secure Razorpay checkout. The step ORDER follows the real backend
-   contract — the experience choice (Guide vs Adventurous) is always last so
-   the engine reprices the FINAL edited itinerary, never a draft. */
+   step 04 is the dedicated Guide-vs-Adventurous EXPERIENCE decision (the
+   major product choice — always BEFORE plans so every plan card prices the
+   chosen mode); step 06 is the Final Review read/confirm state. The step
+   ORDER follows the master spec: Trip → Travellers → Explore → Mode → Plan
+   → Itinerary → Review → Payment. */
 const BOOKING_STEPS = [
   { key: 'search', label: 'Trip' },
   { key: 'discovery', label: 'Travellers' },
   { key: 'discovery_select', label: 'Explore' },
+  { key: 'mode_select', label: 'Mode' },
   { key: 'plan_choice', label: 'Plan' },
   { key: 'planner', label: 'Itinerary' },
-  { key: 'mode_select', label: 'Experience' },
+  { key: 'review', label: 'Review' },
   { key: 'pay', label: 'Payment' },
 ] as const;
 
@@ -121,8 +124,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   onLogout,
   isSandboxDemo = false
 }) => {
-  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'workspace' | 'my_trips'
-  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'workspace' | 'my_trips'>('search');
+  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips'
+  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips'>('search');
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -168,7 +171,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [nonRefundableAcknowledged, setNonRefundableAcknowledged] = useState(false);
   // Authoritative pricing preview shown while the popup opens (order created
   // only after the acknowledgement is checked).
-  const [pricingSummary, setPricingSummary] = useState<{ travel_spend: number; guide_fee: number; platform_fee: number; amount_payable: number; guide_required: boolean; guide_assigned: boolean; breakdown: Record<string, any> } | null>(null);
+  const [pricingSummary, setPricingSummary] = useState<{ travel_spend: number; guide_fee: number; platform_fee: number; safety_reserve: number; insurance_fee: number; final_planned_amount: number; amount_payable: number; guide_required: boolean; guide_assigned: boolean; breakdown: Record<string, any> } | null>(null);
   const [navigatingStop, setNavigatingStop] = useState<ItineraryStop | null>(null);
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
@@ -428,16 +431,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3a. Selections made → generate the three plan cards. Plans are built
-  // NEUTRALLY (base trip cost, no guide fee): the trip-EXPERIENCE choice
-  // (Guide vs Adventurous) happens AFTER the traveller has picked and edited a
-  // plan — the final pre-payment step — and reprices the itinerary then.
+  // 3a. Selections made → the traveller makes the MAJOR Guide-vs-Adventurous
+  // decision (Step 4) BEFORE any plan is generated, so all three plan cards
+  // price the chosen mode exactly as it will be charged (spec Step 4→5).
   const handleGeneratePlans = (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
     setPendingSelection({ places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
     setSelectedPlaces(places);
     setSelectedFood(foods);
     setSelectedActivityCount(Number(activityCount) || 0);
-    void generatePlans('ADVENTUROUS_MODE', { places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
+    setCurrentView('mode_select');
   };
 
   // Shared plan generation. Mode is only an interim pricing input here — the
@@ -463,35 +465,18 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       console.error("Plan generation failed:", err);
       setIsGeneratingPlan(false);
       setPlanError(getPlanErrorMessage(err));
-      setCurrentView('discovery_select');
+      setCurrentView('mode_select');
       return null;
     }
   };
 
-  // Final pre-payment step: the traveller picks HOW to experience the trip.
-  // The itinerary is already chosen AND edited — the backend reprices THAT
-  // final version (12.5% guide fee in Guide Mode, none in Adventurous) and
-  // never regenerates it. Checkout opens only after the mode is recorded.
+  // STEP 4 → STEP 5: the traveller picks HOW to experience the trip. The mode
+  // is persisted on the trip via planMulti(mode) — every plan card is priced
+  // with that exact mode (12.5% guide fee in Guide Mode, none in Adventurous,
+  // 3% platform + 15% safety always) and nothing after this step loses it.
   const handleModeSelect = async (mode: TripMode) => {
     if (!activeTrip || isGeneratingPlan) return;
-    setIsGeneratingPlan(true);
-    setPlanError(null);
-    try {
-      const res = await api.setExperienceMode(activeTrip.id, mode);
-      setActiveTrip(prev => prev ? { ...prev, mode, total_cost: res.total_cost, status: res.status as any } : null);
-      // Pull the repriced itinerary so every later surface (review, checkout)
-      // shows exactly what the backend stored.
-      const itn = await api.getItinerary(activeTrip.id);
-      setItinerary(itn);
-      setIsGeneratingPlan(false);
-      setCurrentView('planner');
-      // Straight into checkout with the authoritative numbers.
-      await handlePlannerProceedToPayment();
-    } catch (err) {
-      console.error("Setting experience mode failed:", err);
-      setIsGeneratingPlan(false);
-      setPlanError(getPlanErrorMessage(err));
-    }
+    void generatePlans(mode, pendingSelection!);
   };
 
   // User picked one of the three plans → activate it & open the editor.
@@ -509,7 +494,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         status: 'PLANNED'
       } : null);
       setIsChoosingPlan(false);
-      // Next: edit & finalize the plan BEFORE choosing the trip experience.
+      // Next: edit & finalize the itinerary (Step 6) before Final Review.
       setCurrentView('planner');
     } catch (err) {
       console.error("Choosing plan failed:", err);
@@ -518,9 +503,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // Planner → payment: opens the confirmation popup. §20: the order is only
-  // created after the traveller checks the non-refundable acknowledgement in
-  // the popup itself — the backend independently enforces the same rule.
+  // Final Review → payment: opens the confirmation popup. §20: the order is
+  // only created after the traveller checks the non-refundable acknowledgement
+  // in the popup itself — the backend independently enforces the same rule.
   const handlePlannerProceedToPayment = async () => {
     if (!activeTrip) return;
     setNonRefundableAcknowledged(false);
@@ -528,11 +513,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     setCheckoutData(null); // always create a FRESH order on confirmation
     setShowCheckoutModal(true);
     try {
+      // Spec §34: the SAME pricing object prices Review and the Razorpay order.
       const pricing = await api.getTripPricing(activeTrip.id);
       setPricingSummary({
         travel_spend: pricing.travel_spend,
         guide_fee: pricing.guide_fee,
         platform_fee: pricing.platform_fee,
+        safety_reserve: Number(pricing.safety_reserve ?? 0),
+        insurance_fee: Number(pricing.insurance_fee ?? 50),
+        final_planned_amount: Number(pricing.final_planned_amount ?? pricing.amount_payable ?? 0),
         amount_payable: pricing.amount_payable,
         guide_required: pricing.guide_required,
         guide_assigned: pricing.guide_assigned,
@@ -701,11 +690,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         stay: Number(checkoutData.breakdown?.stay || 0),
         food: Number(checkoutData.breakdown?.food || 0),
         activities: Number(checkoutData.breakdown?.activities || 0),
-        travelSpend: Number(checkoutData.breakdown?.travel_spend ?? pricingSummary?.travel_spend ?? 0),
-        guideFee: Number(checkoutData.breakdown?.guide_fee || 0),
-        platformFee: Number(checkoutData.breakdown?.platform_fee || 0),
-        payable: Number(checkoutData.amount || 0),
-      }
+        travelSpend: Number(checkoutData.breakdown?.travel_spend ?? pricingSummary?.travel_spend ?? 0),          guideFee: Number(checkoutData.breakdown?.guide_fee || 0),
+          platformFee: Number(checkoutData.breakdown?.platform_fee || 0),
+          safetyReserve: Number(checkoutData.breakdown?.safety_reserve ?? 0),
+          insuranceFee: Number(checkoutData.breakdown?.insurance_fee ?? 50),
+          payable: Number(checkoutData.amount || 0),
+        }
     : pricingSummary
       ? {
           live: false,
@@ -716,6 +706,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           travelSpend: Number(pricingSummary.travel_spend || 0),
           guideFee: Number(pricingSummary.guide_fee || 0),
           platformFee: Number(pricingSummary.platform_fee || 0),
+          safetyReserve: Number(pricingSummary.safety_reserve || 0),
+          insuranceFee: Number(pricingSummary.insurance_fee ?? 50),
           payable: Number(pricingSummary.amount_payable || 0),
         }
       : null;
@@ -1036,11 +1028,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
         )}
 
-        {/* VIEW 2a-2: "How would you like to experience your trip?" — the FINAL
-            pre-payment step, AFTER the plan is chosen and edited. Guide Mode =
-            human + AI travel (12.5% guide fee); Adventurous = independent + AI
-            travel (no guide fee). A trip EXPERIENCE choice — not a registration
-            mode. Selecting reprices the FINAL edited itinerary server-side. */}
+        {/* VIEW 2a-2: STEP 4 — CHOOSE YOUR TRAVEL MODE. The dedicated
+            major-decision screen (Guide = human + AI, 12.5% guide fee;
+            Adventurous = independent + AI, no guide fee), shown BEFORE plans
+            so every plan card prices the chosen mode exactly. */}
         {currentView === 'mode_select' && activeTrip && (
           <>
             <FlowStepper current="mode_select" />
@@ -1050,17 +1041,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             activityCount={selectedActivityCount}
             foodCount={pendingSelection?.foods.length ?? 0}
             hasStay={!!(pendingSelection?.stayRequired && pendingSelection?.stay)}
-            totalCost={activeTrip.total_cost}
-            onBack={() => setCurrentView('planner')}
+            totalCost={activeTrip.budget}
+            onBack={() => setCurrentView('discovery_select')}
             onSelect={(mode) => void handleModeSelect(mode)}
-            busy={isGeneratingPlan || isChoosingPlan}
+            busy={isGeneratingPlan}
             />
           </>
         )}
 
-        {/* VIEW 2b: Three-plan choice (Budget / Recommended / Premium) — built
-            neutrally from the user's selections; the experience choice comes
-            after editing. */}
+        {/* VIEW 2b: Three-plan choice (Budget / Recommended / Premium) — priced
+            with the mode chosen in Step 4; the Final Review follows editing. */}
         {currentView === 'plan_choice' && activeTrip && (
           <>
             <FlowStepper current="plan_choice" />
@@ -1068,15 +1058,14 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               plans={planOptions}
               destinationName={activeTrip.destination_name}
               onSelect={handleChoosePlan}
-              onBack={() => { setPlanOptions([]); setCurrentView('discovery_select'); }}
+              onBack={() => { setPlanOptions([]); setCurrentView('mode_select'); }}
               busy={isChoosingPlan}
             />
           </>
         )}
 
-        {/* VIEW 2c: Step 5 Interactive Trip Planner — finalize BEFORE the experience
-            choice. The plan is the traveller's source of truth; only after it is
-            edited do they pick Guide vs Adventurous (final pre-payment step). */}
+        {/* VIEW 2c: Step 6 Interactive Trip Planner — finalize the itinerary
+            (the traveller's source of truth) before the Final Review step. */}
         {currentView === 'planner' && itinerary && activeTrip && (
           <>
             <FlowStepper current="planner" />
@@ -1090,8 +1079,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             )}
             onItineraryChange={handleItineraryChange}
             onBackToPlans={() => setCurrentView('plan_choice')}
-            onProceedToExperience={() => setCurrentView('mode_select')}
-            onProceedToPayment={() => void handlePlannerProceedToPayment()}
+            onProceedToExperience={() => setCurrentView('review')}
+            onProceedToPayment={() => setCurrentView('review')}
             feePreview={pricingSummary ? {
               guide_fee: pricingSummary.guide_fee,
               platform_fee: pricingSummary.platform_fee,
@@ -1107,6 +1096,48 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               children: Number(answersSoFar?.party?.children) || undefined,
             }}
           />
+          </>
+        )}
+
+        {/* VIEW 2d: STEP 7 — FINAL REVIEW. Read/confirm state: shows the EXACT
+            stored itinerary (the user's final edits) + the same centralized
+            pricing object the Razorpay order uses. Every Edit returns to the
+            right step WITHOUT destroying state (spec §39/§36). */}
+        {currentView === 'review' && itinerary && activeTrip && (
+          <>
+            <FlowStepper current="review" />
+            <FinalReviewStep
+              trip={{
+                id: activeTrip.id,
+                destination_name: activeTrip.destination_name,
+                source_name: activeTrip.source_name,
+                start_datetime: activeTrip.start_datetime,
+                end_datetime: activeTrip.end_datetime,
+                budget: activeTrip.budget,
+                mode: activeTrip.mode,
+              }}
+              planLabel={planOptions.find(p => p.recommended)?.label || planOptions[0]?.label || null}
+              travellers={
+                answersSoFar?.party && typeof answersSoFar.party === 'object'
+                  ? { total: Number(answersSoFar.party.total) || undefined, adults: Number(answersSoFar.party.adults) || undefined, children: Number(answersSoFar.party.children) || undefined }
+                  : null
+              }
+              experienceLabel={
+                answersSoFar?.experience
+                  ? (Array.isArray(answersSoFar.experience) ? answersSoFar.experience.join(' · ') : String(answersSoFar.experience))
+                  : null
+              }
+              itinerary={itinerary}
+              onEdit={(target: ReviewEditTarget) => {
+                if (target === 'basics') setCurrentView('search');
+                else if (target === 'travellers') setCurrentView('discovery');
+                else if (target === 'places') setCurrentView('discovery_select');
+                else if (target === 'plans') setCurrentView('plan_choice');
+                else setCurrentView('planner');
+              }}
+              onConfirm={() => void handlePlannerProceedToPayment()}
+              busy={isProcessingPayment}
+            />
           </>
         )}
 
@@ -1276,11 +1307,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 </div>
               </div>
 
-              {/* Section 2 — Travion services: the only amount collected now */}
+              {/* Section 2 — Fees + safety reserve: the FINAL PLANNED AMOUNT is
+                  what the Razorpay order charges (same pricing object as Review). */}
               <div className="rounded-2xl bg-travion-50/70 border border-travion-100 p-4 mb-5">
                 <div className="flex items-center gap-2 mb-2.5">
                   <ShieldCheck className="w-4 h-4 text-travion-700" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-travion-700">Travion services — what you pay today</span>
+                  <span className="text-[11px] font-black uppercase tracking-wider text-travion-700">Fees & reserve — final planned amount</span>
                 </div>
                 <div className="space-y-2 text-xs font-medium">
                   <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
@@ -1288,24 +1320,44 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                       <Compass className="w-3.5 h-3.5" />
                       <span>Guide fee</span>
                     </span>
-                    <span className="font-bold">₹{checkoutView!.guideFee.toLocaleString()}</span>
+                    <span className="font-bold">{checkoutView!.guideFee > 0 ? `₹${checkoutView!.guideFee.toLocaleString()}` : '₹0 — Adventurous Mode'}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
                     <span className="font-semibold flex items-center gap-1.5">
                       <BadgeCheck className="w-3.5 h-3.5" />
-                      <span>Travion platform fee</span>
+                      <span>Platform fee (3%)</span>
                     </span>
                     <span className="font-bold">₹{checkoutView!.platformFee.toLocaleString()}</span>
                   </div>
+                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Safety reserve (15%)</span>
+                    </span>
+                    <span className="font-bold">₹{checkoutView!.safetyReserve.toLocaleString()}</span>
+                  </div>
+                  <p className="text-[10.5px] font-semibold text-charcoal-400">
+                    Reserved for unexpected travel or emergency needs — never spent automatically.
+                  </p>
+                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Insurance (fixed)</span>
+                    </span>
+                    <span className="font-bold">₹{checkoutView!.insuranceFee.toLocaleString()}</span>
+                  </div>
+                  <p className="text-[10.5px] font-semibold text-charcoal-400">
+                    ₹50 fixed — TRAVION Refund Protection: if TRAVION cancels your trip, the platform fee + this insurance are refunded.
+                  </p>
                   <div className="flex justify-between pt-2 text-sm font-black text-charcoal-900">
-                    <span>Amount payable to Travion</span>
+                    <span>Final planned amount</span>
                     <span className="text-travion-700">₹{checkoutView!.payable.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
               <p className="text-[11px] text-charcoal-500 font-medium leading-relaxed mb-4 bg-ivory-50 border border-charcoal-100 rounded-xl px-3 py-2.5">
-                Your trip budget is an estimated spending limit for travel expenses you settle locally. Travion collects {checkoutView!.guideFee > 0 ? 'only the guide and platform fees shown above' : 'only the platform fee shown above — on this trip no guide fee applies (no verified guide is assigned)'} — never your full travel budget.
+                The final planned amount = your base trip budget + fees + safety reserve — the exact total shown on your Final Review. {checkoutView!.guideFee > 0 ? 'The 12.5% guide fee applies because this is a Guide Mode trip.' : 'No guide fee applies — this is an Adventurous Mode trip.'}
               </p>
 
               {/* §20 — Non-refundable acknowledgement: MANDATORY before Confirm & Pay.

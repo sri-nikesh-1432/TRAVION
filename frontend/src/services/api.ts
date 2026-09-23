@@ -265,11 +265,12 @@ export const api = {
   choosePlan: (tripId: string, planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') =>
     request<TripItinerary>(`/trips/${tripId}/choose-plan`, { method: 'POST', body: JSON.stringify({ plan_type: planType }) }),
 
-  // Record the trip-EXPERIENCE choice (Guide vs Adventurous) on the final
-  // pre-payment screen. The backend reprices the user's FINAL edited
-  // itinerary with the authoritative fee rules — no regeneration, edits kept.
+  // Record the trip-EXPERIENCE choice (Guide vs Adventurous). With the new
+  // Step-4 order the mode is chosen BEFORE plans and persisted via planMulti;
+  // experience-mode remains available for later mode switches and reprices
+  // the user's FINAL edited itinerary — no regeneration, edits kept.
   setExperienceMode: (tripId: string, mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE') =>
-    request<{ mode: string; total_cost: number; guide_fee: number; platform_fee: number; amount_payable: number; status: string }>(
+    request<{ mode: string; total_cost: number; guide_fee: number; platform_fee: number; safety_reserve?: number; insurance_fee?: number; final_planned_amount?: number; amount_payable: number; status: string }>(
       `/trips/${tripId}/experience-mode`,
       { method: 'POST', body: JSON.stringify({ mode }) }
     ),
@@ -483,8 +484,11 @@ export const api = {
     request<any[]>('/admin/active-operations'),
 
   // Payments
+  // Authoritative trip pricing — the SAME object prices the Review page and
+  // the Razorpay order (spec §34): base + guide (12.5% Guide Mode only) +
+  // platform (3% always) + safety reserve (15% always).
   getTripPricing: (tripId: string) =>
-    request<{ amount_payable: number; guide_fee: number; platform_fee: number; travel_spend: number; total_cost: number; days: number; breakdown: Record<string, any>; guide_required: boolean; guide_assigned: boolean }>(`/trips/${tripId}/pricing`, { method: 'GET' }),
+    request<{ amount_payable: number; guide_fee: number; platform_fee: number; safety_reserve?: number; insurance_fee?: number; final_planned_amount?: number; base_budget?: number; travel_spend: number; total_cost: number; days: number; breakdown: Record<string, any>; rules?: Record<string, any>; guide_required: boolean; guide_assigned: boolean }>(`/trips/${tripId}/pricing`, { method: 'GET' }),
 
   checkoutTrip: (tripId: string, nonRefundableAcknowledged: boolean) =>
     request<{ order_id: string; amount: number; currency: string; key_id: string; breakdown: Record<string, any>; live_checkout?: boolean; simulated_signature?: string | null }>(`/trips/${tripId}/checkout`, { method: 'POST', body: JSON.stringify({ payment_method: 'razorpay', non_refundable_acknowledged: nonRefundableAcknowledged }) }),

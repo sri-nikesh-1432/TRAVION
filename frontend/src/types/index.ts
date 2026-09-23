@@ -119,6 +119,10 @@ export interface CostBreakdown {
   activities: number;
   guide_fee: number;
   platform_fee: number;
+  safety_reserve?: number;
+  insurance_fee?: number;
+  refund_policy?: { travion_caused_refund?: number; rule?: string };
+  final_planned_amount?: number;
   payable?: number;
   travel_spend?: number;
   total: number;
@@ -164,6 +168,8 @@ export interface PlanOption {
   tagline: string;
   base_plan_cost: number;
   platform_fee: number;
+  safety_reserve?: number;
+  insurance_fee?: number;
   final_total: number;
   total_cost: number;
   cost_breakdown: CostBreakdown;

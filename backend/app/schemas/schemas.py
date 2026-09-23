@@ -317,15 +317,21 @@ class TripPricingResponse(BaseModel):
     """THE authoritative backend-calculated Trip pricing. Every surface
     (checkout, plan cards, guide/manager/admin dashboards, plan changes,
     transactions) reads the SAME numbers from this single source of truth.
-    `amount_payable` (guide_fee + platform_fee) is the ONLY thing Travion
-    collects — the local travel spend is never part of the Razorpay order."""
+    Spec §26/§34: amount_payable == final_planned_amount == base + guide_fee
+    (12.5% Guide Mode only) + platform_fee (3% always) + safety_reserve
+    (15% always) — the SAME object prices the Review page and the Razorpay
+    order, so they can never disagree."""
     transport_cost: float
     stay_cost: float
     food_cost: float
     activity_cost: float
     travel_spend: float
+    base_budget: float = 0.0
     guide_fee: float
     platform_fee: float
+    safety_reserve: float = 0.0
+    insurance_fee: float = 0.0
+    final_planned_amount: float = 0.0
     amount_payable: float
     currency: str = "INR"
     days: int

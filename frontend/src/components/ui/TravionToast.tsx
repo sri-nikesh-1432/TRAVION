@@ -71,7 +71,7 @@ export const TravionToastProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.96 }}
                 transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className="glass-strong rounded-2xl shadow-floating pl-1 pr-2.5 py-2.5 flex items-center gap-3 w-full pointer-events-auto"
+                className="glass-strong rounded-2xl shadow-floating pl-1 pr-2.5 py-2.5 flex items-center gap-3 w-full pointer-events-none"
               >
                 <span className={`self-stretch w-1 rounded-full ${tone.bar} ml-1`} />
                 {tone.icon}
@@ -82,7 +82,7 @@ export const TravionToastProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 {t.action && (
                   <button
                     onClick={() => { t.action?.onAction(); dismiss(t.id); }}
-                    className="text-[11.5px] font-black text-travion-700 px-2.5 py-2 rounded-xl hover:bg-travion-50 transition-colors"
+                    className="pointer-events-auto text-[11.5px] font-black text-travion-700 px-2.5 py-2 rounded-xl hover:bg-travion-50 transition-colors"
                   >
                     {t.action.label}
                   </button>
@@ -90,7 +90,7 @@ export const TravionToastProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 <button
                   onClick={() => dismiss(t.id)}
                   aria-label="Dismiss notification"
-                  className="p-1.5 rounded-lg text-charcoal-400 hover:text-charcoal-700 hover:bg-charcoal-100/60 transition-colors"
+                  className="pointer-events-auto p-1.5 rounded-lg text-charcoal-400 hover:text-charcoal-700 hover:bg-charcoal-100/60 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

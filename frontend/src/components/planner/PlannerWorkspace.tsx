@@ -637,9 +637,13 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                         ['Activities', Number(bd.activities || 0)],
                         ['Food', Number(bd.food || 0)],
                       ];
-                      const base = Number(itinerary.total_cost) || rows.reduce((s, r) => s + r[1], 0);
-                      const guideFee = Number(feePreview?.guide_fee ?? 0);
-                      const platformFee = Number(feePreview?.platform_fee ?? 0);
+                      // Spec §23-26: the base is the travel-spend sum (never the
+                      // fee-inclusive total); fees stack ON TOP in every mode.
+                      const base = rows.reduce((s, r) => s + r[1], 0) || Number(bd.base_plan_cost || 0);
+                      const guideFee = Number(bd.guide_fee ?? feePreview?.guide_fee ?? 0);
+                      const platformFee = Number(bd.platform_fee ?? feePreview?.platform_fee ?? 0);
+                      const safetyReserve = Number(bd.safety_reserve ?? Math.round(base * 0.15));
+                      const insuranceFee = Number(bd.insurance_fee ?? 50);
                       return (
                         <>
                           {rows.filter(r => r[1] > 0).map(([label, value]) => (
@@ -658,9 +662,21 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                           <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
                             <span>Platform fee (3%)</span><span>{inr(platformFee)}</span>
                           </div>
+                          <div className="flex justify-between rounded-lg bg-sage-100 px-2 py-1 text-[#4c6151] font-bold">
+                            <span>Safety reserve (15%)</span><span>{inr(safetyReserve)}</span>
+                          </div>
+                          <p className="text-[10.5px] font-semibold text-charcoal-400">
+                            Reserved for unexpected travel or emergency needs — never spent automatically.
+                          </p>
+                          <div className="flex justify-between rounded-lg bg-sky-100 px-2 py-1 text-travion-800 font-bold">
+                            <span>Insurance (fixed)</span><span>{inr(insuranceFee)}</span>
+                          </div>
+                          <p className="text-[10.5px] font-semibold text-charcoal-400">
+                            ₹50 fixed — TRAVION Refund Protection: refunded with the platform fee if TRAVION cancels your trip.
+                          </p>
                           <div className="flex justify-between border-t border-charcoal-100 pt-1.5 text-[14px] font-black text-charcoal-900">
-                            <span>Final payable</span>
-                            <span>{inr(feePreview?.amount_payable ?? base + guideFee + platformFee)}</span>
+                            <span>Final planned amount</span>
+                            <span>{inr(feePreview?.amount_payable ?? (base + guideFee + platformFee + safetyReserve + insuranceFee))}</span>
                           </div>
                         </>
                       );
@@ -668,18 +684,18 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                   </div>
                   {tripInfo?.mode !== 'GUIDE_MODE' && (
                     <p className="mt-1.5 text-[11px] font-semibold text-charcoal-400">
-                      Adventurous Mode — no guide fee. You pay only the 3% platform fee; travel spend is settled locally.
+                      Adventurous Mode — no guide fee. The 3% platform fee, 15% safety reserve and ₹50 insurance are added on top of your travel budget.
                     </p>
                   )}
                 </section>
 
                 <button
                   type="button"
-                  onClick={() => { setShowReview(false); onProceedToExperience(); }}
+                  onClick={() => { setShowReview(false); onProceedToPayment(); }}
                   className="w-full h-12 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2"
                 >
                   <Wallet className="w-4 h-4" />
-                  Continue: Choose Trip Experience
+                  Continue: Final Review
                 </button>
               </div>
             </motion.div>

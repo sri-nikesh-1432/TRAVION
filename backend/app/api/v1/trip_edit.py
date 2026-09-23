@@ -1157,11 +1157,12 @@ def plan_multi(
 
     # A single plan that still exceeds the traveller's selected maximum is an
     # unacceptable result. Reject it loudly instead of shipping an over-budget plan.
-    # In GUIDE_MODE the 12.5% guide + 3% platform fees are charged ON TOP of the
-    # travel spend, so the ceiling that must hold is the plan's base (travel) cost.
+    # In every mode the guide (Guide Mode), platform and safety-reserve fees are
+    # charged ON TOP of the travel spend, so the ceiling that must hold is the
+    # plan's base (travel) cost (spec §23-26).
     for p in plans:
         bd = p.get("cost_breakdown") or {}
-        comparable = float(bd.get("base_plan_cost") or p["final_total"]) if bd.get("guide_mode") else float(p["final_total"])
+        comparable = float(bd.get("base_plan_cost") or p["final_total"])
         if comparable > bmax + 0.01:
             raise HTTPException(
                 status_code=400,
@@ -1174,10 +1175,11 @@ def plan_multi(
             )
 
     # Final itinerary validation: never trust the generator — re-verify totals.
-    # For GUIDE_MODE the travel spend (not the fee-inclusive total) must fit the budget.
+    # The budget is the TRAVEL-SPEND ceiling in every mode (spec §23-26): the
+    # guide (Guide Mode), platform and safety-reserve fees stack on top.
     for p in plans:
         bd = p.get("cost_breakdown") or {}
-        check_total = float(bd.get("base_plan_cost") or p["final_total"]) if bd.get("guide_mode") else p["final_total"]
+        check_total = float(bd.get("base_plan_cost") or p["final_total"])
         check = validate_itinerary_budget(check_total, bmax)
         if not check["valid"]:
             raise HTTPException(
@@ -1211,6 +1213,8 @@ def plan_multi(
             "tagline": p["tagline"],
             "base_plan_cost": p["base_plan_cost"],
             "platform_fee": p["platform_fee"],
+            "safety_reserve": float(p.get("cost_breakdown", {}).get("safety_reserve", 0) or 0),
+            "insurance_fee": float(p.get("cost_breakdown", {}).get("insurance_fee", 50) or 50),
             "final_total": p["final_total"],
             "total_cost": p["total_cost"],
             "cost_breakdown": p["cost_breakdown"],
@@ -1381,9 +1385,41 @@ def set_experience_mode(
         "total_cost": itin.total_cost,
         "guide_fee": float(result.get("guide_fee", 0) or 0),
         "platform_fee": float(result.get("platform_fee", 0) or 0),
+        "safety_reserve": float(result.get("safety_reserve", 0) or 0),
+        "final_planned_amount": float(result.get("final_total", 0) or 0),
         "amount_payable": float(result.get("final_total", 0) or 0),
         "status": trip.status,
     }
+
+
+# ── 2c. Authoritative trip pricing (single source for Review + Razorpay) ────
+
+@router.get("/{trip_id}/pricing")
+def get_trip_pricing(
+    trip_id: str,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db),
+):
+    """Spec §34: ONE pricing object prices BOTH the Review page and the
+    Razorpay order — the two can never disagree. Recomputed live from the
+    stored itinerary so the latest user edits are always reflected."""
+    from app.api.v1.payments import _pricing_context
+    from app.services.pricing_service import calculate_trip_pricing
+
+    trip = _own_trip(trip_id, current, db)
+    itin = db.query(Itinerary).filter(
+        Itinerary.trip_id == trip.id, Itinerary.is_active == True
+    ).first()
+    if not itin:
+        raise HTTPException(status_code=400, detail="Generate an itinerary to see trip pricing.")
+    result = calculate_trip_pricing(**_pricing_context(trip, itin, db))
+    result["guide_required"] = (trip.mode or "") == "GUIDE_MODE"
+    result["guide_assigned"] = bool(
+        trip.guide_assignment
+        and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")
+        and trip.guide_assignment.guide_id
+    )
+    return result
 
 
 # ── 3. Apply a user change (drag & drop / remove / add / move) ──────────────

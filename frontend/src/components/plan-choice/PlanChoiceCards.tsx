@@ -37,8 +37,8 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
         </h2>
         <p className="mt-1.5 text-[13px] font-medium text-charcoal-500">
           {plans[0]?.cost_breakdown?.guide_mode
-            ? 'Every plan fits your travel budget — the 12.5% guide fee and 3% platform fee are added on top and shown per plan.'
-            : 'Every plan includes your selected places and stays within your budget — the platform fee is included in the ceiling, so what you see is what you spend.'}
+            ? 'Every plan fits your travel budget — the 12.5% guide fee, 3% platform fee and 15% safety reserve are added on top and shown per plan.'
+            : 'Every plan fits your travel budget — the 3% platform fee and 15% safety reserve are added on top and shown per plan. No guide fee in Adventurous Mode.'}
         </p>
       </div>
 
@@ -46,11 +46,10 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
         {plans.map((plan, i) => {
           const isSelected = selected === plan.type;
           const bd = plan.cost_breakdown || {};
-          const guideTrip = Boolean(bd.guide_mode);
           const budgetOk = isSane(plan.budget_max) && isSane(plan.final_total);
-          const comparable = guideTrip
-            ? Number(plan.base_plan_cost || 0)
-            : Number(plan.final_total || plan.base_plan_cost || 0);
+          // Fees stack ON TOP of the travel spend in every mode (spec §23-26):
+          // the budget bar always compares the BASE travel spend to the budget.
+          const comparable = Number(plan.base_plan_cost || 0);
           const usedPct = budgetOk
             ? Math.max(4, Math.min(100, (comparable / plan.budget_max) * 100))
             : 100;
@@ -108,7 +107,7 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                   />
                 </div>
                 <div className="mt-1 flex justify-between text-[9.5px] font-bold text-charcoal-400">
-                  <span>{budgetOk ? (guideTrip ? 'of your travel budget' : 'of your selected budget') : ''}</span>
+                  <span>{budgetOk ? 'of your travel budget' : ''}</span>
                   <span>{fmtBudget(plan.budget_max)}</span>
                 </div>
               </div>
@@ -133,16 +132,34 @@ export const PlanChoiceCards: React.FC<PlanChoiceCardsProps> = ({
                 <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-bold text-charcoal-800">
                   <span>Base plan cost</span><span>{inr(plan.base_plan_cost)}</span>
                 </div>
-                {(bd.guide_fee || 0) > 0 && (
+                {(bd.guide_fee || 0) > 0 ? (
                   <div className="flex justify-between rounded-lg bg-cognac-50 px-2 py-1 text-cognac-600 font-bold">
                     <span>Guide fee (12.5%)</span><span>{inr(bd.guide_fee || 0)}</span>
                   </div>
+                ) : (
+                  <div className="flex justify-between px-2 py-1 text-charcoal-400">
+                    <span>Guide fee</span><span>₹0 — Adventurous Mode</span>
+                  </div>
                 )}
                 <div className="flex justify-between rounded-lg bg-cream-100 px-2 py-1 text-travion-700 font-bold">
-                  <span>Platform fee (3%)</span><span>{inr(plan.platform_fee)}</span>
+                  <span>Platform fee (3%)</span><span>{inr(plan.platform_fee ?? bd.platform_fee ?? 0)}</span>
                 </div>
+                <div className="flex justify-between rounded-lg bg-sage-100 px-2 py-1 text-[#4c6151] font-bold">
+                  <span>Safety reserve (15%)</span>
+                  <span>{inr(plan.safety_reserve ?? bd.safety_reserve ?? 0)}</span>
+                </div>
+                <p className="text-[10px] font-semibold text-charcoal-400 px-2">
+                  Reserved for unexpected travel or emergency needs — never spent automatically.
+                </p>
+                <div className="flex justify-between rounded-lg bg-sky-100 px-2 py-1 text-travion-800 font-bold">
+                  <span>Insurance</span>
+                  <span>{inr(plan.insurance_fee ?? bd.insurance_fee ?? 50)}</span>
+                </div>
+                <p className="text-[10px] font-semibold text-charcoal-400 px-2">
+                  ₹50 fixed — TRAVION Refund Protection: refunded with the platform fee if TRAVION cancels your trip.
+                </p>
                 <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-extrabold text-charcoal-900">
-                  <span>Total incl. fee</span><span>{inr(plan.final_total)}</span>
+                  <span>Final planned amount</span><span>{inr(plan.final_total)}</span>
                 </div>
               </div>
 
