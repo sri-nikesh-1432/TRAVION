@@ -115,6 +115,61 @@ VERIFIED_LOCATIONS = [
         "description": "Spiritual capital of India along the holy Ganges river, famous for sunrise boat rides and evening Ganga Aarti.",
         "hero_image": "https://images.unsplash.com/photo-1561361066-419a4e98f79e?auto=format&fit=crop&w=1200&q=80",
         "popular_season": "October to March"
+    },
+    {
+        "id": "loc-hyderabad",
+        "name": "Hyderabad",
+        "state": "Telangana",
+        "country": "India",
+        "lat": 17.3850,
+        "lng": 78.4867,
+        "description": "City of Pearls — Charminar, Golconda Fort, Rickshaw street food and the iconic Hyderabadi dum biryani.",
+        "hero_image": "https://images.unsplash.com/photo-1621329314865-bba64f6bcd18?auto=format&fit=crop&w=1200&q=80",
+        "popular_season": "October to February"
+    },
+    {
+        "id": "loc-chennai",
+        "name": "Chennai",
+        "state": "Tamil Nadu",
+        "country": "India",
+        "lat": 13.0827,
+        "lng": 80.2707,
+        "description": "Gateway to South India — Marina Beach, Kapaleeshwarar Temple, classical music and filter coffee culture.",
+        "hero_image": "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=1200&q=80",
+        "popular_season": "November to February"
+    },
+    {
+        "id": "loc-kolkata",
+        "name": "Kolkata",
+        "state": "West Bengal",
+        "country": "India",
+        "lat": 22.5726,
+        "lng": 88.3639,
+        "description": "City of Joy — colonial heritage, Howrah Bridge, trams, Bengali sweets and a thriving arts scene.",
+        "hero_image": "https://images.unsplash.com/photo-1571615158498-3f0d8e5a4e3f?auto=format&fit=crop&w=1200&q=80",
+        "popular_season": "October to February"
+    },
+    {
+        "id": "loc-pune",
+        "name": "Pune",
+        "state": "Maharashtra",
+        "country": "India",
+        "lat": 18.5204,
+        "lng": 73.8567,
+        "description": "Deccan college town — Shaniwar Wada, Aga Khan Palace, Western Ghats gateways and Maharashtrian street food.",
+        "hero_image": "https://images.unsplash.com/photo-1591117207239-8084d2c4d0d6?auto=format&fit=crop&w=1200&q=80",
+        "popular_season": "October to February"
+    },
+    {
+        "id": "loc-ahmedabad",
+        "name": "Ahmedabad",
+        "state": "Gujarat",
+        "country": "India",
+        "lat": 23.0225,
+        "lng": 72.5714,
+        "description": "Heritage walled city — Sabarmati Ashram, pol houses, stepwells and a UNESCO-listed old town.",
+        "hero_image": "https://images.unsplash.com/photo-1589519160709-9e51a3d1a1c8?auto=format&fit=crop&w=1200&q=80",
+        "popular_season": "November to February"
     }
 ]
 

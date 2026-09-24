@@ -5,7 +5,7 @@
 import { chromium } from 'playwright-core';
 import fs from 'fs';
 
-const BASE = 'http://localhost:5173';
+const BASE = process.env.E2E_BASE_URL || 'http://localhost:5174';
 const STAMP = Date.now();
 const results = [];
 const check = (name, ok, extra = '') => {

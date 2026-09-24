@@ -10,21 +10,24 @@ from app.services.verified_data import VERIFIED_LOCATIONS
 router = APIRouter(prefix="/locations", tags=["Locations"])
 
 def ensure_locations_seeded(db: Session):
-    if db.query(Location).count() == 0:
-        for loc in VERIFIED_LOCATIONS:
-            l = Location(
-                id=loc["id"],
-                name=loc["name"],
-                state=loc["state"],
-                country=loc["country"],
-                lat=loc["lat"],
-                lng=loc["lng"],
-                description=loc["description"],
-                hero_image=loc["hero_image"],
-                popular_season=loc["popular_season"]
-            )
-            db.add(l)
-        db.commit()
+    """Idempotent hub seeding: insert the verified hubs once, then top up any
+    hub missing from an older database (e.g. after a deploy adds a city) so
+    every verified hub is always selectable as source/destination."""
+    for loc in VERIFIED_LOCATIONS:
+        if db.query(Location).filter(Location.id == loc["id"]).first():
+            continue
+        db.add(Location(
+            id=loc["id"],
+            name=loc["name"],
+            state=loc["state"],
+            country=loc["country"],
+            lat=loc["lat"],
+            lng=loc["lng"],
+            description=loc["description"],
+            hero_image=loc["hero_image"],
+            popular_season=loc["popular_season"]
+        ))
+    db.commit()
 
 @router.post("/register", response_model=LocationResponse)
 def register_location(
