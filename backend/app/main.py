@@ -43,6 +43,7 @@ def _ensure_runtime_columns():
         "trip_profiles": {"selected_stay": "JSON"},
         "guides": {"rate_per_day": "FLOAT"},
         "payments": {"non_refundable_acknowledged": "BOOLEAN", "acknowledged_at": "DATETIME"},
+        "payment_splits": {"safety_reserve": "FLOAT", "insurance_fee": "FLOAT"},
     }
     try:
         inspector = inspect(engine)
@@ -256,6 +257,8 @@ app = FastAPI(
 _DEV_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
     "http://localhost:3000",
     "http://localhost:8080",
 ]

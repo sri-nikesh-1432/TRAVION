@@ -255,11 +255,15 @@ def test_guide_portal_end_to_end():
     assert assigned.status_code == 200
     mine = next(a for a in assigned.json() if a["trip"]["id"] == trip_id)
     assert mine["status"] == "CONFIRMED"
-    # Authoritative fee visible on the guide's own dashboard
-    assert mine["trip"]["pricing"]["amount_payable"] > 0
-    assert mine["trip"]["pricing"]["amount_payable"] == (
-        mine["trip"]["pricing"]["guide_fee"] + mine["trip"]["pricing"]["platform_fee"]
+    # Authoritative fee visible on the guide's own dashboard — the payable is
+    # the FULLY-LOADED final planned amount (base + guide + platform + safety + insurance)
+    pr = mine["trip"]["pricing"]
+    assert pr["amount_payable"] > 0
+    expected_payable = round(
+        float(pr["travel_spend"]) + float(pr["guide_fee"]) + float(pr["platform_fee"])
+        + float(pr["safety_reserve"]) + float(pr["insurance_fee"])
     )
+    assert pr["amount_payable"] == expected_payable
 
     # Guide with an ongoing trip cannot flip to DUTY_OFF (real guardrail)
     off = client.patch("/api/v1/guides/status", headers=gheaders, json={"status": "DUTY_OFF"})

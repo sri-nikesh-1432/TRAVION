@@ -626,6 +626,11 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
           <KpiCard label="Settled guide fees" value={inr(guideSettled)} tone="sky" />
           <KpiCard label="Pending settlements" value={inr(pendingSettled)} tone="amber" />
         </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+          <KpiCard label="Safety reserve held" value={inr(revenue.safety_reserve_total)} tone="amber" sub="reserved funds — not revenue" />
+          <KpiCard label="Insurance fees" value={inr(revenue.insurance_fees_total)} tone="sky" sub="₹50 per booking — refund protection" />
+          <KpiCard label="Refund-protection liability" value={inr(revenue.refund_protection_liability)} tone="rose" sub="platform fee + insurance if TRAVION cancels" />
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title="Revenue over time" subtitle="Gross, platform and guide fees by month">

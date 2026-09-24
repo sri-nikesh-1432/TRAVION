@@ -143,8 +143,11 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
             <SplitRow label="Total platform transactions" amount={revenue?.total_platform_transactions ?? 0} strong />
             <SplitRow label="Actual platform revenue (fees)" amount={revenue?.actual_platform_revenue ?? 0} tone="indigo" />
             <SplitRow label="Guide fees held for settlement" amount={revenue?.total_guide_fees_payout ?? 0} tone="emerald" />
+            <SplitRow label="Safety reserve held" amount={revenue?.total_safety_reserve ?? 0} tone="amber" />
+            <SplitRow label="Insurance fees collected" amount={revenue?.total_insurance_fees ?? 0} tone="rose" />
+            <SplitRow label="Refund protection liability" amount={revenue?.refund_protection_liability ?? 0} tone="amber" />
             <p className="pt-2 text-[10.5px] leading-relaxed font-semibold text-charcoal-400">
-              Traveller payments are split at payment time into the guide pool and platform commission. The estimated travel budget is never counted as Travion revenue.
+              Traveller payments are split at payment time into the guide pool and platform commission. The estimated travel budget is never counted as Travion revenue. Safety reserve and insurance are held funds — the ₹50 insurance + 3% platform fee are refundable when TRAVION is responsible for a cancellation.
             </p>
           </div>
         </SectionCard>
@@ -367,6 +370,12 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
           <KpiCard label="Guide payouts" value={inr(revenue.total_guide_fees_payout)} tone="emerald" />
           <KpiCard label="Settled guide fees" value={inr(revenue.settled_guide_fees)} tone="sky" sub={`${inr(revenue.pending_guide_fees)} pending`} />
         </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <KpiCard label="Safety reserve held" value={inr(revenue.total_safety_reserve)} tone="amber" sub="15% reserved funds" />
+          <KpiCard label="Insurance fees" value={inr(revenue.total_insurance_fees)} tone="rose" sub="₹50 per booking" />
+          <KpiCard label="Refund liability" value={inr(revenue.refund_protection_liability)} tone="amber" sub="insurance + platform fee" />
+          <KpiCard label="Gross bookings" value={inr((revenue.by_month || []).reduce((s: number, m: any) => s + (m.gross || 0), 0))} sub="all months" />
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title="Revenue trend" subtitle="Gross vs platform vs guide by month">
@@ -495,7 +504,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     );
   };
   const SplitRow = ({ label, amount, tone, strong }: { label: string; amount: number; tone?: string; strong?: boolean }) => {
-    const tones: Record<string, string> = { indigo: 'text-travion-700', emerald: 'text-emerald-700' };
+    const tones: Record<string, string> = { indigo: 'text-travion-700', emerald: 'text-emerald-700', amber: 'text-amber-600', rose: 'text-rose-600' };
     return (
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] font-bold text-charcoal-500">{label}</span>

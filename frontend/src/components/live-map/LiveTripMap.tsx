@@ -57,6 +57,13 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
   const [mapType, setMapType] = useState<'roadmap' | 'satellite' | 'terrain' | 'google'>('roadmap');
   const [activeLayer, setActiveLayer] = useState<L.TileLayer | null>(null);
 
+  // SPEC §11 — a stop has real coordinates only when BOTH are finite, non-null
+  // and off null-island (0,0). Navigation/deep-links are gated on this.
+  const hasValidCoords = !!selectedStop
+    && Number.isFinite(Number(selectedStop.lat))
+    && Number.isFinite(Number(selectedStop.lng))
+    && !(Math.abs(Number(selectedStop.lat)) < 0.01 && Math.abs(Number(selectedStop.lng)) < 0.01);
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -338,26 +345,37 @@ export const LiveTripMap: React.FC<LiveTripMapProps> = ({
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onStartNavigation(selectedStop)}
-                className="flex-1 py-2.5 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all"
-              >
-                <Navigation className="w-4 h-4" />
-                <span>Navigate to Stop</span>
-              </button>
-              <a
-                href={`https://maps.google.com/?q=${selectedStop.lat},${selectedStop.lng}`}
-                target="_blank"
-                rel="noreferrer"
-                className="p-2.5 rounded-xl border border-charcoal-200 hover:border-charcoal-300 text-charcoal-600 hover:text-charcoal-900 transition-colors"
-                title="Open in Google Maps"
-              >
-                <ArrowUpRight className="w-4 h-4" />
-              </a>
-            </div>
+      {/* Action Buttons — navigation requires REAL coordinates; a stop
+          without verified lat/lng can never offer “Navigate to Stop” or a
+          Google-Maps deep link (spec §11: 0,0 links must never exist). */}
+      <div className="flex items-center gap-2">
+        {hasValidCoords && (
+        <button
+          type="button"
+          onClick={() => onStartNavigation(selectedStop)}
+          className="flex-1 py-2.5 rounded-xl bg-travion-600 hover:bg-travion-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all"
+        >
+          <Navigation className="w-4 h-4" />
+          <span>Navigate to Stop</span>
+        </button>
+        )}
+        {hasValidCoords && (
+        <a
+          href={`https://maps.google.com/?q=${selectedStop.lat},${selectedStop.lng}`}
+          target="_blank"
+          rel="noreferrer"
+          className="p-2.5 rounded-xl border border-charcoal-200 hover:border-charcoal-300 text-charcoal-600 hover:text-charcoal-900 transition-colors"
+          title="Open in Google Maps"
+        >
+          <ArrowUpRight className="w-4 h-4" />
+        </a>
+        )}
+        {!hasValidCoords && (
+          <span className="flex-1 text-center text-[11px] font-semibold text-charcoal-400 py-2">
+            Coordinates unavailable for this stop — navigation is disabled.
+          </span>
+        )}
+      </div>
           </motion.div>
         )}
       </AnimatePresence>

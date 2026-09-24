@@ -34,7 +34,6 @@ const SuspenseShell: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [isSandboxDemo, setIsSandboxDemo] = useState(false);
   const [guideView, setGuideView] = useState<'verification' | 'dashboard' | 'register' | 'signin' | 'update_profile' | null>(null);
   const [showGuideRegister, setShowGuideRegister] = useState(false);
   const [showGuideSignIn, setShowGuideSignIn] = useState(false);
@@ -62,7 +61,7 @@ export const App: React.FC = () => {
       api.getMe()
         .then((me) => {
           setSession((prev) =>
-            prev && prev.access_token === token && prev.access_token !== 'sandbox-preview-token'
+            prev && prev.access_token === token
               ? {
                   ...prev,
                   role: (me.role as AuthSession['role']) || prev.role,
@@ -85,7 +84,6 @@ export const App: React.FC = () => {
   // user's "Remember me" choice — here we simply adopt it in memory.
   const handleLoginSuccess = (newSession: AuthSession) => {
     setSession(newSession);
-    setIsSandboxDemo(false);
     // If it's a guide, show verification page
     if (newSession.role === 'GUIDE') {
       setGuideView('verification');
@@ -95,20 +93,17 @@ export const App: React.FC = () => {
   const handleLogout = () => {
     authStorage.clear();
     setSession(null);
-    setIsSandboxDemo(false);
     setGuideView(null);
   };
 
   const handleGuideRegistrationComplete = (newSession: AuthSession) => {
     setSession(newSession);
-    setIsSandboxDemo(false);
     setGuideView('verification');
     setShowGuideRegister(false);
   };
 
   const handleGuideSignInComplete = (newSession: AuthSession) => {
     setSession(newSession);
-    setIsSandboxDemo(false);
     setGuideView('verification');
     setShowGuideSignIn(false);
   };
@@ -119,18 +114,6 @@ export const App: React.FC = () => {
 
   const handleGuideVerificationRejected = () => {
     setGuideView('update_profile');
-  };
-
-  const handleLaunchSandboxDemo = () => {
-    setIsSandboxDemo(true);
-    setSession({
-      access_token: 'sandbox-preview-token',
-      token_type: 'bearer',
-      role: 'USER',
-      email: 'demo.traveller@travion.preview',
-      identity_id: 'sandbox-demo-id',
-      is_profile_complete: true
-    });
   };
 
   // Compute the root view, then wrap it in the toast provider.
@@ -158,7 +141,6 @@ export const App: React.FC = () => {
     view = (
       <LandingPage
         onLoginSuccess={handleLoginSuccess}
-        onExploreDemo={handleLaunchSandboxDemo}
         onOpenGuideRegistration={() => setShowGuideRegister(true)}
         onOpenGuideSignIn={() => setShowGuideSignIn(true)}
       />
@@ -185,7 +167,7 @@ export const App: React.FC = () => {
       case 'USER':
         view = (
           <SuspenseShell>
-            <UserDomain session={session} onLogout={handleLogout} isSandboxDemo={isSandboxDemo} />
+            <UserDomain session={session} onLogout={handleLogout} />
           </SuspenseShell>
         );
         break;
@@ -207,7 +189,6 @@ export const App: React.FC = () => {
         view = (
           <LandingPage
             onLoginSuccess={handleLoginSuccess}
-            onExploreDemo={handleLaunchSandboxDemo}
             onOpenGuideRegistration={() => setShowGuideRegister(true)}
             onOpenGuideSignIn={() => setShowGuideSignIn(true)}
           />

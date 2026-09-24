@@ -228,12 +228,19 @@ def test_full_user_trip_flow():
     assert checkout_res.status_code == 200
     order_data = checkout_res.json()
     assert "order_" in order_data["order_id"]
-    # Travion collects ONLY guide fee + platform fee (dynamic), never the trip budget.
+    # Travion collects the FULLY-LOADED final planned amount (spec §23-26):
+    # base travel spend + 12.5% guide fee + 3% platform fee + 15% safety
+    # reserve + ₹50 insurance — never just guide+platform.
     bd = order_data["breakdown"]
     assert bd["guide_fee"] > 0
     assert bd["platform_fee"] > 0
-    assert order_data["amount"] == bd["guide_fee"] + bd["platform_fee"]
-    assert order_data["amount"] < bd.get("total", 10**12)
+    expected_amount = round(
+        float(bd["base_plan_cost"] or bd["travel_spend"]) + float(bd["guide_fee"])
+        + float(bd["platform_fee"]) + float(bd["safety_reserve"])
+        + float(bd["insurance_fee"])
+    )
+    assert order_data["amount"] == expected_amount
+    assert order_data["amount"] == float(bd.get("payable", order_data["amount"]))
     assert bd["travel_spend"] > 0
 
     # Payment Webhook simulation — uses the SERVER-ISSUED signature returned

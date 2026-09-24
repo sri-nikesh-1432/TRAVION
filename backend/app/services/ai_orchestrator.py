@@ -125,8 +125,10 @@ def _pick_transport(src: str, dest: str, profile: Dict[str, Any], budget: float)
     return max(candidates, key=lambda o: float(o.get("fare", 0)))
 
 
-def _pick_stay(dest: str, profile: Dict[str, Any], budget: float, nights: int) -> Dict[str, Any]:
-    stays = VERIFIED_STAYS.get(dest) or VERIFIED_STAYS.get("Ooty")
+def _pick_stay(dest: str, profile: Dict[str, Any], budget: float, nights: int) -> Optional[Dict[str, Any]]:
+    # SPEC §10/§13 — destination honesty: never pass another city's hotels off
+    # as this destination's stay. No verified catalog for `dest` → no stay.
+    stays = VERIFIED_STAYS.get(dest) or []
     stay_pref = str(profile.get("stay_pref") or "").replace("\u2605", " Star").replace("\u2605", " Star")
     nightly_budget = (budget * 0.34) / max(nights, 1)
 
@@ -146,11 +148,14 @@ def _pick_stay(dest: str, profile: Dict[str, Any], budget: float, nights: int) -
         closer = [s for s in pool if s.get("price_per_night", 0) <= nightly_budget * 1.6]
         if closer:
             return min(closer, key=lambda s: s.get("price_per_night", 0))
+    if not pool:
+        return None  # no verified stays for this destination
     return min(pool, key=lambda s: s.get("price_per_night", 999999))
 
 
 def _pick_food(dest: str, profile: Dict[str, Any]) -> List[Dict[str, Any]]:
-    foods = VERIFIED_FOOD.get(dest) or VERIFIED_FOOD.get("Ooty")
+    # Same destination honesty for restaurants — empty catalog is valid.
+    foods = VERIFIED_FOOD.get(dest) or []
     pref = str(profile.get("food_pref") or "")
     if "veg" in pref.lower() and "non" not in pref.lower():
         veg = [f for f in foods if "pure veg" in f.get("veg_type", "").lower()]
@@ -315,6 +320,23 @@ class AIOrchestrator:
 
         stay = _pick_stay(destination_name, profile, budget, nights)
         food_options = _pick_food(destination_name, profile)
+        # SPEC §5 — an unplanned stay must not silently cost ₹0. With no
+        # verified catalog for this destination we estimate from the
+        # traveller's stated preference tier so the budget stays defensible.
+        if stay is None and nights > 0:
+            from app.services.india_planner import match_stay_tier
+            tier = match_stay_tier(str(profile.get("stay_pref") or ""))
+            est_rate = round((float(tier["lo"]) + float(tier["hi"])) / 2.0, 0)
+            stay = {
+                "name": f"Travion partner stay ({tier['label']})",
+                "tier": tier["label"],
+                "price_per_night": est_rate,
+                "lat": (dest_coords[0] if dest_coords else 0.0),
+                "lng": (dest_coords[1] if dest_coords else 0.0),
+                "rating": 4.3,
+                "amenities": ["Estimated rate — upgrade with a verified stay"],
+                "source": "tier_estimate",
+            }
         attractions_all = VERIFIED_ATTRACTIONS.get(destination_name, [])
         sightseeing = [a for a in attractions_all if a.get("category") == "attraction"]
         gems = [a for a in attractions_all if a.get("category") == "hidden_gem"]
@@ -420,7 +442,7 @@ class AIOrchestrator:
 
             # Stay check-in / check-out. On an overnight journey the traveller
             # sleeps on the road and checks in the following afternoon.
-            if is_first:
+            if is_first and stay:
                 checkin_stop = _stop(
                     id=f"stop-d{day_num}-h",
                     day=day_num,
@@ -446,7 +468,7 @@ class AIOrchestrator:
                     day2_extra.append(checkin_stop)
                 else:
                     day_stops.append(checkin_stop)
-            elif is_last:
+            elif is_last and stay:
                 day_stops.append(_stop(
                     id=f"stop-d{day_num}-h",
                     day=day_num,
@@ -542,7 +564,9 @@ class AIOrchestrator:
             for mslot in meal_slots:
                 if not food_options:
                     break
-                rest = food_options[meal_count % len(food_options)]
+                rest = food_options[meal_count % len(food_options)] if food_options else None
+                if rest is None:
+                    continue
                 meal_count += 1
                 meal_cost = round(float(rest.get("avg_cost_for_two", 800)) * pax / 2, 0)
                 food_total += meal_cost
@@ -645,7 +669,8 @@ class AIOrchestrator:
             "budget": budget,
             "budget_min": lo,
             "budget_max": hi,
-            "within_budget": (travel_spend if mode == "GUIDE_MODE" else total) <= hi,
+            # Spec §3/§7: the FINAL planned amount must fit the budget.
+            "within_budget": total <= hi,
             "party_type": party,
             "headcount": pax,
             "adults": _party_adults(profile),

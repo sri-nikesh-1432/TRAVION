@@ -1383,11 +1383,16 @@ def set_experience_mode(
     return {
         "mode": req.mode,
         "total_cost": itin.total_cost,
+        "base_budget": float(result.get("base_plan_cost", 0) or 0),
+        "travel_spend": float(result.get("travel_spend", 0) or 0),
         "guide_fee": float(result.get("guide_fee", 0) or 0),
         "platform_fee": float(result.get("platform_fee", 0) or 0),
         "safety_reserve": float(result.get("safety_reserve", 0) or 0),
+        "insurance_fee": float(result.get("insurance_fee", 0) or 0),
         "final_planned_amount": float(result.get("final_total", 0) or 0),
         "amount_payable": float(result.get("final_total", 0) or 0),
+        "currency": "INR",
+        "days": max(1, len(itin.days_data or [])),
         "status": trip.status,
     }
 
@@ -1454,7 +1459,11 @@ def edit_itinerary(
         raise HTTPException(status_code=400, detail="Change could not be applied (stop not found).")
     # Every user edit also passes the hard chronology floor (PART U/W): no
     # Day-1 item before the trip's real start time, no time-travel ordering.
-    chron_notes = enforce_chronology(result["days"], first_day_start=_first_day_start_label(trip))
+    # max_day pins the plan to the trip's REAL duration — a final-day overflow
+    # can never synthesize a phantom "Day N+1".
+    chron_notes = enforce_chronology(
+        result["days"], first_day_start=_first_day_start_label(trip), max_day=_trip_days(trip),
+    )
     if chron_notes:
         result["warnings"] = list(result.get("warnings") or []) + chron_notes[:3]
 
@@ -1863,8 +1872,9 @@ def optimize_day(
         ordered.append(remaining.pop(best_idx))
     target["stops"] = ordered
     _resequence(days)
-    # Hard chronology floor also applies to optimizer output (PART U/W).
-    enforce_chronology(days, first_day_start=_first_day_start_label(trip))
+    # Hard chronology floor also applies to optimizer output (PART U/W),
+    # pinned to the trip's real day count (no phantom extra days).
+    enforce_chronology(days, first_day_start=_first_day_start_label(trip), max_day=_trip_days(trip))
 
     if not req.apply:
         return OptimizeDayResponse(

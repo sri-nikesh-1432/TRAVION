@@ -95,12 +95,15 @@ def test_guide_mode_reprices_final_itinerary_without_regeneration():
     assert data["mode"] == "GUIDE_MODE"
     assert data["guide_fee"] > 0, "Guide Mode must collect the 12.5% guide fee"
     assert data["platform_fee"] > 0, "the 3% platform fee always applies"
-    # fee math (authoritative rule): base = payable − fees; guide = 12.5% of
-    # base; platform = 3% of base. (The plan total already embeds the old 3%
-    # platform fee, so deriving the base from the payable is the honest check.)
-    fee_base = round(data["amount_payable"] - data["guide_fee"] - data["platform_fee"], 0)
-    assert data["guide_fee"] == round(fee_base * 0.125, 0), "guide fee must be exactly 12.5% of the base"
-    assert data["platform_fee"] == round(fee_base * 0.03, 0), "platform fee must be exactly 3% of the base"
+    # fee math (authoritative spec): amount_payable = FINAL PLANNED AMOUNT =
+    # base + guide 12.5% + platform 3% + safety 15% + insurance ₹50.
+    assert data["guide_fee"] == round(data["base_budget"] * 0.125, 0), "guide fee must be exactly 12.5% of the base"
+    assert data["platform_fee"] == round(data["base_budget"] * 0.03, 0), "platform fee must be exactly 3% of the base"
+    expected_payable = round(
+        data["base_budget"] + data["guide_fee"] + data["platform_fee"]
+        + data["safety_reserve"] + data["insurance_fee"]
+    )
+    assert data["amount_payable"] == expected_payable, "payable must be the fully-loaded final planned amount"
     assert data["amount_payable"] > base_total * 0.1, "sanity: a real repriced total came back"
     # the itinerary itself was NOT regenerated
     after = client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=headers).json()

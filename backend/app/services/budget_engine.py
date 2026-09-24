@@ -282,9 +282,10 @@ def calculate_max_affordable_days(
     )
     for days in range(1, int(BUDGET_CONFIG["max_days_cap"]) + 1):
         cost = calculate_minimum_trip_cost(destination, days, mode, profile, **base_kw)
-        # In GUIDE_MODE the fees sit on top of the travel spend, so use the
-        # spend as the comparable; otherwise compare the fee-inclusive total.
-        comparable = cost["base_plan_cost"] if mode == "GUIDE_MODE" else cost["final_total"]
+        # Spec §3/§7: the budget caps the FINAL planned amount (fees stack on
+        # top in every mode), so affordability always compares the fully-loaded
+        # total — never the bare travel spend.
+        comparable = cost["final_total"]
         if comparable > budget:
             return max(0, days - 1)
     return int(BUDGET_CONFIG["max_days_cap"])

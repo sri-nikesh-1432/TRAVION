@@ -79,6 +79,20 @@ def _meal_label_from_minutes(m: int) -> str:
     return _from_minutes(m)
 
 
+def _free_slot(intervals: List[Tuple[int, int]], lo: int, hi: int, need: int) -> Optional[int]:
+    """Earliest t in [lo, hi-need] where [t, t+need) intersects no interval."""
+    t = lo
+    for a, b in sorted(intervals):
+        if b <= t:
+            continue
+        if a - t >= need:
+            return t
+        t = max(t, b)
+        if t + need > hi:
+            return None
+    return t if t + need <= hi else None
+
+
 def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
     """Guarantee every travel day's meals land INSIDE their realistic windows
     (spec §8/§9) without touching real selected restaurants.
@@ -88,65 +102,75 @@ def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
       1. A real restaurant stop (category 'food') already inside the window
          satisfies it — untouched, exactly where the traveller chose it.
       2. Otherwise a clearly-labelled meal hold ('Lunch — local cuisine') is
-         inserted at a free slot inside the window, so no day ever shows
-         lunch at 10:25 PM or a meal-less day when the trip hours allow it.
-    Meal holds are skippable placeholders — a real nearby eatery replaces
-    them naturally when the traveller adds one from discovery.
+         placed in a genuinely FREE gap (duration-aware — never overlapping an
+         existing stop, so validate_days stays clean) inside the window.
+         A window with no free slot is skipped — a missing meal hold is better
+         than an impossible schedule that blocks checkout.
+    Meal holds are anchored geographically to the stop immediately before them
+    so travel-time validation remains realistic (never (0,0)).
     Returns the number of holds inserted (informational).
     """
     inserted = 0
     seen_holds: set = set()
+    HOLD_MIN = 45
+    DAY_FLOOR = DAY_START_FLOOR_MINUTES  # day never begins before 08:00
     for d in days:
-        stops = d.get("stops") or []
-        day_num = int(d.get("day", 0) or 0)
-        food_stops = [s for s in stops if str(s.get("category", "")) == "food"]
-        day_min = min(
-            (_to_minutes(str(s.get("time", ""))) for s in stops
-             if _to_minutes(str(s.get("time", ""))) is not None),
-            default=None,
-        )
-        if day_min is None:
+        parseable = [s for s in (d.get("stops") or [])
+                     if _to_minutes(str(s.get("time", ""))) is not None]
+        unparseable = [s for s in (d.get("stops") or [])
+                       if _to_minutes(str(s.get("time", ""))) is None]
+        if not parseable:
             continue
-        used = []
+        day_num = int(d.get("day", 0) or 0)
+        parseable.sort(key=lambda s: _to_minutes(str(s.get("time", ""))) or 0)
+
+        def _sm(s: Dict[str, Any]) -> int:
+            return _to_minutes(str(s.get("time", ""))) or 0
+
+        # Occupied intervals [start, end) — includes meal holds as we add them.
+        intervals: List[Tuple[int, int]] = [
+            (_sm(s), _sm(s) + int(s.get("duration_minutes", 60) or 60))
+            for s in parseable
+        ]
+        food_in_window = {label: False for label, _, _ in MEAL_WINDOWS}
+        for s in parseable:
+            if str(s.get("category", "")).lower() != "food":
+                continue
+            for label, lo, hi in MEAL_WINDOWS:
+                if lo <= _sm(s) <= hi:
+                    food_in_window[label] = True
+
+        new_holds: List[Dict[str, Any]] = []
         for label, lo, hi in MEAL_WINDOWS:
-            # The trip hours genuinely exclude this window (e.g. a 4 PM Day-1
-            # start can never include breakfast) — skipping is CORRECT.
-            if hi <= day_min:
-                used.append(None)
+            if food_in_window[label]:
                 continue
-            satisfied = False
-            for s in food_stops:
-                sm = _to_minutes(str(s.get("time", "")))
-                if sm is None:
-                    continue
-                if lo <= sm <= hi:
-                    used.append(sm)
-                    satisfied = True
-                    break
-            if satisfied:
-                continue
-            # Prefer the window midpoint; nudge later in 30-min steps while a
-            # real stop occupies that minute (overlap-free placement).
-            t = (lo + hi) // 2
-            while any(u is not None and abs(u - t) < 40 for u in used) or any(
-                abs(( _to_minutes(str(s.get("time", ""))) or -1) - t) < 40
-                for s in stops if _to_minutes(str(s.get("time", ""))) is not None
-            ):
-                t += 30
-                if t > hi:
-                    t = hi
-                    break
             hold_key = (day_num, label.lower())
-            if hold_key in seen_holds or any(
+            already = hold_key in seen_holds or any(
                 str(s.get("id", "")).startswith("meal-")
                 and str(s.get("title", "")).lower().startswith(label.lower())
-                for s in stops
-            ):
-                used.append(None)
+                for s in parseable
+            )
+            if already:
                 continue
+            t = _free_slot(intervals, max(lo, DAY_FLOOR), hi, HOLD_MIN)
+            if t is None:
+                continue  # window genuinely full — skip, never overlap
             seen_holds.add(hold_key)
-            used.append(t)
-            stops.append({
+            # Anchor the hold geographically to the stop immediately before it
+            # (or the first stop) so travel checks stay realistic.
+            before = [s for s in parseable + new_holds if _sm(s) <= t]
+            anchor = before[-1] if before else (parseable[0] if parseable else None)
+            if anchor is not None:
+                try:
+                    a_lat = float(anchor.get("lat", 0) or 0)
+                    a_lng = float(anchor.get("lng", 0) or 0)
+                except Exception:
+                    a_lat, a_lng = 0.0, 0.0
+            else:
+                a_lat, a_lng = 0.0, 0.0
+            if abs(a_lat) < 0.01 and abs(a_lng) < 0.01:
+                a_lat, a_lng = 0.0, 0.0
+            hold = {
                 "id": f"meal-{day_num}-{label.lower()}",
                 "day": day_num or 1,
                 "time": _meal_label_from_minutes(t),
@@ -156,18 +180,22 @@ def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
                     "from discovery to fill this slot."
                 ),
                 "category": "meal_hold",
-                "location_name": str(d.get("title", "") or ""),
-                "lat": 0.0,
-                "lng": 0.0,
+                "location_name": str((anchor or {}).get("location_name", "") or d.get("title", "") or ""),
+                "lat": a_lat,
+                "lng": a_lng,
                 "estimated_cost": 0,
-                "duration_minutes": 45,
+                "duration_minutes": HOLD_MIN,
                 "source": "meal_window",
                 "verified": False,
-            })
+            }
+            new_holds.append(hold)
+            intervals.append((t, t + HOLD_MIN))
             inserted += 1
-        d["stops"] = stops
+        if new_holds:
+            parseable.extend(new_holds)
+            parseable.sort(key=lambda s: _sm(s))
+            d["stops"] = parseable + unparseable
     return inserted
-
 
 def _haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     lat1, lng1, lat2, lng2 = a[0], a[1], b[0], b[1]
@@ -290,6 +318,44 @@ def _premium_extra_stop(day_block: Dict[str, Any], dest: str) -> Optional[Dict[s
 
 # ── Selected-place injection (HARD preferences) ─────────────────────────────
 
+# SPEC 10/12 - DESTINATION GEO-FENCING. A destination anchor comes from the
+# trip's real location row (dest_coords in build_plans callers); every stop
+# entering an itinerary must sit inside a sane radius of that anchor (300 km
+# covers day-trips and regional excursions, rejects other states/countries)
+# and never at null-island (0,0). Missing coordinates are as invalid as wrong
+# ones.
+DESTINATION_MAX_RADIUS_KM = 300.0
+
+
+def validate_place_for_destination(
+    place: Dict[str, Any],
+    dest_coords,
+    max_radius_km: float = DESTINATION_MAX_RADIUS_KM,
+):
+    """Reusable boundary validation (spec 12). Returns (ok, reason).
+
+    Verifies: finite non-null latitude/longitude, off null-island, within
+    max_radius_km of the destination anchor. dest_coords=None (anchor
+    unknown) still rejects null-island/missing/out-of-range coordinates.
+    """
+    try:
+        lat = float(place.get("lat", 0) or 0)
+        lng = float(place.get("lng", 0) or 0)
+    except (TypeError, ValueError):
+        return False, "missing coordinates"
+    if not (math.isfinite(lat) and math.isfinite(lng)):
+        return False, "non-finite coordinates"
+    if abs(lat) < 0.01 and abs(lng) < 0.01:
+        return False, "null-island (0,0) coordinates"
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return False, "out-of-range coordinates"
+    if dest_coords is not None:
+        km = _haversine_km((lat, lng), (float(dest_coords[0]), float(dest_coords[1])))
+        if km > max_radius_km:
+            return False, f"{round(km):,} km outside the destination boundary"
+    return True, ""
+
+
 def _item_from_structured(item: Dict[str, Any], category: str, dest: str) -> Dict[str, Any]:
     """Turn a structured discovery selection into a planner stop source-of-truth.
 
@@ -324,6 +390,7 @@ def _inject_selected_places(
     selected_place_items: Optional[List[Dict[str, Any]]] = None,
     selected_food_items: Optional[List[Dict[str, Any]]] = None,
     verbose: bool = True,
+    dest_coords=None,
 ) -> float:
     """Insert the user's selected real places into the schedule.
 
@@ -353,13 +420,22 @@ def _inject_selected_places(
     # Curated catalog first; discovery-resolved real places (e.g. GeoNames
     # index entries for destinations outside the curated set) are also valid
     # injection sources — a user selection is a REAL place either way.
-    attractions = list(VERIFIED_ATTRACTIONS.get(dest) or [])
+    def _in_boundary(item: Dict[str, Any]) -> bool:
+        ok, reason = validate_place_for_destination(item, dest_coords)
+        return ok
+
+    attractions = [a for a in (VERIFIED_ATTRACTIONS.get(dest) or []) if _in_boundary(a)]
     for ra in (resolved_attractions or []):
-        if not _match_by_name(attractions, ra.get("name", "")):
+        if not _match_by_name(attractions, ra.get("name", "")) and _in_boundary(ra):
             attractions.append(ra)
-    foods = list(VERIFIED_FOOD.get(dest) or [])
+        elif not _match_by_name(attractions, ra.get("name", "")):
+            if verbose:
+                warnings.append(
+                    f"'{ra.get('name', 'A resolved place')}' lies outside the {dest} area and was left out of the plan."
+                )
+    foods = [f for f in (VERIFIED_FOOD.get(dest) or []) if _in_boundary(f)]
     for rf in (resolved_food or []):
-        if not _match_by_name(foods, rf.get("name", "")):
+        if not _match_by_name(foods, rf.get("name", "")) and _in_boundary(rf):
             foods.append(rf)
 
     # Structured items (Step 3 picks with real coords/price) take priority over
@@ -399,6 +475,11 @@ def _inject_selected_places(
             target = days[min(len(days) - 1, days.index(target) + 1)]
             start = "09:30 AM"
         fee = float(match.get("entry_fee", 0) or 0)
+        ok, reason = validate_place_for_destination(match, dest_coords)
+        if not ok:
+            if verbose:
+                warnings.append(f"'{match.get('name', name)}' could not be placed: {reason}.")
+            continue
         target.setdefault("stops", []).append({
             "id": _stable_id("sel-", match.get("name", str(name))),
             "day": target.get("day", 1),
@@ -529,7 +610,10 @@ def build_plans(
 
     for variant in ("VALUE", "RECOMMENDED", "PREMIUM"):
         # Laddering: give each variant its own honest cost target inside the
-        # floor→ceiling range. The 3% platform fee still lives INSIDE the target.
+        # floor→ceiling range. Targets are FINAL-PLANNED-AMOUNT targets (spec:
+        # remaining = budget − final, so the final amount must fit the budget).
+        # The base travel spend that produces that final amount is derived by
+        # inverting the fee stack (final = base × fee_factor + insurance).
         if variant == "VALUE":
             variant_target = float(budget_min or 0.0)
         elif variant == "RECOMMENDED":
@@ -537,6 +621,7 @@ def build_plans(
         else:
             variant_target = float(budget_max or 0.0)
         variant_target = min(max(variant_target, 0.0), float(budget_max or 0.0))
+        variant_base_target = max(0.0, (variant_target - INSURANCE_FEE) / fee_factor)
         p = _variant_params(variant, profile_stay_pref)
         warnings: List[str] = []
 
@@ -564,6 +649,29 @@ def build_plans(
             for i, d in enumerate(base.get("days") or [])
         ]
 
+        # SPEC §10/§31 — the itinerary carries ONLY destination-valid stops.
+        # Anything failing the boundary check is dropped with a visible note
+        # (never a silent change, never an out-of-region stop on the map).
+        geo_anchor = base.get("dest_coords")
+        if geo_anchor is not None:
+            dropped = 0
+            for d in days:
+                kept_stops = []
+                for s in d.get("stops") or []:
+                    ok, reason = validate_place_for_destination(s, geo_anchor)
+                    if ok:
+                        kept_stops.append(s)
+                    else:
+                        dropped += 1
+                        warnings.append(
+                            f"'{s.get('title', 'A stop')}' was left out — {reason}."
+                        )
+                d["stops"] = kept_stops
+            if dropped:
+                warnings.append(
+                    f"{dropped} stop(s) outside the {dest} destination boundary were removed."
+                )
+
         # 1. HARD PREFERENCES: inject every selected real place into the plan.
         selection_cost = _inject_selected_places(
             days, dest, selected_places or [], selected_food or [], warnings,
@@ -571,6 +679,7 @@ def build_plans(
             resolved_food=resolved_food,
             selected_place_items=selected_place_items,
             selected_food_items=selected_food_items,
+            dest_coords=base.get("dest_coords"),
             verbose=verbose,
         )
 
@@ -597,6 +706,32 @@ def build_plans(
                 catalog_match = _match_by_name(list(VERIFIED_STAYS.get(dest) or []), stay_pick.get("name", ""))
                 if catalog_match:
                     nightly = float(catalog_match.get("price_per_night", 0) or 0)
+                    stay_pick = {**stay_pick, "price_per_night": nightly}
+            # SPEC §5 — a selected REAL stay must NEVER silently cost ₹0.
+            # Live-discovered properties (GeoApify) carry no verified nightly
+            # rate; instead of shipping a false "Stay ₹0" line we price from
+            # the stay's stated budget tier (verified rate bands) and tell the
+            # traveller transparently. Only a genuine "Continue without a
+            # stay" (handled above) can produce ₹0 accommodation.
+            if nightly <= 0 and stay_pick.get("budget_category"):
+                from app.services.india_planner import STAY_TIERS
+                tier_words = str(stay_pick["budget_category"]).lower()
+                tier = next((t for t in STAY_TIERS if any(w in tier_words for w in t["words"])), None)
+                if tier:
+                    nightly = round((float(tier["lo"]) + float(tier["hi"])) / 2.0, 0)
+                    stay_pick = {**stay_pick, "price_per_night": nightly}
+                    warnings.append(
+                        f"Your selected stay '{stay_pick.get('name', '')}' doesn't publish a verified nightly rate "
+                        f"— we estimated ₹{round(nightly):,}/night from its {tier['label']} class. "
+                        "Pick a verified stay to lock an exact price."
+                    )
+            if nightly <= 0:
+                nightly = 1500.0  # Homestay/Guesthouse band midpoint — labelled estimate
+                stay_pick = {**stay_pick, "price_per_night": nightly}
+                warnings.append(
+                    f"No verified rate for '{stay_pick.get('name', '')}' — an economy ₹1,500/night "
+                    "estimate is used so your budget stays honest. Swap in a verified stay for an exact price."
+                )
             stayedge_cost = nightly * nights * rooms
             stay = stayedge_cost + selection_cost
             stay_label = f"{stay_pick.get('name', 'Selected stay')} — {stay_pick.get('budget_category', 'selected')}"
@@ -655,7 +790,12 @@ def build_plans(
         #    time, travel-time gaps between stops) — the 4 PM → 8:30 AM bug is
         #    made impossible here, server-side, for EVERY plan variant.
         _resequence(days)
-        chronology_notes = enforce_chronology(days, first_day_start=first_day_start)
+        # HARD TRIP-LENGTH RULE: the plan may never grow days beyond the trip's
+        # real duration — overflow on the final day compresses into evening
+        # hours or is dropped with a visible note, never a phantom Day N+1.
+        chronology_notes = enforce_chronology(
+            days, first_day_start=first_day_start, max_day=len(days),
+        )
         if chronology_notes:
             warnings.extend(chronology_notes[:3])
 
@@ -665,7 +805,7 @@ def build_plans(
         #    plan's base cost fills the chosen rung directly
         #    (VALUE→floor, RECOMMENDED→mid, PREMIUM→ceiling) and the final
         #    planned amount is spend × fee_factor.
-        base_ceiling = variant_target
+        base_ceiling = variant_base_target
         fixed = transport
         flexible_budget = base_ceiling - fixed
         natural_flexible = stay + food + activities
@@ -777,8 +917,9 @@ def build_plans(
             "days": days,
             "budget_min": budget_min,
             "budget_max": budget_max,
-            "remaining_budget": round(budget_max - spend, 0),
-            "within_budget": bool(spend <= budget_max),
+            # Spec §7: remaining budget = user budget − FINAL PLANNED AMOUNT.
+            "remaining_budget": round(float(budget_max or 0) - final_total, 0),
+            "within_budget": bool(final_total <= float(budget_max or 0) + 0.5),
             "highlights": highlights,
             "warnings": warnings,
             "recommended": variant == "RECOMMENDED",
@@ -862,6 +1003,7 @@ def validate_schedule(
 def enforce_chronology(
     days: List[Dict[str, Any]],
     first_day_start: Optional[str] = None,
+    max_day: Optional[int] = None,
 ) -> List[str]:
     """Make the 4 PM → 8:30 AM class of bugs mathematically impossible.
 
@@ -950,6 +1092,34 @@ def enforce_chronology(
         # The day's stored order now IS chronological order.
         d["stops"] = kept
         if overflow:
+            # HARD TRIP-LENGTH RULE (spec §7): a trip that ends on Day N can
+            # never grow a Day N+1. Overflow on the final day is compressed
+            # into the last day's remaining evening capacity; anything that
+            # genuinely cannot fit is dropped WITH a visible note — never
+            # silently expanded into an extra calendar day.
+            trip_last_day = max_day if max_day is not None else max(
+                (int(x.get("day", 0) or 0) for x in days), default=day_num
+            )
+            if day_num >= trip_last_day:
+                evening_cap = 21 * 60
+                for s in list(overflow):
+                    sm = _to_minutes(str(s.get("time", "")))
+                    dur = int(s.get("duration_minutes", 60) or 60)
+                    if sm is not None and sm + dur <= evening_cap:
+                        s["ai_note"] = "Kept on the final day within evening hours."
+                        kept.append(s)
+                        overflow.remove(s)
+                    else:
+                        notes.append(
+                            f"Day {day_num}: '{s.get('title', 'Stop')}' could not fit "
+                            f"inside the trip's final day and was left out of the schedule."
+                        )
+                        overflow.remove(s)
+                d["stops"] = sorted(
+                    kept,
+                    key=lambda s: _to_minutes(str(s.get("time", ""))) or 0,
+                )
+                continue
             target = next((x for x in days if int(x.get("day", 0) or 0) == day_num + 1), None)
             if target is None:
                 target = {"day": day_num + 1, "title": f"Day {day_num + 1}", "stops": []}
@@ -985,9 +1155,9 @@ def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List
     # premium plan may reach final_total = budget_max × fee_factor.
     def _final_cap(p: Dict[str, Any]) -> float:
         fac = (1.0 + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
-        if (p["cost_breakdown"] or {}).get("guide_mode"):
-            fac = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
-        return float(budget_max * fac + INSURANCE_FEE)
+        # FINAL amount is capped BY the budget itself (spec §7: the final
+        # planned amount must fit; remaining = budget − final ≥ 0).
+        return float(budget_max)
     prem_cap = _final_cap(by_type["PREMIUM"])
     prem = min(by_type["PREMIUM"]["final_total"], prem_cap)
     rec = min(by_type["RECOMMENDED"]["final_total"], prem)
@@ -997,10 +1167,11 @@ def _enforce_ordering(plans: List[Dict[str, Any]], verbose: bool = True) -> List
     for plan, target in ((by_type["RECOMMENDED"], rec), (by_type["VALUE"], val)):
         if plan["final_total"] > target:
             _shave_final_to(plan, float(target), verbose=verbose)
-    # within_budget is exact (no tolerance): the TRAVEL SPEND must sit within
-    # the budget in every mode (fees are on top per spec §23-26).
+    # within_budget is exact (no tolerance): the FINAL PLANNED AMOUNT (base +
+    # guide 12.5% + platform 3% + safety 15% + ₹50 insurance) must sit within
+    # the traveller's budget (spec §3/§7).
     for plan in plans:
-        plan["within_budget"] = bool(float(plan["base_plan_cost"]) <= float(plan["budget_max"]))
+        plan["within_budget"] = bool(float(plan["final_total"]) <= float(plan["budget_max"]) + 0.5)
     return plans
 
 
@@ -1081,10 +1252,16 @@ def validate_days(days: List[Dict[str, Any]], budget_max: float, total_cost: flo
                 )
                 continue
             gap = mb - (ma + dur)
-            km = _haversine_km(
-                (float(a.get("lat", 0) or 0), float(a.get("lng", 0) or 0)),
-                (float(b.get("lat", 0) or 0), float(b.get("lng", 0) or 0)),
-            )
+            a_geo = (float(a.get("lat", 0) or 0), float(a.get("lng", 0) or 0))
+            b_geo = (float(b.get("lat", 0) or 0), float(b.get("lng", 0) or 0))
+            # (0,0) means "no verified coordinates" — distance is unknowable,
+            # never flag a 17,000-minute phantom transfer.
+            if abs(a_geo[0]) < 0.01 and abs(a_geo[1]) < 0.01:
+                km = 0.0
+            elif abs(b_geo[0]) < 0.01 and abs(b_geo[1]) < 0.01:
+                km = 0.0
+            else:
+                km = _haversine_km(a_geo, b_geo)
             travel_min = km / 30.0 * 60.0  # ~30 km/h city average
             if gap < travel_min:
                 warnings.append(
@@ -1099,18 +1276,22 @@ def validate_days(days: List[Dict[str, Any]], budget_max: float, total_cost: flo
 def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     """Mode-aware belt-and-braces clamp, shared by EVERY plan surface.
 
-    Recomputs a plan's fees/total from the single rule (spec §23-26): base
-    cost = travel spend in EVERY mode; fees stack ON TOP — guide fee 12.5%
-    in GUIDE_MODE only, platform fee 3% always, safety reserve 15% always.
-    Guarantees the invariant:
-        final_total == base + guide_fee + platform_fee + safety_reserve.
+    Recomputs a plan's fees/total from the single rule (spec §3/§23-26): base
+    cost = transport + stay + food + activities; fees stack ON TOP — guide fee
+    12.5% in GUIDE_MODE only, platform fee 3% always, safety reserve 15%
+    always, insurance ₹50 fixed. Guarantees the invariants:
+        final_total == base + guide + platform + safety + insurance
+        final_total <= budget_max        (remaining = budget − final ≥ 0)
     """
     bd = plan["cost_breakdown"]
     guide_mode = bool(bd.get("guide_mode"))
     raw_spend = float(plan["base_plan_cost"])
     if float(budget_max) > 0:
-        # The budget is the travel-spend ceiling in every mode; fees are on top.
-        spend = int(min(raw_spend, float(budget_max)))
+        # The budget caps the FINAL amount, so invert the fee stack to get the
+        # largest base spend whose fully-loaded total still fits.
+        fee_factor = (1.0 + GUIDE_FEE_RATE + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE) if guide_mode             else (1.0 + PLATFORM_FEE_RATE + SAFETY_RESERVE_RATE)
+        spend_ceiling = max(0.0, (float(budget_max) - INSURANCE_FEE) / fee_factor)
+        spend = int(min(raw_spend, spend_ceiling))
     else:
         spend = round(raw_spend, 0)
     guid_fee_seed = float(bd.get("guide_fee", 0) or 0)
@@ -1125,8 +1306,9 @@ def normalize_plan_totals(plan: Dict[str, Any], budget_max: float) -> None:
     plan["insurance_fee"] = insurance_fee
     plan["final_total"] = final_total
     plan["total_cost"] = final_total
-    plan["remaining_budget"] = round(float(budget_max) - spend, 0)
-    plan["within_budget"] = bool(spend <= float(budget_max))
+    # Spec §7: remaining budget = user budget − FINAL PLANNED AMOUNT.
+    plan["remaining_budget"] = round(float(budget_max) - final_total, 0)
+    plan["within_budget"] = bool(final_total <= float(budget_max) + 0.5)
     bd["base_plan_cost"] = spend
     bd["guide_fee"] = round(guide_fee, 0)
     bd["platform_fee"] = platform_fee

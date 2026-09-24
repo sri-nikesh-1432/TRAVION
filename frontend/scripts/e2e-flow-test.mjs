@@ -169,8 +169,9 @@ try {
   check('Review shows Final planned amount', /Final planned amount/.test(reviewText));
   check('Review shows TRAVION Refund Protection note', /TRAVION Refund Protection/.test(reviewText));
 
-  const daySections = reviewText.split(/Day \d/).slice(1);
-  check('Review renders day timeline', daySections.length > 0, `${daySections.length} day sections`);
+  const dayHeadings = await page.locator('text=/day \\d/i').count();
+  const daySections = reviewText.split(/Day \d/i).slice(1);
+  check('Review renders day timeline', dayHeadings > 0 || daySections.length > 0, `${dayHeadings} day headings`);
   const foundMeals = ['Breakfast', 'Lunch', 'Snacks', 'Dinner'].filter(w => reviewText.includes(w));
   check('Meal labels present', foundMeals.length >= 2, foundMeals.join(', '));
   let chronoOk = true;

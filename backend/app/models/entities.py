@@ -237,6 +237,8 @@ class PaymentSplit(Base):
     activity_cost = Column(Float, default=0.0)
     guide_fee = Column(Float, default=0.0)
     platform_fee = Column(Float, default=0.0)
+    safety_reserve = Column(Float, default=0.0)
+    insurance_fee = Column(Float, default=0.0)
     settlement_status = Column(String(50), default="PENDING")  # PENDING, SETTLED
     settled_at = Column(DateTime, nullable=True)
 

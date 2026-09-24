@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Compass, MapPin, Sparkles, Navigation, Phone, ShieldCheck,
@@ -116,16 +116,33 @@ function loadRazorpayScript(): Promise<boolean> {
 interface UserDomainProps {
   session: AuthSession;
   onLogout: () => void;
-  isSandboxDemo?: boolean;
 }
 
 export const UserDomain: React.FC<UserDomainProps> = ({
   session,
-  onLogout,
-  isSandboxDemo = false
+  onLogout
 }) => {
   // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips'
-  const [currentView, setCurrentView] = useState<'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips'>('search');
+  type PlannerView = 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips';
+  const [currentView, setCurrentViewState] = useState<PlannerView>('search');
+  // §25/§26 — GLOBAL BACK: the traveller can always return to the ACTUAL
+  // previous screen (not a hardcoded Home) with the trip state untouched —
+  // every view is derived from the same persisted trip object, so going back
+  // never regenerates or loses selections.
+  const viewHistoryRef = useRef<PlannerView[]>([]);
+  const setCurrentView = (v: PlannerView | ((prev: PlannerView) => PlannerView)) => {
+    setCurrentViewState((prev) => {
+      const next = typeof v === 'function' ? (v as (p: PlannerView) => PlannerView)(prev) : v;
+      if (next !== prev) viewHistoryRef.current = [...viewHistoryRef.current.slice(-19), prev];
+      return next;
+    });
+  };
+  const goBack = () => {
+    const hist = viewHistoryRef.current;
+    const prev = hist.length > 0 ? hist[hist.length - 1] : 'search';
+    viewHistoryRef.current = hist.slice(0, -1);
+    setCurrentViewState(prev);
+  };
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -270,35 +287,33 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
   // Initial user profile check + auto-resume of an ongoing journey
   useEffect(() => {
-    if (!isSandboxDemo) {
-      api.getMe().then((res) => {
-        if (res.user) {
-          setUserProfile(res.user);
-          if (!res.user.is_profile_complete) {
-            setShowProfileSheet(true);
-          }
+    api.getMe().then((res) => {
+      if (res.user) {
+        setUserProfile(res.user);
+        if (!res.user.is_profile_complete) {
+          setShowProfileSheet(true);
         }
-      }).catch(console.error);
+      }
+    }).catch(console.error);
 
-      api.getMyTrips().then((trips) => {
-        setMyTrips(trips);
-        // ── PERSISTENT TRIP (spec §1/§32) ──────────────────────────────
-        // The SAME trip_id survives refresh across the WHOLE flow — including
-        // the mid-planning stage (REQUESTED/PLANNED/DRAFT) that used to be
-        // lost on refresh and later surfaced as "Trip not found" at checkout.
-        const ongoing = trips.find(t => t.status === 'ACTIVE' || t.status === 'GUIDE_ASSIGNED' || t.status === 'PAID');
-        if (ongoing) {
-          loadTripWorkspace(ongoing.id, true);
-          return;
-        }
-        const midPlanning = trips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
-        if (midPlanning) {
-          resumePlanningTrip(midPlanning);
-        }
-      }).catch(console.error);
-    }
+    api.getMyTrips().then((trips) => {
+      setMyTrips(trips);
+      // ── PERSISTENT TRIP (spec §1/§32) ──────────────────────────────
+      // The SAME trip_id survives refresh across the WHOLE flow — including
+      // the mid-planning stage (REQUESTED/PLANNED/DRAFT) that used to be
+      // lost on refresh and later surfaced as "Trip not found" at checkout.
+      const ongoing = trips.find(t => t.status === 'ACTIVE' || t.status === 'GUIDE_ASSIGNED' || t.status === 'PAID');
+      if (ongoing) {
+        loadTripWorkspace(ongoing.id, true);
+        return;
+      }
+      const midPlanning = trips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
+      if (midPlanning) {
+        resumePlanningTrip(midPlanning);
+      }
+    }).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSandboxDemo]);
+  }, []);
 
   // Resume an in-flight planning trip from server state (refresh / back-nav).
   // Everything needed is already persisted server-side: the interview answers
@@ -724,12 +739,20 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               className="flex items-center gap-2.5 focus:outline-none"
             >
               <TravionLogo mark="dark" />
-              {isSandboxDemo && (
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider">
-                  Sandboxed Demo
-                </span>
-              )}
             </button>
+            {/* §25 — Global Back: returns to the ACTUAL previous screen with
+                all trip state intact (never a hardcoded Home). */}
+            {currentView !== 'search' && (
+              <button
+                onClick={goBack}
+                aria-label="Go back to the previous screen"
+                title="Back"
+                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl border border-charcoal-200 bg-white text-charcoal-700 text-xs font-bold hover:border-charcoal-300 hover:bg-charcoal-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-travion-400"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Back</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -1239,11 +1262,43 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Branded Loading Transition */}
+      {/* Branded Loading Transition — §22/§23: itinerary building is a real
+          server operation (place validation, geo-fencing, chronology, budget
+          fitting). The animated stage list reflects those real stages and
+          never fakes completion; the loader simply rides along until the
+          response lands. The same experience covers plan CHOOSING (server
+          generates + validates the full itinerary before responding). */}
       <AnimatePresence>
         {isGeneratingPlan && (
           <BrandedLoader
-            headline="Crafting your personalized itinerary…"
+            headline="Building your TRAVION itinerary"
+            steps={[
+              'Understanding your destination…',
+              'Checking your travel dates…',
+              'Finding places worth visiting…',
+              'Validating real locations…',
+              'Optimizing your daily route…',
+              'Balancing your travel budget…',
+              'Arranging your days…',
+              'Finalizing your TRAVION journey…',
+            ]}
+            durationPerStep={1100}
+            onComplete={() => {}}
+          />
+        )}
+        {isChoosingPlan && (
+          <BrandedLoader
+            headline="Building your TRAVION itinerary"
+            steps={[
+              'Locking in your selected plan…',
+              'Validating real locations…',
+              'Optimizing your daily route…',
+              'Placing meals into real windows…',
+              'Balancing your travel budget…',
+              'Arranging your days…',
+              'Finalizing your TRAVION journey…',
+            ]}
+            durationPerStep={1100}
             onComplete={() => {}}
           />
         )}
@@ -1410,7 +1465,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 <span>
                   {checkoutData?.live_checkout
                     ? 'Secure Razorpay test mode — UPI, cards and netbanking supported'
-                    : 'Verified sandbox verification flow — no real charge is created'}
+                    : 'Secure checkout — verified payment flow, no real charge is created'}
                 </span>
               </p>
 

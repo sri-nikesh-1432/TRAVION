@@ -459,6 +459,8 @@ def get_manager_payments(
             "guide_name": f"{guide.first_name} {guide.last_name}" if guide else None,
             "guide_fee": split.guide_fee if split else 0.0,
             "platform_fee": split.platform_fee if split else 0.0,
+            "safety_reserve": (split.safety_reserve if split and split.safety_reserve is not None else 0.0),
+            "insurance_fee": (split.insurance_fee if split and split.insurance_fee is not None else 0.0),
             "settlement_status": split.settlement_status if split else None,
             "created_at": p.created_at,
         })
@@ -477,6 +479,8 @@ def get_manager_revenue(
     gross = float(sum(p.total_amount for p in payments))
     platform_total = 0.0
     guide_total = 0.0
+    safety_total = 0.0
+    insurance_total = 0.0
     settled = 0.0
     pending = 0.0
     by_dest: Dict[str, float] = {}
@@ -490,6 +494,8 @@ def get_manager_revenue(
             platform_total += float(s.platform_fee or 0)
             gf = float(s.guide_fee or 0)
             guide_total += gf
+            safety_total += float(s.safety_reserve or 0)
+            insurance_total += float(s.insurance_fee or 0)
             if s.settlement_status == "SETTLED":
                 settled += gf
             else:
@@ -528,6 +534,9 @@ def get_manager_revenue(
         "guide_fees": round(guide_total, 2),
         "settled_guide_fees": round(settled, 2),
         "pending_settlements": round(pending, 2),
+        "safety_reserve_total": round(safety_total, 2),
+        "insurance_fees_total": round(insurance_total, 2),
+        "refund_protection_liability": round(insurance_total + platform_total, 2),
         "by_month": by_month_sorted,
         "by_destination": by_dest_sorted,
         "by_mode": by_mode_sorted,

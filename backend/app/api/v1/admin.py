@@ -84,11 +84,17 @@ def get_admin_revenue(
     by_dest: Dict[str, float] = {}
     by_mode: Dict[str, float] = {}
     month_buckets: Dict[str, Dict[str, float]] = {}
+    total_safety_reserve = 0.0
+    total_insurance = 0.0
     for p in payments:
         trip = p.trip
         split = p.split
         gf = float(split.guide_fee) if split else 0.0
         pf = float(split.platform_fee) if split else 0.0
+        sr = float(split.safety_reserve) if split and split.safety_reserve is not None else 0.0
+        ins = float(split.insurance_fee) if split and split.insurance_fee is not None else 0.0
+        total_safety_reserve += sr
+        total_insurance += ins
         month = p.created_at.strftime("%Y-%m") if p.created_at else "Unknown"
         b = month_buckets.setdefault(month, {"platform": 0.0, "guide": 0.0, "gross": 0.0})
         b["gross"] += float(p.total_amount or 0)
@@ -119,6 +125,9 @@ def get_admin_revenue(
         "total_guide_fees_payout": round(total_guide_fees, 2),
         "settled_guide_fees": round(settled_guide_fees, 2),
         "pending_guide_fees": round(pending_guide_fees, 2),
+        "total_safety_reserve": round(total_safety_reserve, 2),
+        "total_insurance_fees": round(total_insurance, 2),
+        "refund_protection_liability": round(total_insurance + float(platform_revenue or 0.0), 2),
         "net_revenue": round(platform_revenue - 0, 2),
         "by_month": by_month,
         "by_destination": by_dest_list,

@@ -457,6 +457,8 @@ export const GuideDomain: React.FC<GuideDomainProps> = ({ session, onLogout }) =
                   {assignment.trip.pricing && (
                     <div className="mt-1.5 text-[11px] font-bold text-charcoal-500">
                       Guide fee: ₹{Math.round(assignment.trip.pricing.guide_fee || 0).toLocaleString('en-IN')} · Platform fee: ₹{Math.round(assignment.trip.pricing.platform_fee || 0).toLocaleString('en-IN')}
+                      {' '}· Safety reserve: ₹{Math.round(assignment.trip.pricing.safety_reserve || 0).toLocaleString('en-IN')} · Insurance: ₹{Math.round(assignment.trip.pricing.insurance_fee || 0).toLocaleString('en-IN')}
+                      {' '}· Final planned amount: ₹{Math.round(assignment.trip.pricing.final_planned_amount || assignment.trip.pricing.amount_payable || 0).toLocaleString('en-IN')}
                     </div>
                   )}
                   {/* §34 — the guide sees the COMPLETE final trip: selections + FINAL itinerary */}

@@ -124,11 +124,17 @@ def test_pricing_is_single_source_and_split_persisted_at_order_time():
     assert pr["guide_assigned"] is False
     assert pr["guide_fee"] > 0, "GUIDE_MODE must carry a real guide fee"
     assert pr["platform_fee"] > 0
-    assert abs(pr["amount_payable"] - (pr["guide_fee"] + pr["platform_fee"])) < 1
+    assert pr["safety_reserve"] > 0, "15% safety reserve is ALWAYS included"
+    assert pr["insurance_fee"] == 50, "50-rupee insurance is fixed on every booking"
+    # Spec: amount_payable = FINAL PLANNED AMOUNT = base + guide (12.5%)
+    # + platform (3%) + safety (15%) + insurance (50) - fully loaded.
+    expected_final = round(
+        pr["base_budget"] + pr["guide_fee"] + pr["platform_fee"]
+        + pr["safety_reserve"] + pr["insurance_fee"]
+    )
+    assert abs(pr["amount_payable"] - expected_final) < 1
     assert pr["days"] >= 2
     assert pr["travel_spend"] > 0
-    # amount_payable is ONLY the fees — never the travel spend
-    assert pr["amount_payable"] < pr["total_cost"]
 
     # Checkout must reuse the SAME authoritative numbers (single source of truth)
     co = _checkout(trip_id, headers)
@@ -183,7 +189,7 @@ def test_assigned_guide_rate_per_day_drives_fee():
     # checkout mirrors it
     co = _checkout(trip_id, headers)
     assert co["breakdown"]["guide_fee"] == expected
-    assert co["amount"] == co["breakdown"]["guide_fee"] + co["breakdown"]["platform_fee"]
+    assert co["amount"] == co["breakdown"]["final_planned_amount"]
 
     # The assigned guide sees the SAME authoritative fee on their dashboard
     at = client.get("/api/v1/guides/assigned-trips", headers=gheaders)
@@ -191,7 +197,12 @@ def test_assigned_guide_rate_per_day_drives_fee():
     row = next((a for a in at.json() if a["trip"]["id"] == trip_id), None)
     assert row is not None
     assert row["trip"]["pricing"]["guide_fee"] == expected
-    assert row["trip"]["pricing"]["amount_payable"] == expected + row["trip"]["pricing"]["platform_fee"]
+    pp = row["trip"]["pricing"]
+    expected_payable = round(
+        pp["base_budget"] + expected + pp["platform_fee"]
+        + pp["safety_reserve"] + pp["insurance_fee"]
+    )
+    assert pp["amount_payable"] == expected_payable
 
 
 def test_add_day_reprices_guide_fee_never_frozen():
@@ -215,7 +226,11 @@ def test_add_day_reprices_guide_fee_never_frozen():
     # GUIDE_MODE guide fee = 12.5% of the plan's base cost (travel spend).
     expected_fee = round(float(pr1["travel_spend"]) * 0.125)
     assert pr1["guide_fee"] == expected_fee, "guide fee must track the plan cost, never stay frozen"
-    assert pr1["amount_payable"] == pr1["guide_fee"] + pr1["platform_fee"]
+    assert pr1["amount_payable"] == pr1["final_planned_amount"]
+    assert pr1["amount_payable"] == round(
+        pr1["base_budget"] + pr1["guide_fee"] + pr1["platform_fee"]
+        + pr1["safety_reserve"] + pr1["insurance_fee"]
+    )
 
     # The persisted itinerary carries the repriced breakdown (plan versioning)
     db = SessionLocal()
@@ -263,22 +278,26 @@ def test_webhook_detects_pricing_drift_and_refreshes_split():
     assert data["guide_fee"] == pr["guide_fee"]
 
 
-def test_non_guide_mode_honestly_zero_fee():
+def test_non_guide_mode_honestly_zero_guide_fee():
     _, headers, trip_id = _build_trip("ADVENTUROUS_MODE")
     pr = _pricing(trip_id, headers)
     assert pr["guide_required"] is False
     assert pr["guide_fee"] == 0.0
     assert pr["guide_assigned"] is False
-    assert pr["amount_payable"] == pr["platform_fee"]
+    # Spec: fees stack on top in EVERY mode - the 3% platform fee is never
+    # zero for a non-zero base; only the guide fee is zero in Adventurous.
+    assert pr["platform_fee"] == round(pr["base_budget"] * 0.03)
+    assert pr["platform_fee"] > 0
+    assert pr["amount_payable"] == pr["final_planned_amount"]
 
     co = _checkout(trip_id, headers)
     assert co["breakdown"]["guide_fee"] == 0.0
-    assert co["amount"] == co["breakdown"]["platform_fee"]
+    assert co["amount"] == co["breakdown"]["final_planned_amount"]
 
 
 def test_guide_fee_12_5_percent_of_budget_on_top():
-    """User spec: budget ₹10,000 → guide fee = 12.5% → ₹1,250, subtotal
-    ₹11,250, platform fee 3% → ₹300, grand total ₹11,550. The fees are paid ON
+    """Spec: budget 10,000 (Guide Mode) -> guide 12.5% 1,250 + platform 3%
+    300 + safety 15% 1,500 + insurance 50 -> final 13,100. Fees are paid ON
     TOP of the travel budget, never carved out of it."""
     from app.services.multi_plan_engine import normalize_plan_totals
 
@@ -290,14 +309,39 @@ def test_guide_fee_12_5_percent_of_budget_on_top():
             "guide_fee": 0.0, "platform_fee": 0.0, "final_total": 0.0, "total": 0.0,
         },
     }
-    normalize_plan_totals(plan, 10000.0)
+    # With a budget that can hold the fully-loaded total (13,100), the base
+    # keeps its full 10,000 and every fee stacks on top.
+    normalize_plan_totals(plan, 15000.0)
     bd = plan["cost_breakdown"]
     assert plan["base_plan_cost"] == 10000.0
     assert bd["guide_fee"] == 1250.0
     assert bd["platform_fee"] == 300.0
-    assert plan["final_total"] == 11250.0 + 300.0 == 11550.0
-    assert plan["within_budget"] is True  # travel spend fits the budget
-    assert plan["remaining_budget"] == 0.0
+    assert bd["safety_reserve"] == 1500.0
+    assert bd["insurance_fee"] == 50.0
+    assert plan["final_total"] == 13100.0
+    assert plan["within_budget"] is True
+    assert plan["remaining_budget"] == 1900.0
+
+    # With a tight 10,000 budget the base is clamped so the FULLY-LOADED
+    # total still fits: final <= 10,000, remaining >= 0.
+    tight = {
+        "base_plan_cost": 10000.0,
+        "cost_breakdown": {
+            "guide_mode": True,
+            "transport": 3000.0, "stay": 4000.0, "food": 2000.0, "activities": 1000.0,
+            "guide_fee": 0.0, "platform_fee": 0.0, "final_total": 0.0, "total": 0.0,
+        },
+    }
+    normalize_plan_totals(tight, 10000.0)
+    tb = tight["cost_breakdown"]
+    assert tight["final_total"] == round(
+        tight["base_plan_cost"] + tb["guide_fee"] + tb["platform_fee"]
+        + tb["safety_reserve"] + tb["insurance_fee"]
+    )
+    assert tight["final_total"] <= 10000.0 + 0.5
+    assert tight["within_budget"] is True
+    assert tight["remaining_budget"] == round(10000.0 - tight["final_total"])
+    assert tight["remaining_budget"] >= 0
 
 
 def test_manager_rate_endpoint_drives_assigned_guide_fee():
@@ -335,7 +379,7 @@ def test_manager_rate_endpoint_drives_assigned_guide_fee():
     expected = max(GUIDE_MIN_FEE, min(2500.0 * pr["days"], GUIDE_MAX_FEE))
     assert pr["guide_assigned"] is True
     assert pr["guide_fee"] == expected
-    assert pr["amount_payable"] == pr["guide_fee"] + pr["platform_fee"]
+    assert pr["amount_payable"] == pr["final_planned_amount"]
 
     # Manager roster exposes the saved rate (real record)
     roster = client.get("/api/v1/manager/guides", headers=mgr_headers)

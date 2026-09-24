@@ -15,7 +15,6 @@ import {
 
 interface LandingPageProps {
   onLoginSuccess: (session: any) => void;
-  onExploreDemo: () => void;
   onOpenGuideRegistration: () => void;
   onOpenGuideSignIn: () => void;
 }
@@ -81,7 +80,7 @@ const SECTION_IDS = ['top', 'explore', 'features', 'how-it-works', 'map', 'modes
    Landing page — complete public reconstruction
 ═════════════════════════════════════════════════════════════ */
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExploreDemo, onOpenGuideRegistration, onOpenGuideSignIn }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpenGuideRegistration, onOpenGuideSignIn }) => {
   const reduceMotion = useReducedMotion();
   const { scrollY } = useScroll();
   const heroParallax = useTransform(scrollY, [0, 900], [0, 170]);
@@ -1729,13 +1728,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onExpl
                 >
                   Become a Guide
                   <ArrowUpRight className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={onExploreDemo}
-                  className="inline-flex btn-press items-center gap-2 h-13 px-7 rounded-2xl bg-white text-charcoal-900 text-sm font-bold hover:bg-ivory-100 transition-all hover:-translate-y-0.5"
-                >
-                  Try the demo preview
-                  <Compass className="w-4 h-4" />
                 </button>
               </div>
             </Reveal>

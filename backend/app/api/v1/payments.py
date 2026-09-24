@@ -147,6 +147,8 @@ def create_trip_checkout(
     split.activity_cost = round(float(pricing["activity_cost"]), 0)
     split.guide_fee = round(float(pricing["guide_fee"]), 0)
     split.platform_fee = round(float(pricing["platform_fee"]), 0)
+    split.safety_reserve = round(float(pricing.get("safety_reserve", 0) or 0), 0)
+    split.insurance_fee = round(float(pricing.get("insurance_fee", 0) or 0), 0)
 
     db.commit()
 
@@ -155,6 +157,9 @@ def create_trip_checkout(
     display_breakdown["travel_spend"] = pricing["travel_spend"]
     display_breakdown["guide_required"] = _guide_required(trip)
     display_breakdown["guide_assigned"] = _guide_assigned(trip)
+    display_breakdown["safety_reserve"] = float(pricing.get("safety_reserve", 0) or 0)
+    display_breakdown["insurance_fee"] = float(pricing.get("insurance_fee", 0) or 0)
+    display_breakdown["final_planned_amount"] = float(pricing.get("final_planned_amount", payable) or payable)
 
     return CheckoutResponse(
         order_id=order_info["order_id"],
@@ -255,6 +260,8 @@ def process_payment_webhook(
         split.activity_cost = round(float(pricing["activity_cost"]), 0)
         split.guide_fee = round(float(pricing["guide_fee"]), 0)
         split.platform_fee = round(float(pricing["platform_fee"]), 0)
+        split.safety_reserve = round(float(pricing.get("safety_reserve", 0) or 0), 0)
+        split.insurance_fee = round(float(pricing.get("insurance_fee", 0) or 0), 0)
 
     # Assemble offline package for the traveller.
     guide_info = None

@@ -218,6 +218,10 @@ def _stay_tier(pref_text: str) -> Dict[str, Any]:
     return dict(FALLBACK_STAY)
 
 
+# Public alias — budget/pipeline consumers match a stay tier by preference text.
+match_stay_tier = _stay_tier
+
+
 def _food_hint(destination: str, state: str) -> str:
     return CUISINE_HINT.get(state or "", "local Indian cuisine")
 
@@ -515,7 +519,8 @@ def build_estimate_plan(
         "budget": budget,
         "budget_min": lo,
         "budget_max": hi,
-        "within_budget": (travel_spend if mode == "GUIDE_MODE" else total) <= hi,
+        # Spec §3/§7: the FINAL planned amount must fit the budget.
+            "within_budget": total <= hi,
         "party_type": party,
         "headcount": pax,
         "adults": _party_adults(profile),

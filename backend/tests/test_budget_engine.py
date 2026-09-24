@@ -76,19 +76,36 @@ def test_parse_fallback():
 
 # ── compute_totals / base_ceiling_for ───────────────────────────────────────
 
-def test_compute_totals_includes_three_percent_fee():
+def test_compute_totals_fully_loaded():
+    """Spec: final = base + 12.5% guide (Guide Mode) + 3% platform + 15%
+    safety + ₹50 insurance. Adventurous: no guide fee."""
     t = compute_totals(18447.0)
     assert t["platform_fee"] == 553
-    assert t["final_total"] == 19000
-    assert t["base_plan_cost"] == 18447
+    assert t["safety_reserve"] == 2767
+    assert t["insurance_fee"] == 50
+    assert t["guide_fee"] == 0
+    assert t["final_total"] == 18447 + 553 + 2767 + 50
+
+    g = compute_totals(18447.0, guide_mode=True)
+    assert g["guide_fee"] == round(18447.0 * 0.125)
+    assert g["final_total"] == 18447 + g["guide_fee"] + 553 + 2767 + 50
+    # The invariant: final ALWAYS equals the sum of its components.
+    assert g["final_total"] == (
+        g["base_plan_cost"] + g["guide_fee"] + g["platform_fee"]
+        + g["safety_reserve"] + g["insurance_fee"]
+    )
 
 
 def test_ceiling_means_ceiling():
-    c = base_ceiling_for(25000.0)
-    assert c == pytest.approx(25000.0 / 1.03)
-    # A base plan exactly at the ceiling (rounded to rupee) must fit.
-    t = compute_totals(base_ceiling_for(25000.0))
-    assert t["final_total"] <= 25000.0
+    """The largest base whose FULLY-LOADED final amount fits the budget."""
+    for guide_mode in (False, True):
+        c = base_ceiling_for(25000.0, guide_mode=guide_mode)
+        # A base plan exactly at the ceiling must fit — fees included.
+        t = compute_totals(c, guide_mode=guide_mode)
+        assert t["final_total"] <= 25000.5
+        # And one rupee more of base spend must overflow.
+        t2 = compute_totals(c + 1.0, guide_mode=guide_mode)
+        assert t2["final_total"] > 25000.0
 
 
 # ── build_plans hard constraint ─────────────────────────────────────────────
@@ -103,8 +120,15 @@ def test_all_plans_are_within_budget(bmax):
     for p in plans:
         assert p["within_budget"] is True, f"{p['type']} over budget: {p['final_total']}"
         assert float(p["final_total"]) <= bmax
-        fee = p["platform_fee"]
-        assert p["final_total"] == p["base_plan_cost"] + fee
+        bd = p["cost_breakdown"]
+        # Fully-loaded invariant (spec §3): final = base + guide + platform
+        # + safety + insurance, and remaining = budget − final ≥ 0.
+        assert p["final_total"] == round(
+            p["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
+            + bd["safety_reserve"] + bd["insurance_fee"]
+        )
+        assert p["remaining_budget"] == round(bmax - p["final_total"])
+        assert p["remaining_budget"] >= 0
 
 
 def test_plans_are_laddered():
@@ -346,11 +370,17 @@ def test_normalize_plan_totals_invariant_even_over_budget():
     }
     normalize_plan_totals(plan, 20000.0)
     bd = plan["cost_breakdown"]
-    assert plan["base_plan_cost"] == 20000.0  # travel spend fits the budget
-    assert bd["guide_fee"] == round(20000.0 * 0.125) == 2500.0
-    assert bd["platform_fee"] == round(20000.0 * 0.03) == 600.0
-    assert plan["final_total"] == 23100.0 == 20000.0 + 2500.0 + 600.0
-    assert plan["final_total"] == plan["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
+    # The budget caps the FINAL amount: the base spend is clamped to the
+    # largest value whose fully-loaded total fits ₹20,000 exactly.
+    assert plan["base_plan_cost"] <= 20000.0
+    expected_final = round(
+        plan["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
+        + bd["safety_reserve"] + bd["insurance_fee"]
+    )
+    assert plan["final_total"] == expected_final
+    assert plan["final_total"] <= 20000.0 + 0.5
     assert bd["total"] == bd["final_total"] == plan["final_total"]
-    assert bd["payable"] == bd["guide_fee"] + bd["platform_fee"]
-    assert plan["within_budget"] is True  # travel spend within budget
+    assert bd["payable"] == plan["final_total"]
+    assert plan["within_budget"] is True
+    assert plan["remaining_budget"] == round(20000.0 - plan["final_total"])
+    assert plan["remaining_budget"] >= 0

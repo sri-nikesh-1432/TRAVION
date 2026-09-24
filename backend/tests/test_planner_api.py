@@ -174,8 +174,13 @@ def test_plan_multi_guide_mode_checkout_collects_guide_fee_on_top():
         assert bd["guide_mode"] is True
         assert bd["guide_fee"] == round(float(p["base_plan_cost"]) * 0.125)
         assert bd["platform_fee"] == round(float(p["base_plan_cost"]) * 0.03)
-        assert p["final_total"] == p["base_plan_cost"] + bd["guide_fee"] + bd["platform_fee"]
-        assert p["within_budget"] is True  # travel spend inside the budget
+        # Final planned amount = base + guide 12.5% + platform 3% + safety 15% + ₹50 insurance
+        expected_final = (
+            float(p["base_plan_cost"]) + float(bd["guide_fee"]) + float(bd["platform_fee"])
+            + float(bd["safety_reserve"]) + float(bd["insurance_fee"])
+        )
+        assert p["final_total"] == round(expected_final)
+        assert p["within_budget"] is True  # final planned amount inside the budget
 
     chosen = client.post(f"/api/v1/trips/{trip_id}/choose-plan", headers=headers, json={
         "plan_type": "RECOMMENDED",
@@ -191,7 +196,11 @@ def test_plan_multi_guide_mode_checkout_collects_guide_fee_on_top():
     assert pr["guide_assigned"] is False
     assert pr["guide_fee"] > 0, "GUIDE_MODE via Step-4 must carry a real guide fee"
     assert abs(pr["guide_fee"] - round(float(pr["travel_spend"]) * 0.125)) <= 1
-    assert pr["amount_payable"] == pr["guide_fee"] + pr["platform_fee"]
+    expected_payable = round(
+        float(pr["travel_spend"]) + float(pr["guide_fee"]) + float(pr["platform_fee"])
+        + float(pr["safety_reserve"]) + float(pr["insurance_fee"])
+    )
+    assert pr["amount_payable"] == expected_payable
 
     co = client.post(f"/api/v1/trips/{trip_id}/checkout", headers=headers, json={"payment_method": "razorpay", "non_refundable_acknowledged": True})
     assert co.status_code == 200, co.text
