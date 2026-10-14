@@ -2,10 +2,20 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON,
-    UniqueConstraint,
+    Numeric, UniqueConstraint, DOUBLE_PRECISION,
 )
 from sqlalchemy.orm import relationship
 from app.core.db import Base
+
+
+def Money():
+    """MONETARY column type: DECIMAL(12,2) in MySQL — exact base-10 storage,
+    never FLOAT (spec §3/§14: no floating-point money). `asdecimal=False`
+    keeps the Python-side value a float so existing arithmetic/formatting is
+    unchanged; the DATABASE stores and aggregates exact decimals (SUM/AVG come
+    back converted to float by SQLAlchemy's result processor)."""
+    return Numeric(12, 2, asdecimal=False)
+
 
 def get_utc_now():
     return datetime.now(timezone.utc)
@@ -78,7 +88,7 @@ class Guide(Base):
     # guide fee = rate_per_day × guided_days (clamped to Travion's guide fee
     # bounds). When NULL, the platform's rule-based guide fee applies. NULL →
     # the rule, never a per-guide fake default.
-    rate_per_day = Column(Float, nullable=True)
+    rate_per_day = Column(Money(), nullable=True)
     current_trip_id = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
@@ -117,8 +127,10 @@ class Location(Base):
     name = Column(String(100), nullable=False, index=True)
     state = Column(String(100), nullable=False)
     country = Column(String(100), default="India")
-    lat = Column(Float, nullable=False)
-    lng = Column(Float, nullable=False)
+    # Coordinates: DOUBLE (8-byte) — single-precision FLOAT would round a
+    # real-world latitude/longitude to ~0.3 m of error on MySQL.
+    lat = Column(DOUBLE_PRECISION, nullable=False)
+    lng = Column(DOUBLE_PRECISION, nullable=False)
     place_id = Column(String(255), nullable=True, index=True)  # Provider canonical id (Google Places)
     description = Column(Text, nullable=True)
     hero_image = Column(String(500), nullable=True)
@@ -138,8 +150,8 @@ class Trip(Base):
     end_datetime = Column(DateTime, nullable=False)
     status = Column(String(50), default="DRAFT")  # DRAFT, PLANNED, REQUESTED, GUIDE_ASSIGNED, PAID, ACTIVE, COMPLETED
     mode = Column(String(50), nullable=True)  # GUIDE_MODE, ADVENTUROUS_MODE
-    budget = Column(Float, default=15000.0)
-    total_cost = Column(Float, default=0.0)
+    budget = Column(Money(), default=15000.0)
+    total_cost = Column(Money(), default=0.0)
     created_at = Column(DateTime, default=get_utc_now)
     updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
@@ -180,7 +192,7 @@ class Itinerary(Base):
     trip_id = Column(String(36), ForeignKey("trips.id"), nullable=False)
     version = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
-    total_cost = Column(Float, default=0.0)
+    total_cost = Column(Money(), default=0.0)
     days_data = Column(JSON, default=list)  # Detailed list of days, stops, typed pins
     cost_breakdown = Column(JSON, default=dict)  # travel estimate items + dynamic fees
     created_at = Column(DateTime, default=get_utc_now)
@@ -214,7 +226,7 @@ class Payment(Base):
     razorpay_payment_id = Column(String(100), nullable=True)
     razorpay_signature = Column(String(255), nullable=True)
     status = Column(String(50), default="PENDING")  # PENDING, SUCCESS, FAILED
-    total_amount = Column(Float, nullable=False)
+    total_amount = Column(Money(), nullable=False)
     currency = Column(String(10), default="INR")
     # §20 non-refundable acknowledgement: stored WITH the transaction record so
     # every payment can prove the traveller accepted the policy before paying.
@@ -231,14 +243,14 @@ class PaymentSplit(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     payment_id = Column(String(36), ForeignKey("payments.id"), unique=True, nullable=False)
-    transport_cost = Column(Float, default=0.0)
-    stay_cost = Column(Float, default=0.0)
-    food_cost = Column(Float, default=0.0)
-    activity_cost = Column(Float, default=0.0)
-    guide_fee = Column(Float, default=0.0)
-    platform_fee = Column(Float, default=0.0)
-    safety_reserve = Column(Float, default=0.0)
-    insurance_fee = Column(Float, default=0.0)
+    transport_cost = Column(Money(), default=0.0)
+    stay_cost = Column(Money(), default=0.0)
+    food_cost = Column(Money(), default=0.0)
+    activity_cost = Column(Money(), default=0.0)
+    guide_fee = Column(Money(), default=0.0)
+    platform_fee = Column(Money(), default=0.0)
+    safety_reserve = Column(Money(), default=0.0)
+    insurance_fee = Column(Money(), default=0.0)
     settlement_status = Column(String(50), default="PENDING")  # PENDING, SETTLED
     settled_at = Column(DateTime, nullable=True)
 
@@ -336,11 +348,11 @@ class TripPlaceSelection(Base):
     place_id = Column(String(255), nullable=True)  # internal Travion id, when present
     name = Column(String(255), nullable=False)
     category = Column(String(50), nullable=False)  # must_visit | activities | food | stays | shopping | healthcare | education | transport | other
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
+    latitude = Column(DOUBLE_PRECISION, nullable=True)
+    longitude = Column(DOUBLE_PRECISION, nullable=True)
     distance_km = Column(Float, nullable=True)
     rating = Column(Float, nullable=True)
-    price = Column(Float, nullable=True)
+    price = Column(Money(), nullable=True)
     item_json = Column(JSON, default=dict)  # snapshot of the real item (cuisine, tier, fees, …)
     selection_source = Column(String(32), default="map")  # recommendation | map | search | nearby | step5
     status = Column(String(20), default="active")  # active | removed
@@ -373,8 +385,8 @@ class ChatMessage(Base):
     sender_name = Column(String(100), nullable=False)
     message = Column(Text, nullable=False)
     channel = Column(String(50), default="AI")  # AI, GUIDE
-    lat = Column(Float, nullable=True)  # traveller's real GPS position (device-reported)
-    lng = Column(Float, nullable=True)
+    lat = Column(DOUBLE_PRECISION, nullable=True)  # traveller's real GPS position (device-reported)
+    lng = Column(DOUBLE_PRECISION, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
 
@@ -396,3 +408,35 @@ class ContactMessage(Base):
     status = Column(String(20), nullable=False, default="NEW")  # NEW | OPEN | RESOLVED
     created_at = Column(DateTime, default=get_utc_now)
     handled_at = Column(DateTime, nullable=True)
+
+
+class BudgetAdjustment(Base):
+    """Persisted budget TOP-UP history (master spec §8/§10/§14).
+
+    Every confirmed top-up records the exact before/after numbers so the Plan,
+    Review, Payment and both dashboards reconcile against one trail:
+
+        new base budget = previous base budget + adjustment_amount
+
+    A top-up is a BUDGET ADJUSTMENT ONLY — it is never a payment transaction
+    and never creates a Payment row (no money is collected by raising a
+    budget number). `stage` records the workflow point where it happened
+    (transport | places | local_transport | plan | review), `reason` any
+    user/operator note, `actor_*` who performed it, `currency` the budget's
+    currency (INR default).
+    """
+
+    __tablename__ = "budget_adjustments"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    trip_id = Column(String(36), ForeignKey("trips.id"), nullable=False, index=True)
+    actor_id = Column(String(36), nullable=True)        # user_id when known
+    actor_email = Column(String(255), nullable=False)   # who made the change
+    actor_role = Column(String(50), nullable=False)     # USER | MANAGER | ADMIN
+    previous_budget = Column(Money(), nullable=False)
+    adjustment_amount = Column(Money(), nullable=False)  # always > 0 (validated)
+    updated_budget = Column(Money(), nullable=False)
+    currency = Column(String(10), nullable=False, default="INR")
+    stage = Column(String(32), nullable=False, default="plan")  # workflow point
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)

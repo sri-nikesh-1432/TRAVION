@@ -77,16 +77,37 @@ def upsert_selection(
     if row is None:
         now = _utcnow()
         src = str(item.get("selection_source") or default_source or "map")
-        # INSERT OR IGNORE is atomic: concurrent requests silently skip the
-        # duplicate instead of raising IntegrityError / PendingRollbackError.
+        # Atomic duplicate-skip insert (uq_trip_place_selection on
+        # (trip_id, provider_place_id)): concurrent requests must silently
+        # skip the duplicate instead of raising IntegrityError /
+        # PendingRollbackError. The ignore-duplicate syntax is dialect-specific:
+        #   SQLite     → INSERT OR IGNORE
+        #   MySQL      → INSERT ... ON DUPLICATE KEY UPDATE (no-op update)
+        #   PostgreSQL → INSERT ... ON CONFLICT DO NOTHING
+        _dialect = db.get_bind().dialect.name
+        if _dialect == "mysql":
+            _ignore_clause = " ON DUPLICATE KEY UPDATE id = id"
+        elif _dialect == "postgresql":
+            _ignore_clause = " ON CONFLICT DO NOTHING"
+        else:
+            _ignore_clause = ""
+        _values = (
+            " VALUES"
+            " (:id, :trip_id, :user_id, :key, :name, :category,"
+            "  'active', :ts, :src, :ts)"
+        )
+        if _dialect == "sqlite":
+            _insert = "INSERT OR IGNORE INTO trip_place_selections"
+            _tail = _values
+        else:
+            _insert = "INSERT INTO trip_place_selections"
+            _tail = _values + _ignore_clause
         db.execute(
             text(
-                "INSERT OR IGNORE INTO trip_place_selections"
-                " (id, trip_id, user_id, provider_place_id, name, category,"
+                _insert
+                + " (id, trip_id, user_id, provider_place_id, name, category,"
                 "  status, selected_at, selection_source, created_at)"
-                " VALUES"
-                " (:id, :trip_id, :user_id, :key, :name, :category,"
-                "  'active', :ts, :src, :ts)"
+                + _tail
             ),
             {
                 "id": str(uuid.uuid4()),

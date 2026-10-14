@@ -16,12 +16,15 @@ Travion is **not** an itinerary generator, a chatbot, or a destination website. 
 5. [Payments and fees](#payments-and-fees)
 6. [Tech stack](#tech-stack)
 7. [Repository layout](#repository-layout)
-8. [Getting started](#getting-started)
-9. [Configuration](#configuration)
-10. [Access and test credentials](#access-and-test-credentials)
-11. [Key API routes](#key-api-routes)
-12. [Verification and tests](#verification-and-tests)
-13. [Design rules](#design-rules)
+8. [Portals (Manager & Admin)](#portals-manager--admin)
+9. [Live E2E smoke suite](#live-e2e-smoke-suite)
+10. [Getting started](#getting-started)
+11. [Configuration](#configuration)
+12. [Access and test credentials](#access-and-test-credentials)
+13. [Key API routes](#key-api-routes)
+14. [Verification and tests](#verification-and-tests)
+15. [Known limitations & missing credentials](#known-limitations--missing-credentials)
+16. [Design rules](#design-rules)
 
 ---
 
@@ -76,7 +79,7 @@ The trip chat (`POST /trips/{id}/chat`) is a context engine, not a chatbot. For 
 
 ## Tech stack
 
-- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, SQLite (`backend/travion.db`) with role-based access control, bcrypt password hashing, and JWT sessions.
+- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, **MySQL 8** (production engine, `travion_db`, InnoDB/utf8mb4/DECIMAL money) with SQLite (`backend/travion.db`) as a zero-config local dev/test fallback, role-based access control, bcrypt password hashing, and JWT sessions. Alembic manages schema migrations; `database/schema.sql` is generated from the ORM models.
 - **Frontend:** React 18 + TypeScript + Vite, Tailwind CSS v4, Framer Motion, Leaflet, Lucide icons.
 - **External services (all optional keys, all env-configurable):** Google Maps Platform (Places autocomplete/geocoding), OpenWeatherMap, Google Gemini (AI reasoning), Razorpay (test-mode checkout).
 
@@ -86,14 +89,23 @@ The trip chat (`POST /trips/{id}/chat`) is a context engine, not a chatbot. For 
 backend/
   app/
     main.py              # FastAPI app, startup migration + emoji sanitizer
-    core/                # config, db, security (RBAC, JWT)
-    models/entities.py   # SQLAlchemy models (users, trips, locations, ...)
+    core/                # config, db (MySQL/SQLite engines), security (RBAC, JWT)
+    models/entities.py   # SQLAlchemy models (21 tables: users, trips, locations,
+                         # budget_adjustments, ...)
     schemas/schemas.py   # Pydantic request/response models
-    services/            # verified_data, ai_orchestrator, itinerary_tools, ...
+    services/            # verified_data, ai_orchestrator, multi_plan_engine,
+                         # pricing_service, budget_service, place_selections, ...
     api/v1/              # auth, locations, trips, discovery, planning,
                          # guides, managers, admin, chat, replanning,
-                         # payments, reviews, offline
-  tests/test_backend.py
+                         # payments, reviews, offline, budget, ...
+  alembic/               # MySQL migrations (alembic upgrade head)
+  scripts/               # generate_schema_sql, generate_seed_sql,
+                         # migrate_to_mysql, fix_baseline_downgrade, ...
+  tests/                 # pytest suite (runs on SQLite; MySQL via DATABASE_URL)
+database/
+  schema.sql             # GENERATED MySQL DDL (never hand-edit)
+  seed.sql               # OPTIONAL dev seed (locations + demo logins only)
+  README.md              # setup, backup/restore, migration, MySQL differences
 frontend/
   src/
     data/placeIndex.ts        # generated world/India location index
@@ -146,17 +158,21 @@ npm run dev                          # http://localhost:5173
 
 On first backend start the verified hub data is seeded and the schema/migrations run automatically against `backend/travion.db`.
 
+**Using MySQL (the production engine) instead of the SQLite fallback:** create `travion_db` (utf8mb4/`utf8mb4_unicode_ci`), load `database/schema.sql` (optionally `database/seed.sql`), set `DATABASE_URL` (or `DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PASSWORD`) in `backend/.env`, then start the backend as above — it connects to MySQL automatically. Full setup, backup/restore and data-migration instructions: **[database/README.md](database/README.md)**. Schema changes go through Alembic (`alembic revision --autogenerate -m "…" && alembic upgrade head` from `backend/`).
+
 ## Configuration
 
 Backend `.env` (never committed):
 
 | Variable | Purpose |
 |---|---|
+| `DATABASE_URL` | MySQL connection string (`mysql+pymysql://user:pass@host:3306/travion_db?charset=utf8mb4`). Alternative: `DB_HOST` + `DB_NAME` + `DB_USER` + `DB_PASSWORD` + `DB_PORT`. Unset ⇒ SQLite dev fallback. |
 | `JWT_SIGNING_SECRET` | Signs auth tokens |
 | `MANAGER_ELEVATION_SECRET` | Code for Manager access (default-style: `SIH-MANAGER`) |
 | `ADMIN_ELEVATION_SECRET` | Code for Admin access (default-style: `SIH-ADMIN`) |
 | `GEMINI_API_KEY` | Optional Gemini reasoning for chat |
 | `OPENWEATHER_API_KEY` | Optional live weather for the AI assistant |
+| `GEOAPIFY_API_KEY` | Optional GeoApify places tier for Step 3 discovery |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Test (`rzp_test_`) or live Razorpay keys |
 
 Frontend `.env` (never committed):
@@ -199,12 +215,39 @@ All under `/api/v1`. OpenAPI docs: `http://localhost:8002/api/v1/docs`.
 ## Verification and tests
 
 ```bash
-cd backend && python -m pytest tests/ -q          # 6/6 backend tests
-cd frontend && npx tsc --noEmit && npm run build  # typecheck + production build
-cd frontend && npm run lint                       # eslint (0 errors)
+# Backend — pytest suite (runs on the SQLite dev fallback by default)
+cd backend && python -m pytest tests/ -q
+
+# Same suite against MySQL 8 (the production engine)
+#   export DATABASE_URL="mysql+pymysql://user:pass@host:3306/travion_db?charset=utf8mb4"
+#   export TRAVION_TEST_MYSQL_URL="$DATABASE_URL"   # enables the live-MySQL checks
+#   python -m pytest tests/ -q
+
+# Generated-SQL consistency + MySQL integration checks alone
+cd backend && python -m pytest tests/test_schema_consistency.py -q
+
+# Frontend: typecheck + production build + lint
+cd frontend && npm run build && npm run lint
 ```
 
+`tests/test_schema_consistency.py` fails if `database/schema.sql` drifts from the ORM models or if `database/seed.sql` ever contains fabricated financial rows; with `TRAVION_TEST_MYSQL_URL` set it additionally proves on a live server: InnoDB/utf8mb4, FK enforcement, case-insensitive e-mail uniqueness, DECIMAL exactness (`0.1 + 0.2 = 0.3`) and transaction rollback.
+
 The live end-to-end suites used during development exercise: signup/login, worldwide + India place registration and dedupe, trip creation without destination substitution, discovery interviews, preference-driven plans, honest refusal with recovery destinations, payment simulation, guide assignment with BUSY lock, AI context/memory/actions/refusals, and no-Bangalore guarantees.
+
+## Known limitations & missing credentials
+
+Integrations that require credentials this repository does not hold run in an **honest unconfigured state** (documented, labelled in the UI/API, never simulated as real):
+
+| Integration | Status | What is missing |
+|---|---|---|
+| Razorpay | Simulation mode in tests; real order/webhook flow coded and signature-verified | Live `rzp_live_` keys (test keys are placeholders in CI) |
+| Google Gemini chat reasoning | Coded, optional | A production `GEMINI_API_KEY` with quota |
+| GeoApify / Google Places / OpenWeather tiers | Coded, optional | Provider API keys + paid quota |
+| Amadeus flights / IRCTC-authorized rail / bus aggregators | **Not integrated** — no transport-provider API credentials exist; transport discovery shows curated/verified options or an honest unavailable state, never invented fares | Provider contracts + credentials |
+| Managed MySQL hosting | Local MySQL 8 validated end-to-end; production hosting not provisioned by this repo | A MySQL 8 instance (see `render.yaml` comments) |
+| Live PostgreSQL source pull | Historical runtime data lived in `backend/travion.db` (SQLite); no PG credentials exist anywhere in the repo/history | Access to any legacy PG system, if one exists |
+
+Other honest gaps: the 20% place-selection protection is enforced through the budget snapshot/top-up API (`GET/POST /trips/{id}/budget*`) — client UI affordances for top-up presets are limited to surfaces already wired to that API; weather-trigger replanning and offline packages are best-effort against the optional keys above.
 
 ## Design rules
 

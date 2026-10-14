@@ -159,9 +159,45 @@ def test_database_enforces_email_uniqueness_case_insensitively():
 
 
 def test_identity_unique_index_exists():
-    with engine.connect() as conn:
-        indexes = conn.execute(text("PRAGMA index_list('identities')")).fetchall()
-    names = [r[1] for r in indexes]
+    """The case-insensitive e-mail uniqueness guard exists IN THE DATABASE.
+
+    SQLite/PostgreSQL enforce it through the functional unique index
+    `ix_identities_email_norm` on lower(email); MySQL has no
+    `CREATE INDEX IF NOT EXISTS` for functional indexes, so `travion_db`
+    instead relies on its UNIQUE(email) table constraint combined with the
+    case-insensitive `utf8mb4_unicode_ci` collation (docs/database/README.md
+    §"Known MySQL differences"). Both mechanisms are checked here per dialect.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    dialect = engine.dialect.name
+
+    if dialect == "mysql":
+        insp = sa_inspect(engine)
+        uniques = insp.get_unique_constraints("identities")
+        assert any(
+            sorted(c.get("column_names") or []) == ["email"] for c in uniques
+        ), "UNIQUE(email) constraint missing on MySQL"
+        with engine.connect() as conn:
+            coll = conn.execute(text(
+                "SELECT COLLATION_NAME FROM information_schema.COLUMNS"
+                " WHERE TABLE_SCHEMA = DATABASE()"
+                "   AND TABLE_NAME = 'identities' AND COLUMN_NAME = 'email'"
+            )).scalar()
+        assert coll and coll.endswith("_ci"), (
+            f"email collation {coll!r} is not case-insensitive — "
+            "MySQL uniqueness would not cover case variants"
+        )
+        return
+
+    if dialect == "postgresql":
+        with engine.connect() as conn:
+            names = conn.execute(text(
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'identities'"
+            )).scalars().all()
+    else:
+        with engine.connect() as conn:
+            indexes = conn.execute(text("PRAGMA index_list('identities')")).fetchall()
+            names = [r[1] for r in indexes]
     assert "ix_identities_email_norm" in names, "functional unique index missing"
 
 

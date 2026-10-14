@@ -2,22 +2,36 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
 
+URL_VALUE = settings.DATABASE_URL
+
 connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
+if URL_VALUE.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-# Render/PostgreSQL: the platform closes idle connections, so dropped pooled
-# connections must be transparently recycled instead of surfacing as 500s.
+# Engine tuning per dialect:
+# - MySQL (target engine, `travion_db`): utf8mb4 comes from the URL query
+#   (charset=utf8mb4&collation=utf8mb4_unicode_ci) or driver default. Cloud
+#   MySQL closes idle connections, so pool_pre_ping transparently discards
+#   dropped connections and pool_recycle recycles them before the server's
+#   wait_timeout. Exact DECIMAL/Float money columns are unaffected by pooling.
+# - Render/PostgreSQL (legacy source): platform closes idle connections, so
+#   dropped pooled connections must be recycled instead of surfacing as 500s.
+# - SQLite: single-file local dev, no pooling concerns.
 engine_kwargs = {
     "connect_args": connect_args,
     "echo": False,
 }
-if settings.DATABASE_URL.startswith("postgresql"):
+if URL_VALUE.startswith("mysql"):
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_recycle"] = 1800
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+elif URL_VALUE.startswith("postgresql"):
     engine_kwargs["pool_pre_ping"] = True
     engine_kwargs["pool_recycle"] = 280
 
 engine = create_engine(
-    settings.DATABASE_URL,
+    URL_VALUE,
     **engine_kwargs,
 )
 

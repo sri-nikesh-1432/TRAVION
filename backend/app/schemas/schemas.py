@@ -619,3 +619,66 @@ class ContactMessageResponse(BaseModel):
     status: str
     created_at: datetime
     handled_at: Optional[datetime] = None
+
+
+# ── Budget snapshot + top-up (master spec §8/§11/§14) ────────────────────────
+
+class BudgetTopupRequest(BaseModel):
+    """Confirmed top-up: `amount` is validated server-side (>0, ≤ ₹50,00,000)."""
+    amount: float = Field(..., gt=0)
+    stage: str = Field(default="plan", pattern="^(transport|places|local_transport|plan|review|other)$")
+    reason: Optional[str] = Field(default=None, max_length=255)
+
+
+class BudgetTopupPreviewRequest(BaseModel):
+    """Non-persistent preview — the UI shows the updated total BEFORE the user
+    confirms a custom top-up (spec §8: 'display the updated total before
+    confirmation'). Only the confirmed endpoint writes BudgetAdjustment rows."""
+    amount: float = Field(..., gt=0)
+    stage: str = Field(default="plan", pattern="^(transport|places|local_transport|plan|review|other)$")
+
+
+class BudgetAdjustmentItem(BaseModel):
+    id: str
+    previous_budget: float
+    adjustment_amount: float
+    updated_budget: float
+    currency: str
+    stage: str
+    reason: Optional[str] = None
+    actor_email: str
+    actor_role: str
+    created_at: datetime
+
+
+class PlaceStageBudget(BaseModel):
+    """20% place-selection protection (spec §11) — DISTINCT from the 15%
+    final safety reserve, which lives in the pricing engine."""
+    selection_total: float
+    protected_buffer: float          # 20% of the pre-selection remaining budget
+    place_selection_allowance: float  # pre-selection remaining − protected buffer
+    within_allowance: bool
+    exceeds_by: float
+
+
+class BudgetSnapshotResponse(BaseModel):
+    trip_id: str
+    currency: str
+    base_budget: float
+    committed_expenses: float
+    remaining_budget: float
+    place_stage: PlaceStageBudget
+    adjustments: List[BudgetAdjustmentItem]
+
+
+class BudgetTopupResponse(BaseModel):
+    snapshot: BudgetSnapshotResponse
+    adjustment: BudgetAdjustmentItem
+
+
+class BudgetTopupPreviewResponse(BaseModel):
+    previous_budget: float
+    amount: float
+    updated_budget: float
+    updated_remaining: float
+    currency: str

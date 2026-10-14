@@ -5,7 +5,8 @@ from app.core.config import settings
 from app.core.db import engine, Base, SessionLocal
 from app.api.v1 import (
     auth, locations, trips, discovery, planning, guides, managers, admin,
-    payments, replanning, offline, reviews, chat, trip_edit, geoapify, support
+    payments, replanning, offline, reviews, chat, trip_edit, geoapify, support,
+    budget
 )
 from app.services.verified_data import VERIFIED_LOCATIONS
 from app.models.entities import Location, Identity, Guide, Manager, Admin, TripProfile, Itinerary
@@ -102,10 +103,18 @@ def _ensure_identity_email_unique():
     unique index on lower(email) is the SQL-standard way — works on SQLite and
     PostgreSQL alike. Additive and idempotent (IF NOT EXISTS); runs on every
     deploy without touching existing data.
+
+    MySQL needs no functional index: `travion_db` uses the case-insensitive
+    `utf8mb4_unicode_ci` collation, so the table's UNIQUE constraint on
+    `identities.email` already rejects 'A@x.com' when 'a@x.com' exists
+    (MySQL also has no `CREATE INDEX IF NOT EXISTS` for functional indexes —
+    see docs/database/README.md §"Known MySQL differences").
     """
     _collapse_identity_email_duplicates()
     try:
         dialect = engine.dialect.name
+        if dialect == "mysql":
+            return
         if dialect == "postgresql":
             ddl = "CREATE UNIQUE INDEX IF NOT EXISTS ix_identities_email_norm ON identities (LOWER(email))"
         else:
@@ -302,6 +311,7 @@ app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
 app.include_router(geoapify.router, prefix=settings.API_V1_STR)
 app.include_router(support.router, prefix=settings.API_V1_STR)
+app.include_router(budget.router, prefix=settings.API_V1_STR)
 
 
 # ── WebSocket for real-time trip chat ────────────────────────────────────────

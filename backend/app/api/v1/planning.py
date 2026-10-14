@@ -20,6 +20,26 @@ router = APIRouter(prefix="/trips", tags=["Planning"])
 FEES_FALLBACK = {"guide_fee": 0.0, "platform_fee": 0.0, "payable": 0.0}
 
 
+def first_day_start_label(t: Trip) -> Optional[str]:
+    """Trip's real Day-1 start clock label (PART U); naive = IST.
+
+    Shared by generate_base_plan() AND generate_trip_plan()'s multi-plan
+    branch — build_plans must enforce the SAME Day-1 chronology floor the
+    checkout validator later checks, otherwise a trip starting at 13:02 could
+    be generated with an 08:00 breakfast and then be unpayable.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        s = t.start_datetime
+        if not s:
+            return None
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        return s.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p")
+    except Exception:
+        return None
+
+
 def effective_breakdown(itinerary: Itinerary) -> dict:
     """Return the persisted cost breakdown, or a minimal one for legacy rows."""
     breakdown = itinerary.cost_breakdown or {}
@@ -51,17 +71,7 @@ def generate_base_plan(trip: Trip, mode: str, db: Session) -> dict:
     """
 
     def _first_day_start_label(t: Trip) -> Optional[str]:
-        """Trip's real Day-1 start clock label (PART U); naive = IST."""
-        try:
-            from zoneinfo import ZoneInfo
-            s = t.start_datetime
-            if not s:
-                return None
-            if s.tzinfo is None:
-                s = s.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-            return s.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p")
-        except Exception:
-            return None
+        return first_day_start_label(t)
 
     profile_dict = trip.profile.questions_answers if trip.profile else {}
 
@@ -209,6 +219,9 @@ def generate_trip_plan(
             profile_stay_pref=str(profile_dict.get("stay_pref", "") or ""),
             mode=req.mode,
             verbose=False,
+            # PART U: Day 1 must never start before the trip's real start
+            # time — same floor the checkout schedule validator enforces.
+            first_day_start=first_day_start_label(trip),
         )
         chosen = next((p for p in plans if p["type"] == "RECOMMENDED"), None) or plans[0]
         # Guard the invariant final_total == base + guide + platform: recompute

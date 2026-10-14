@@ -93,7 +93,10 @@ def _free_slot(intervals: List[Tuple[int, int]], lo: int, hi: int, need: int) ->
     return t if t + need <= hi else None
 
 
-def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
+def _insert_missing_meal_stops(
+    days: List[Dict[str, Any]],
+    day1_floor: Optional[int] = None,
+) -> int:
     """Guarantee every travel day's meals land INSIDE their realistic windows
     (spec §8/§9) without touching real selected restaurants.
 
@@ -114,6 +117,11 @@ def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
     seen_holds: set = set()
     HOLD_MIN = 45
     DAY_FLOOR = DAY_START_FLOOR_MINUTES  # day never begins before 08:00
+    # Day 1's REAL floor (the trip's actual start time, PART U). Meal holds
+    # injected after chronology must honour it too — otherwise a 13:09
+    # departure gets an 08:00 breakfast that the checkout schedule validator
+    # (correctly) refuses to take payment for.
+    d1_floor = day1_floor if (day1_floor is not None and day1_floor > 0) else DAY_FLOOR
     for d in days:
         parseable = [s for s in (d.get("stops") or [])
                      if _to_minutes(str(s.get("time", ""))) is not None]
@@ -141,7 +149,13 @@ def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
                     food_in_window[label] = True
 
         new_holds: List[Dict[str, Any]] = []
+        day_floor = d1_floor if day_num <= 1 else DAY_FLOOR
         for label, lo, hi in MEAL_WINDOWS:
+            # A window that ends before the day may start (e.g. breakfast when
+            # the trip only begins at 13:09) is skipped — never schedule a
+            # meal before the traveller has started the trip.
+            if hi <= day_floor:
+                continue
             if food_in_window[label]:
                 continue
             hold_key = (day_num, label.lower())
@@ -152,7 +166,7 @@ def _insert_missing_meal_stops(days: List[Dict[str, Any]]) -> int:
             )
             if already:
                 continue
-            t = _free_slot(intervals, max(lo, DAY_FLOOR), hi, HOLD_MIN)
+            t = _free_slot(intervals, max(lo, day_floor), hi, HOLD_MIN)
             if t is None:
                 continue  # window genuinely full — skip, never overlap
             seen_holds.add(hold_key)
@@ -1135,7 +1149,8 @@ def enforce_chronology(
     # MEAL WINDOWS (spec §8/§9): after chronology, ensure each day's breakfast/
     # lunch/snacks/dinner sit inside realistic windows — real selected
     # restaurants are untouched; clear meal holds fill otherwise-missed windows.
-    _insert_missing_meal_stops(days)
+    # Day-1 holds honour the trip's real start time (floor1), never earlier.
+    _insert_missing_meal_stops(days, day1_floor=floor1)
     # Re-sort each day so inserted holds sit in chronological position.
     for d in days:
         d["stops"] = sorted(

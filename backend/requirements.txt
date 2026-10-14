@@ -8,8 +8,19 @@ python-dotenv==1.2.2
 # Email validation — required by Pydantic EmailStr
 email-validator==2.3.0
 
-# PostgreSQL driver for production (Render)
+# Database drivers
+#   MySQL 8 (target engine, database `travion_db`) — PyMySQL is a pure-Python
+#   driver, works on every platform, no compiler needed. `cryptography` is
+#   required for MySQL 8's default caching_sha2_password authentication.
+PyMySQL==1.1.1
+cryptography==44.0.0
+
+#   PostgreSQL (legacy source database — kept while the live data migration
+#   reads from it; see scripts/migrate_to_mysql.py)
 psycopg2-binary==2.9.9
+
+# Schema migrations (alembic upgrade head) — see alembic.ini + alembic/
+alembic==1.18.5
 
 # Authentication / security
 passlib==1.7.4
