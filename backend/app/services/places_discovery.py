@@ -1254,6 +1254,7 @@ def _discover_geoapify_map(
 _GEMINI_INTENT_MODEL = "gemini-1.5-flash"
 _GEMINI_INTENT_MAX_QUERIES = 5
 _GEMINI_INTENT_MAX_QUERY_CHARS = 64
+_GEMINI_COMPREHENSIVE_MODEL = "gemini-1.5-flash"
 
 # Deterministic baseline hints used when the model is unavailable — real
 # GeoApify queries that always make sense, so intent search still adds value
@@ -1324,18 +1325,30 @@ def _sanitize_intents(raw: dict) -> Dict[str, List[str]]:
     return out
 
 
-def gemini_search_intents(destination: str, preferences: Optional[Dict[str, Any]] = None) -> Dict[str, List[str]]:
-    """Destination-aware SEARCH INTENTS per map category, or {} on any failure.
-    The model may only reason over the traveller's structured preferences; it
-    never emits names/coordinates to be trusted — each returned string is a
-    GeoApify free-text query the pipeline will verify against the real API."""
+def _gemini_call(prompt: str, model: str = _GEMINI_INTENT_MODEL, timeout: int = 12) -> str:
     try:
         from app.core.config import settings
         api_key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
     except Exception:
         api_key = ""
     if not api_key:
-        return {}
+        return ""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    try:
+        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=timeout)
+        if resp.status_code != 200:
+            return ""
+        parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        return (parts[0].get("text", "") if parts else "").strip()
+    except Exception:
+        return ""
+
+
+def gemini_search_intents(destination: str, preferences: Optional[Dict[str, Any]] = None) -> Dict[str, List[str]]:
+    """Destination-aware SEARCH INTENTS per map category, or {} on any failure.
+    The model may only reason over the traveller's structured preferences; it
+    never emits names/coordinates to be trusted — each returned string is a
+    GeoApify free-text query the pipeline will verify against the real API."""
     prefs = preferences or {}
     trav = prefs.get("travellers") or {}
     profile = {
@@ -1361,15 +1374,7 @@ def gemini_search_intents(destination: str, preferences: Optional[Dict[str, Any]
         "- No markdown, no code fences, no extra keys.\n\n"
         f"PREFERENCES: {json.dumps(profile)}\n\nJSON:"
     )
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{_GEMINI_INTENT_MODEL}:generateContent?key={api_key}"
-    try:
-        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=12)
-        if resp.status_code != 200:
-            return {}
-        parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        text = (parts[0].get("text", "") if parts else "").strip()
-    except Exception:
-        return {}
+    text = _gemini_call(prompt, model=_GEMINI_INTENT_MODEL, timeout=12)
     if not text:
         return {}
     return _sanitize_intents(_extract_intents_json(text))

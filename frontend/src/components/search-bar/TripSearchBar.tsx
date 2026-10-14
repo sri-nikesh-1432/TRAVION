@@ -774,9 +774,40 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     const value = isStart ? startDateTime : endDateTime;
     const label = isStart ? startLabel : endLabel;
     const error = errorField === kind;
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const openPicker = () => {
+      const input = inputRef.current;
+      if (!input) return;
+      try {
+        if (typeof (input as any).showPicker === 'function') {
+          (input as any).showPicker();
+          return;
+        }
+      } catch (e) {
+        // fall through
+      }
+      // Fallback: focus input (some browsers show picker on focus)
+      input.focus();
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPicker();
+      }
+    };
+
     return (
-      <div className={`relative rounded-2xl border bg-ivory-50 px-4 py-3 transition-all focus-within:ring-2 focus-within:ring-travion-100 ${error ? 'border-red-400 ring-2 ring-red-100' : 'border-charcoal-100 hover:border-travion-300'}`}>
-        <div className="flex items-center gap-3">
+      <div
+        className={`relative rounded-2xl border bg-ivory-50 px-4 py-3 transition-all focus-within:ring-2 focus-within:ring-travion-100 ${error ? 'border-red-400 ring-2 ring-red-100' : 'border-charcoal-100 hover:border-travion-300'}`}
+        role="button"
+        tabIndex={0}
+        onClick={openPicker}
+        onKeyDown={handleKeyDown}
+        aria-label={(isStart ? 'Start' : 'End') + ' date and time'}
+      >
+        <div className="flex items-center gap-3 pointer-events-none">
           <Calendar className="w-4.5 h-4.5 text-travion-500 shrink-0" />
           <div className="min-w-0">
             <p className="text-[9.5px] font-black uppercase tracking-[0.16em] text-charcoal-400">{isStart ? 'Start' : 'End'}</p>
@@ -784,13 +815,14 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
           </div>
         </div>
         <input
+          ref={inputRef}
           type="datetime-local"
           min={isStart ? minDateTimeStr : startDateTime || minDateTimeStr}
           value={value}
           onChange={(e) => (isStart ? setStartDateTime(e.target.value) : setEndDateTime(e.target.value))}
-          aria-label={(isStart ? 'Start' : 'End') + ' date and time'}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          tabIndex={0}
+          aria-hidden="true"
+          tabIndex={-1}
+          className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
         />
       </div>
     );
