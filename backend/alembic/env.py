@@ -48,11 +48,13 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations against a live database (normal path)."""
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    section = config.get_section(config.config_ini_section, {})
+    url_str = config.get_main_option("sqlalchemy.url", "")
+    kwargs = {"prefix": "sqlalchemy.", "poolclass": pool.NullPool}
+    if url_str.startswith("mysql") and "127.0.0.1" not in url_str and "localhost" not in url_str:
+        kwargs["connect_args"] = {"ssl": {}}
+    connectable = engine_from_config(section, **kwargs)
+
 
     with connectable.connect() as connection:
         context.configure(

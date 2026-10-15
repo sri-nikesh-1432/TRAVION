@@ -7,6 +7,9 @@ URL_VALUE = settings.DATABASE_URL
 connect_args = {}
 if URL_VALUE.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+elif URL_VALUE.startswith("mysql") and "127.0.0.1" not in URL_VALUE and "localhost" not in URL_VALUE:
+    connect_args = {"ssl": {}}
+
 
 # Engine tuning per dialect:
 # - MySQL (target engine, `travion_db`): utf8mb4 comes from the URL query
