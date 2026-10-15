@@ -7,6 +7,7 @@ import {
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
   GeoTileUrl, GeoViewportPayload, StageState, TransportOption, LocalLeg,
   FoodTier, BudgetGate, WeatherPayload, ReviewSnapshot, BudgetSnapshot,
+  DiscoveryRanking,
 } from '../types';
 
 const API_BASE_URL = (() => {
@@ -572,6 +573,11 @@ export const api = {
 
   getReviewSnapshot: (tripId: string) =>
     request<ReviewSnapshot>(`/trips/${tripId}/review`),
+
+  personalizeDiscovery: (tripId: string) =>
+    request<DiscoveryRanking>(`/trips/${tripId}/discovery/personalize`, {
+      method: 'POST', body: JSON.stringify({}),
+    }),
 
   // ── Existing budget snapshot + top-ups (spec §8/§11/§14) ─────────────
   // A top-up is a BUDGET ADJUSTMENT, never a payment — no Payment row is made.

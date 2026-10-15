@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.core.db import engine, Base, SessionLocal
+from app.core.db import engine, Base, SessionLocal, get_db
 from app.api.v1 import (
     auth, locations, trips, discovery, planning, guides, managers, admin,
     payments, replanning, offline, reviews, chat, trip_edit, geoapify, support,
@@ -364,9 +365,42 @@ async def websocket_chat_endpoint(websocket: WebSocket, trip_id: str):
 @app.get("/")
 @app.get("/health")
 def health_check():
-    """Lightweight liveness probe — no DB, AI, or network calls."""
+    """Liveness probe reporting platform status and safe database connectivity flag."""
+    db_ok = False
+    engine_name = "unknown"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+            engine_name = engine.dialect.name
+    except Exception:
+        db_ok = False
+
     return {
         "platform": settings.PROJECT_NAME,
         "status": "operational",
+        "database": {
+            "connected": db_ok,
+            "engine": engine_name,
+        },
         "docs": f"{settings.API_V1_STR}/docs"
     }
+
+
+@app.get("/api/v1/health/db")
+def database_readiness_check(db: Session = Depends(get_db)):
+    """Database readiness probe — proves live connectivity without disclosing credentials."""
+    try:
+        db.execute(text("SELECT 1"))
+        return {
+            "status": "connected",
+            "database_engine": engine.dialect.name,
+            "connected": True,
+        }
+    except Exception:
+        return {
+            "status": "error",
+            "database_engine": engine.dialect.name,
+            "connected": False,
+            "detail": "Database connection probe failed",
+        }

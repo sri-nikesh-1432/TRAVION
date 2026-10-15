@@ -36,34 +36,17 @@ router = APIRouter(prefix="/trips", tags=["Trip Stages"])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-def _party_total(trip) -> int:
-    return stages._party(trip)["total"]
-
-
-def _llm_enrich(task: str, trip, extra: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-    """Prompt-routed LLM enrichment with the SAVED trip context injected.
+def _llm_enrich(task: str, db: Session, trip, extra: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Prompt-routed LLM enrichment with the CUMULATIVE saved trip context
+    injected (stages.cumulative_context: every prior step's answers and
+    selections, not a fresh session).
 
     Returns a parsed dict when the model cooperates, else None — the caller
     always falls back to deterministic data. User text is data, never
-    instructions (prompts are built server-side from saved state only).
+    instructions (prompts are built server-side from saved state only). LLM
+    prices are never trusted (validators re-price everything server-side).
     """
-    profile = trip.profile
-    answers = dict(profile.questions_answers or {}) if profile else {}
-    context: Dict[str, Any] = {
-        "source_name": trip.source_name,
-        "destination_name": trip.destination_name,
-        "start_datetime": trip.start_datetime.isoformat() if trip.start_datetime else "",
-        "end_datetime": trip.end_datetime.isoformat() if trip.end_datetime else "",
-        "duration_days": stages._days_nights(trip)["days"],
-        "total_travellers": _party_total(trip),
-        "adults": stages._party(trip)["adults"],
-        "children": stages._party(trip)["children"],
-        "group_type": answers.get("travelling_type") or answers.get("party_type"),
-        "interests": answers.get("experience"),
-        "budget": float(trip.budget or 0.0),
-        "mode": trip.mode,
-        "food_tier": trip.food_tier,
-    }
+    context: Dict[str, Any] = stages.cumulative_context(db, trip)
     if extra:
         context.update(extra)
     try:
@@ -126,7 +109,7 @@ def transport_options(
     party = stages._party(trip)
     if party["total"] <= 0:
         raise HTTPException(status_code=422, detail="Complete stage 2 (party size) before transport options.")
-    llm = _llm_enrich("transport", trip)
+    llm = _llm_enrich("transport", db, trip)
     llm_opts = None
     if isinstance(llm, dict):
         llm_opts = {k: llm.get(k) for k in ("outbound", "return")}
@@ -196,7 +179,7 @@ def local_transport_plan(
             status_code=422,
             detail="Select a stay plus at least one mappable place before planning local transport.",
         )
-    _llm = _llm_enrich("local_transport", trip, {
+    _llm = _llm_enrich("local_transport", db, trip, {
         "selected_places": [{"name": s["name"]} for s in stops],
     })  # reasons may be enriched later; geometry stays deterministic
     legs = stra.build_local_legs(stops, stages._party(trip)["total"], trip.destination_name or "")
@@ -271,6 +254,108 @@ def budget_gate(
 ):
     trip = _own_trip(trip_id, current, db)
     return stages.evaluate_budget_gate(db, trip)
+
+
+# ── stage 4 helper: cumulative LLM personalization ───────────────────────────
+@router.post("/{trip_id}/discovery/personalize")
+def discovery_personalize(
+    trip_id: str,
+    body: Optional[Dict[str, Any]] = None,
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Rank the VERIFIED candidate pool with the CUMULATIVE trip context
+    (steps 1-3: dates, party, budget, interests AND the chosen round-trip
+    transport). The LLM only PICKS + ORDERS + explains from the provided
+    verified names — coordinates and maps stay real; invented names are
+    dropped by validation. Falls back to catalog order when the model is
+    unreachable (never blocks the screen)."""
+    import difflib
+    from app.services.verified_data import (
+        VERIFIED_ATTRACTIONS, VERIFIED_FOOD, VERIFIED_STAYS,
+    )
+    trip = _own_trip(trip_id, current, db)
+    dest = stra._norm_city(trip.destination_name or "")
+
+    attractions = VERIFIED_ATTRACTIONS.get(dest) or []
+    foods = VERIFIED_FOOD.get(dest) or []
+    stays = VERIFIED_STAYS.get(dest) or []
+
+    def names(items, pred=None):
+        out = []
+        for it in items:
+            if pred and not pred(it):
+                continue
+            nm = str(it.get("name") or "").strip()
+            if nm:
+                out.append(nm)
+        return out
+
+    pool = {
+        "must_visit": names(attractions, lambda a: str(a.get("category") or "") == "attraction"),
+        "activities": names(attractions, lambda a: str(a.get("category") or "") != "attraction"),
+        "restaurants": names(foods, lambda f: not any(
+            k in str(f.get("name") or "").lower() for k in ("cafe", "coffee", "bakery", "tea room"))),
+        "cafes": names(foods, lambda f: any(
+            k in str(f.get("name") or "").lower() for k in ("cafe", "coffee", "bakery", "tea room"))),
+        "stays": names(stays),
+        "shopping": [],
+        "healthcare_education": [],
+        "other": [],
+    }
+
+    llm = _llm_enrich("places", db, trip, {"candidate_names": pool})
+    ranking: Dict[str, List[Dict[str, str]]] = {}
+    source = "catalog"
+    if isinstance(llm, dict):
+        alias = {
+            "must_visit": "must_visit", "must-visit": "must_visit", "mustvisit": "must_visit",
+            "activities": "activities", "activity": "activities",
+            "restaurants": "restaurants", "restaurant": "restaurants",
+            "cafes": "cafes", "cafe": "cafes",
+            "stays": "stays", "stay": "stays", "accommodation": "stays",
+            "shopping": "shopping",
+            "healthcare_education": "healthcare_education", "healthcare": "healthcare_education",
+            "education": "healthcare_education", "educational": "healthcare_education",
+            "other": "other", "other_places": "other",
+        }
+        found_any = False
+        for raw_key, items in llm.items():
+            cat = alias.get(str(raw_key or "").lower().replace(" ", "_"))
+            if not cat or not isinstance(items, list):
+                continue
+            valid = [n.lower() for n in pool.get(cat, [])]
+            picked: List[Dict[str, str]] = []
+            for it in items[:10]:
+                if not isinstance(it, dict) or not it.get("name"):
+                    continue
+                nm = str(it["name"]).strip()
+                if nm.lower() in valid:
+                    picked.append({"name": nm, "reason": str(it.get("reason") or "")[:200]})
+                    found_any = True
+                    continue
+                close = difflib.get_close_matches(nm.lower(), valid, n=1, cutoff=0.85)
+                if close:
+                    real = next(n for n in pool[cat] if n.lower() == close[0])
+                    picked.append({"name": real, "reason": str(it.get("reason") or "")[:200]})
+                    found_any = True
+                # invented names are dropped silently — never shown, never stored
+            if picked:
+                ranking[cat] = picked
+        if found_any:
+            source = "llm"
+    if source == "catalog":
+        ranking = {cat: [{"name": n, "reason": ""} for n in names[:10]]
+                   for cat, names in pool.items() if names}
+    if trip.profile is not None:
+        try:
+            prof = dict(trip.profile.questions_answers or {})
+            prof["discovery_ranking"] = {"categories": ranking, "source": source}
+            trip.profile.questions_answers = prof
+            db.commit()
+        except Exception:
+            db.rollback()
+    return {"trip_id": trip.id, "categories": ranking, "source": source}
 
 
 # ── stage 8 helper: honest weather ────────────────────────────────────────────

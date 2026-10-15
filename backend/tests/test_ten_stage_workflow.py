@@ -349,6 +349,26 @@ def test_llm_suggestion_payload_flows_through_labelled_unconfirmed():
     assert pool["outbound"][0]["verified"] is True  # verified always leads
 
 
+# ── stage 4: cumulative personalization ───────────────────────────────────────
+def test_discovery_personalize_returns_validated_ranking():
+    h = _auth()
+    trip_id = _make_trip(h)
+    _discover(h)
+    _select_transport(h, trip_id)  # step-3 output feeds the step-4 prompt
+    r = client.post(f"/api/v1/trips/{trip_id}/discovery/personalize", headers=h, json={})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["source"] in ("llm", "catalog")
+    assert data["categories"].get("must_visit"), "verified pool must rank"
+    for cat, picks in data["categories"].items():
+        assert len(picks) <= 10
+        for p in picks:
+            assert p["name"]
+    # persisted on the trip record (every answer/selection is saved)
+    prof = client.get(f"/api/v1/trips/{trip_id}/profile", headers=h).json()
+    assert (prof.get("discovery_ranking") or {}).get("categories", {}).get("must_visit")
+
+
 # ── weather honesty ───────────────────────────────────────────────────────────
 def test_weather_labels_every_day_honestly():
     h = _auth()

@@ -17,9 +17,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
 sys.path.insert(0, HERE)
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(HERE, ".env"))
+
 os.environ.setdefault(
     "DATABASE_URL",
-    "mysql+pymysql://travion:travion_local_dev@127.0.0.1:3307/travion_db"
+    "mysql+pymysql://travion:travionpassword@127.0.0.1:3307/travion_db"
     "?charset=utf8mb4&collation=utf8mb4_unicode_ci",
 )
 

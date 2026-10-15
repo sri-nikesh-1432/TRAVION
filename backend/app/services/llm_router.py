@@ -133,6 +133,8 @@ def _build_places_prompt(context: Dict[str, Any]) -> str:
     remaining = context.get("remaining_budget_after_transport", 40000)
     protected = context.get("place_selection_protected", remaining * 0.20)
     allowance = remaining - protected
+    selected_transport = context.get("selected_transport") or {}
+    candidate_names = context.get("candidate_names") or {}
 
     sections = [
         f"Trip context:",
@@ -145,6 +147,31 @@ def _build_places_prompt(context: Dict[str, Any]) -> str:
         f"  Available place-selection allowance: ₹{allowance:,.0f}",
         f"  Interests: {interests}",
         "",
+    ]
+    _out_sel = selected_transport.get("outbound") or {}
+    _ret_sel = selected_transport.get("return") or {}
+    if _out_sel or _ret_sel:
+        sections.append("Already-chosen round-trip transport (plan around it):")
+        if _out_sel:
+            sections.append(
+                f"  Outbound: {_out_sel.get('operator', '')} on {_out_sel.get('date', '')} "
+                f"arriving {_out_sel.get('arrive_time', '')}")
+        if _ret_sel:
+            sections.append(
+                f"  Return: {_ret_sel.get('operator', '')} on {_ret_sel.get('date', '')} "
+                f"departing {_ret_sel.get('depart_time', '')}")
+        sections.append("")
+    if isinstance(candidate_names, dict) and any(candidate_names.values()):
+        sections.append(
+            "CANDIDATE NAMES (verified, with real coordinates on file). Pick and "
+            "ORDER only from these per category — up to 10 each. NEVER invent a "
+            "place that is not listed; skip a category honestly when its list "
+            "is empty:")
+        for _cat, _names in candidate_names.items():
+            if _names:
+                sections.append(f"  {_cat}: {', '.join(str(n) for n in _names[:25])}")
+        sections.append("")
+    sections.extend([
         "TASK: Generate up to 10 real candidate places per required category for "
         f"the destination {dst}.",
         "",
@@ -189,7 +216,10 @@ def _build_places_prompt(context: Dict[str, Any]) -> str:
         "of up to 10 items. Each item must have: name, category, address, lat, lng, "
         "description, opening_hours, visit_duration_minutes, cost_estimate (label "
         "as estimate + source + currency), provider, accessibility_notes."
-    ]
+        " When CANDIDATE NAMES are given above, each item's name MUST be one of "
+        "the listed candidates for its category, plus a one-line 'reason' tying "
+        "the pick to this group's dates, party, budget and interests."
+    ])
 
     return "\n".join(sections)
 

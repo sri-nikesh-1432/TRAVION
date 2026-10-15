@@ -748,6 +748,14 @@ export interface ReviewSnapshot {
   guide: Record<string, any> | null;
 }
 
+export interface DiscoveryRanking {
+  trip_id: string;
+  /** Per-category picks ordered for this group; every name is a verified
+      candidate (the model only ranks + explains, never invents places). */
+  categories: Record<string, Array<{ name: string; reason: string }>>;
+  source: 'llm' | 'catalog';
+}
+
 export interface BudgetSnapshot {
   trip_id: string;
   currency: string;

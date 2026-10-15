@@ -605,8 +605,65 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   }, [tripId]);
 
   const totalSelected = selected.size + selectedFood.size;
-  const places = useMemo(() => insideFirst(catalog?.must_visit ?? []), [catalog]);
-  const activities = useMemo(() => insideFirst(catalog?.activities ?? []) as CatalogActivity[], [catalog]);
+  // ── Cumulative-LLM personalization (step 4 reads steps 1–3) ──────────────
+  // The backend routes the FULL saved trip (dates, party, budget, interests +
+  // the chosen round-trip transport) to the places prompt and returns this
+  // group's ordered picks with reasons. Names are validated server-side
+  // against verified candidates, so ordering can never invent a place; when
+  // the model is unreachable the catalog order stands (source 'catalog').
+  const [aiRanking, setAiRanking] = useState<Record<string, Array<{ name: string; reason: string }>> | null>(null);
+  const [aiSource, setAiSource] = useState<'llm' | 'catalog' | null>(null);
+  useEffect(() => {
+    let live = true;
+    setAiRanking(null);
+    setAiSource(null);
+    api.personalizeDiscovery(tripId)
+      .then((r) => {
+        if (!live) return;
+        setAiRanking(r.categories || {});
+        setAiSource(r.source);
+      })
+      .catch(() => { /* catalog order stands — never blocks Explore */ });
+    return () => { live = false; };
+  }, [tripId]);
+  const rankIndex = useCallback((cat: string, name: string): number => {
+    const list = aiRanking?.[cat];
+    if (!list) return 999;
+    const i = list.findIndex((p) => p.name.trim().toLowerCase() === (name || '').trim().toLowerCase());
+    return i < 0 ? 999 : i;
+  }, [aiRanking]);
+  const aiReason = useCallback((cat: string, name: string): string | null => {
+    const list = aiRanking?.[cat];
+    if (!list) return null;
+    const hit = list.find((p) => p.name.trim().toLowerCase() === (name || '').trim().toLowerCase());
+    return hit?.reason || null;
+  }, [aiRanking]);
+  const orderByRank = useCallback(<T,>(items: T[], cat: string, keyOf: (t: T) => string, extraCats: string[] = []): T[] => {
+    if (!aiRanking) return items;
+    return [...items].sort((a, b) => {
+      const ra = Math.min(rankIndex(cat, keyOf(a)), ...extraCats.map((c) => rankIndex(c, keyOf(a))));
+      const rb = Math.min(rankIndex(cat, keyOf(b)), ...extraCats.map((c) => rankIndex(c, keyOf(b))));
+      return ra - rb;
+    });
+  }, [aiRanking, rankIndex]);
+  const AiPickNote: React.FC<{ cat: string; name: string; extraCats?: string[] }> = ({ cat, name, extraCats = [] }) => {
+    if (aiSource !== 'llm') return null;
+    const cats = [cat, ...extraCats];
+    let reason: string | null = null;
+    let picked = false;
+    for (const c of cats) {
+      const r = aiReason(c, name);
+      if (r !== null || rankIndex(c, name) < 999) { reason = r; picked = true; break; }
+    }
+    if (!picked) return null;
+    return (
+      <p className="mt-1 text-[10.5px] font-bold text-travion-700 leading-snug">
+        Picked for your group{reason ? ` — ${reason}` : ''}
+      </p>
+    );
+  };
+  const places = useMemo(() => orderByRank(insideFirst(catalog?.must_visit ?? []), 'must_visit', (p) => p.name), [catalog, orderByRank]);
+  const activities = useMemo(() => orderByRank(insideFirst(catalog?.activities ?? []), 'activities', (a: CatalogActivity) => (a as CatalogActivity).name ?? (a as CatalogActivity).action) as CatalogActivity[], [catalog, orderByRank]);
   // Best Tourist Spots — the famousness-ranked attractions, DISTINCT from the
   // preference-matched Must Visit list (spec §4: two different sections).
   const touristSpots = useMemo(() => insideFirst(catalog?.tourist_spots ?? []), [catalog]);
@@ -1038,6 +1095,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               </div>
 
               {/* Must visit — honest empty state. We search the whole destination, never a tiny circle */}
+              {aiSource === 'llm' && places.length > 0 && (
+                <p className="mb-3 rounded-xl bg-travion-50 border border-travion-200 px-4 py-2 text-[11.5px] font-bold text-travion-700">
+                  Ordered for your group — dates, party, budget, interests and your chosen transport were all sent to the travel assistant.
+                </p>
+              )}
               <div className="mb-6">
                 <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <Mountain className="w-4 h-4 text-travion-600" /> Must visit
@@ -1088,6 +1150,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                               {place.description && (
                                 <p className="mt-1 text-[11px] font-medium text-charcoal-500 line-clamp-2">{place.description}</p>
                               )}
+                              <AiPickNote cat="must_visit" name={place.name} />
                               <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                                 <span className="text-travion-600">{placementLabel(place.placement, place.distance_km)}</span>
                                 {(place.entry_fee ?? 0) > 0 ? <span>· ₹{place.entry_fee} entry</span> : <span className="text-emerald-600">· Free</span>}
@@ -1275,6 +1338,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                             {activity.description && (
                               <p className="mt-1 text-[11px] font-medium text-charcoal-500 line-clamp-2">{activity.description}</p>
                             )}
+                            <AiPickNote cat="activities" name={(activity as CatalogActivity).name ?? activity.action} />
                             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] font-bold text-charcoal-400">
                               <span className="inline-flex items-center gap-1 text-travion-700">
                                 <MapPin className="w-3 h-3" /> {activity.location_name}
@@ -1393,7 +1457,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   <Utensils className="w-4 h-4 text-travion-600" /> Where to eat
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {catalog.food.slice(0, MAX_CANDIDATES_PER_CATEGORY).map((food: CatalogFood) => {
+                  {orderByRank(catalog.food, 'restaurants', (f: CatalogFood) => f.name, ['cafes']).slice(0, MAX_CANDIDATES_PER_CATEGORY).map((food: CatalogFood) => {
                     const active = selectedFood.has(food.name);
                     const focused = highlight?.name === food.name;
                     const displayName = food.name;
@@ -1423,6 +1487,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <div className="min-w-0">
                             <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{food.name}</p>
                             <p className="mt-0.5 text-[11px] font-medium text-charcoal-500 truncate">{food.cuisine}</p>
+                            <AiPickNote cat="restaurants" name={food.name} extraCats={['cafes']} />
                             {/* No prices at selection — food is priced in the
                                 budget stage (spec §9); cards show cuisine,
                                 rating and verified status only. */}
@@ -1476,7 +1541,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   <span className="text-[11px] font-bold text-travion-700 normal-case">exactly one required</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).slice(0, MAX_CANDIDATES_PER_CATEGORY).map((stay: CatalogStay) => {
+                  {orderByRank(insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]), 'stays', (s: CatalogStay) => s.name).slice(0, MAX_CANDIDATES_PER_CATEGORY).map((stay: CatalogStay) => {
                     const active = selectedStay?.name === stay.name;
                     const focused = highlight?.name === stay.name;
                     const displayName = stay.name;
@@ -1506,6 +1571,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <div className="min-w-0">
                             {stay.tier && <p className="text-[10px] font-black uppercase tracking-wide text-travion-700">{stay.tier}</p>}
                             <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug mt-0.5">{stay.name}</p>
+                            <AiPickNote cat="stays" name={stay.name} />
                             <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
                               {stay.price_per_night
                                 ? <span>₹{Number(stay.price_per_night).toLocaleString('en-IN')}/night</span>

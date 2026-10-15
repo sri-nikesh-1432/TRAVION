@@ -29,7 +29,7 @@ services:
     # Migrations are additive-safe: Base.metadata.create_all only creates
     # missing tables. For schema-versioned deploys replace the start command
     # with:  alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -59,6 +59,11 @@ services:
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
+      # Role elevation secrets (match seeds in auth.py)
+      - key: MANAGER_ELEVATION_SECRET
+        value: SIH-MANAGER
+      - key: ADMIN_ELEVATION_SECRET
+        value: SIH-ADMIN
       # Google Places API (secondary live tier, optional)
       - key: GOOGLE_PLACES_API_KEY
         sync: false

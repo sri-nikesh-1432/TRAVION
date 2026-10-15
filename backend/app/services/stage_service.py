@@ -286,6 +286,93 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
     }
 
 
+# ── Cumulative LLM context (every stage prompt gets everything) ────────────────
+def cumulative_context(db: Session, trip: Trip) -> Dict[str, Any]:
+    """ONE builder for every prompt-routed LLM call. Each stage's prompt
+    receives the TOTAL saved data up to that point — never a fresh session:
+
+    steps 1-2 (trip + preferences) → step 3 (transport) → step 4 (places,
+    now including the step-3 selection) → step 5 (mode) → step 6 (local legs,
+    now including places + stay + transport) → step 7 (food) → step 8
+    (itinerary synthesis over everything).
+
+    Flat keys match what the prompt builders read; unknown keys are ignored.
+    Money here is context for feasibility ONLY — the backend computes every
+    authoritative price, fee and total (the model is never trusted with math).
+    """
+    profile = trip.profile
+    answers = dict(profile.questions_answers or {}) if profile else {}
+    party = _party(trip)
+    dn = _days_nights(trip)
+    rows = _active_selections(db, trip.id)
+    transport = _transport_cost(trip)
+    food_info = _food_allowance(trip)
+    gate = evaluate_budget_gate(db, trip)
+
+    sel = dict(trip.selected_transport or {})
+    places = [
+        {"name": r.name, "category": r.category, "price": float(r.price or 0.0),
+         "lat": r.latitude, "lng": r.longitude}
+        for r in rows
+        if str(r.category or "").lower() in SELECTABLE_CATEGORIES
+    ]
+    stay_row = next(
+        (r for r in rows if str(r.category or "").lower() in STAY_CATEGORIES), None)
+    legs = list((dict(trip.local_transport or {}).get("legs") or []))
+    chosen_legs = []
+    for leg in legs:
+        opts = {o.get("id"): o for o in (leg.get("options") or []) if o.get("id")}
+        chosen = opts.get(leg.get("selected_id")) if leg.get("selected_id") else None
+        chosen_legs.append({
+            "from": leg.get("origin"), "to": leg.get("destination"),
+            "distance_km": leg.get("distance_km"), "duration_min": leg.get("duration_min"),
+            "choice": (chosen or {}).get("label"), "party_total": (chosen or {}).get("party_total"),
+        })
+
+    return {
+        # Step 1 — trip details
+        "source_name": trip.source_name,
+        "destination_name": trip.destination_name,
+        "start_datetime": trip.start_datetime.isoformat() if trip.start_datetime else "",
+        "end_datetime": trip.end_datetime.isoformat() if trip.end_datetime else "",
+        "duration_days": dn["days"],
+        "nights": dn["nights"],
+        # Step 2 — preferences
+        "total_travellers": party["total"],
+        "adults": party["adults"],
+        "children": party["children"],
+        "group_type": answers.get("travelling_type") or answers.get("party_type")
+                      or (profile.party_type if profile else "Solo"),
+        "interests": answers.get("experience") or (profile.experience_type if profile else ""),
+        "budget": float(trip.budget or 0.0),
+        # Step 3 — selected round-trip transport (None until chosen)
+        "selected_transport": {
+            "outbound": sel.get("outbound"), "return": sel.get("return"),
+        },
+        "transport_total": transport["total"],
+        "remaining_budget_after_transport": round(
+            float(trip.budget or 0.0) - transport["total"], 2),
+        # Step 4 — selected places + the single stay
+        "selected_places": [p["name"] for p in places],
+        "selected_place_items": places,
+        "selected_stay": (
+            {"name": stay_row.name, "price_per_night": float(stay_row.price or 0.0),
+             "lat": stay_row.latitude, "lng": stay_row.longitude}
+            if stay_row else None
+        ),
+        # Step 5 — mode
+        "mode": trip.mode,
+        # Step 6 — local legs + choices
+        "itinerary_legs": chosen_legs,
+        # Step 7 — food tier + allowance
+        "food_tier": str(trip.food_tier or "STANDARD"),
+        # Budget truth (context only — backend math is authoritative)
+        "base_total_so_far": gate["spend"]["base_total"],
+        "remaining_budget": gate["remaining_budget"],
+        "final_planned_amount": gate["final_amount"],
+    }
+
+
 # ── Stage completion (derived) ────────────────────────────────────────────────
 def stage_completion(db: Session, trip: Trip) -> Dict[str, Any]:
     """Which stages are complete, derived from SAVED data only."""
