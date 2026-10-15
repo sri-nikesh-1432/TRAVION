@@ -1,73 +1,64 @@
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import get_current_identity, require_role
 from app.models.entities import Trip, Location, User, Identity, TripProfile
-from app.schemas.schemas import BasicProfileUpdate
+from app.schemas.schemas import TripSearchRequest, TripResponse, BasicProfileUpdate
 from app.services.privacy import mask_phone
 from app.services.budget_engine import check_budget_feasibility
-from app.services.pricing_service import GUIDE_FEE_RATE, PLATFORM_FEE_RATE
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 
 
-@router.post("/search", response_model=dict)
+@router.post("/search", response_model=TripResponse)
 def search_and_create_trip(
-    source_name: str,
-    destination_name: str,
-    start_datetime: str,
-    end_datetime: str,
+    req: TripSearchRequest,
     current: dict = Depends(require_role("USER")),
     db: Session = Depends(get_db)
 ):
+    # Retrieve user
     user = db.query(User).filter(User.identity_id == current["identity_id"]).first()
     if not user:
         raise HTTPException(status_code=404, detail="User profile not found")
 
-    source = db.query(Location).filter(Location.name.ilike(source_name)).first()
+    # 1. Source location validation
+    source = db.query(Location).filter(Location.id == req.source_location_id).first()
     if not source:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "INVALID_SOURCE", "message": "Please select a recognized departure city.", "field": "source_name"}
+            detail={"error_code": "INVALID_SOURCE", "message": "Please select a recognized departure city.", "field": "source_location_id"}
         )
 
-    destination = db.query(Location).filter(Location.name.ilike(destination_name)).first()
+    # 2. Destination location validation
+    destination = db.query(Location).filter(Location.id == req.destination_location_id).first()
     if not destination:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "INVALID_DESTINATION", "message": "Please select a recognized destination city.", "field": "destination_name"}
+            detail={"error_code": "INVALID_DESTINATION", "message": "Please select a recognized destination city.", "field": "destination_location_id"}
         )
 
-    if source.id == destination.id:
+    # 3. Source != Destination
+    if req.source_location_id == req.destination_location_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "SAME_LOCATIONS", "message": "Your destination is the same as your source.", "field": "destination_name"}
+            detail={"error_code": "SAME_LOCATIONS", "message": "Your destination is the same as your source.", "field": "destination_location_id"}
         )
 
+    # Server now with UTC comparison
     now = datetime.now(timezone.utc)
-    try:
-        start_dt = datetime.fromisoformat(start_datetime.replace("Z", "+00:00")) if start_datetime else None
-        end_dt = datetime.fromisoformat(end_datetime.replace("Z", "+00:00")) if end_datetime else None
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "INVALID_DATETIME", "message": "Invalid start/end datetime format.", "field": "start_datetime/end_datetime"}
-        )
+    start_dt = req.start_datetime if req.start_datetime.tzinfo else req.start_datetime.replace(tzinfo=timezone.utc)
+    end_dt = req.end_datetime if req.end_datetime.tzinfo else req.end_datetime.replace(tzinfo=timezone.utc)
 
-    if not start_dt or not end_dt:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "MISSING_DATETIME", "message": "Start and end datetimes are required.", "field": "start_datetime/end_datetime"}
-        )
-
+    # 4. Start date cannot be in past (allow 5 min grace for network jitter)
     if start_dt < (now - timedelta(minutes=5)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error_code": "PAST_DATE", "message": "Please choose a future travel date and time.", "field": "start_datetime"}
         )
 
+    # 5. End date strictly after start date (min 1 day / overnight duration for v1)
     if end_dt <= start_dt:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -90,95 +81,110 @@ def search_and_create_trip(
     db.commit()
     db.refresh(trip)
 
-    return {"trip_id": trip.id, "status": "created", "message": "Trip created. Proceed to Adaptive Discovery (Step 2)."}
+    return trip
 
 
 @router.post("/adaptive-discovery", response_model=dict)
 def adaptive_discovery(
-    # Accept dict body since AdaptiveDiscoveryRequest not in original schema
     body: Dict[str, Any],
     current: dict = Depends(require_role("USER")),
     db: Session = Depends(get_db)
 ):
+    """Step 2 — Adaptive Discovery: budget, party breakdown, experience interests.
+
+    Persists onto the traveller's latest DRAFT trip (created by /search) and
+    syncs the stable profile answers into TripProfile.questions_answers so the
+    3-question interview contract and the planner read the SAME data.
+    """
     user = db.query(User).filter(User.identity_id == current["identity_id"]).first()
     if not user:
         raise HTTPException(status_code=404, detail="User profile not found")
 
     trip = db.query(Trip).filter(
-        Trip.user_id == user.id, 
+        Trip.user_id == user.id,
         Trip.status == "DRAFT"
     ).order_by(Trip.created_at.desc()).first()
-    
+
     if not trip:
         raise HTTPException(status_code=404, detail="No draft trip found. Create a trip first.")
 
-    # A. Budget
+    # A. Budget — required before party/experience can be priced
     budget = body.get("budget")
+    if budget is not None:
+        try:
+            budget = float(budget)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Budget must be a number.")
     if budget is not None and budget > 0:
-        trip.budget = float(budget)
+        trip.budget = budget
     elif trip.budget is None:
         raise HTTPException(status_code=400, detail="Budget must be set before proceeding.")
+    budget_val = float(trip.budget or 0)
 
-    # B. Group type
+    # B. Group type → canonical party_type label
     group_type = body.get("group_type", "Solo")
-    group_map = {"Friends": "Friends Group", "Group": "Friends Group", "Couple": "Couple", "Solo": "Solo", "Family": "Family", "Other": "Other"}
-    party_type = group_map.get(group_type, "Solo")
-    
-    trip_profile, created = db.query(TripProfile).filter(TripProfile.trip_id == trip.id).first_or_create(
-        trip_id=trip.id,
-        defaults={
-            "party_type": party_type,
-            "experience_type": body.get("experience_type", "Relaxed"),
-            "food_pref": "Veg",
-            "stay_pref": "3 Star",
-            "transport_pref": "Train",
-            "walking_tolerance": "Moderate",
-            "language": "English",
-            "specific_places": [],
-            "priority": "Balanced",
-            "selected_stay": None
-        }
-    )
-    if not created:
-        trip_profile.party_type = party_type
-        trip_profile.experience_type = body.get("experience_type", trip_profile.experience_type)
-    db.commit()
+    group_map = {"Friends": "Friends Group", "Group": "Friends Group", "Couple": "Couple",
+                 "Solo": "Solo", "Family": "Family", "Other": "Other"}
+    party_label = group_map.get(str(group_type), "Solo")
 
-    # C. Traveller counts
-    adults = body.get("adults", 0) or trip_profile.adults
-    children = body.get("children", 0) or trip_profile.children
-    total_travellers = adults + children
-    
-    if adults + children != total_travellers:
-        raise HTTPException(
-            status_code=400, detail="Total travellers must equal adults + children."
-        )
-    if total_travellers < 1 or total_travellers > 20:
-        raise HTTPException(status_code=400, detail="Traveller count must be between 1 and 20.")
+    # C. Traveller counts — validated BEFORE anything is persisted
+    try:
+        adults = int(body.get("adults") or 0)
+        children = int(body.get("children") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Adults and children must be whole numbers.")
     if adults < 0 or children < 0:
         raise HTTPException(status_code=400, detail="Counts must be non-negative.")
-    
-    trip_profile.adults = adults
-    trip_profile.children = children
-    db.commit()
+    total_travellers = adults + children
+    if total_travellers < 1 or total_travellers > 20:
+        raise HTTPException(status_code=400, detail="Traveller count must be between 1 and 20.")
 
     # D. Experience type
-    experience_map = {"Adventure": "Adventure", "Food & Culture": "Food & Culture", "Spiritual": "Spiritual", "Mixed": "Mixed"}
-    experience_type = experience_map.get(body.get("experience_type", "Relaxed"), "Relaxed")
-    trip_profile.experience_type = experience_type
-    db.commit()
+    experience_map = {"Adventure": "Adventure", "Food & Culture": "Food & Culture",
+                      "Spiritual": "Spiritual", "Mixed": "Mixed"}
+    experience_type = experience_map.get(str(body.get("experience_type", "Relaxed")), "Relaxed")
 
-    # Budget feasibility check
-    budget_val = float(trip.budget or 0)
-    destination = trip.destination_name or ""
-    profile_data = {"party_type": trip_profile.party_type, "adults": adults, "children": children}
-    mode = "ADVENTUROUS_MODE"
-    feasibility = check_budget_feasibility(budget=budget, destination=destination, mode=mode, profile=profile_data, requested_days=3)
-    
+    # Persist on TripProfile (SQLAlchemy get-or-create, never Peewee)
+    trip_profile = db.query(TripProfile).filter(TripProfile.trip_id == trip.id).first()
+    if trip_profile is None:
+        trip_profile = TripProfile(trip_id=trip.id)
+        db.add(trip_profile)
+    trip_profile.party_type = party_label
+    trip_profile.experience_type = experience_type
+    trip_profile.language = str(body.get("language") or trip_profile.language or "English")
+
+    # Canonical party answer shape (same contract as the 3-question interview)
+    answers = dict(trip_profile.questions_answers or {})
+    answers["party"] = {
+        "group": party_label,
+        "total": total_travellers,
+        "adults": adults,
+        "children": children,
+    }
+    answers["experience"] = body.get("experience") or answers.get("experience") or [experience_type]
+    if budget_val > 0:
+        previous = answers.get("budget") or {}
+        previous_max = float(previous.get("max") or 0)
+        answers["budget"] = {"min": float(previous.get("min") or 0), "max": max(budget_val, previous_max)}
+    trip_profile.questions_answers = answers
+
+    db.commit()
+    db.refresh(trip_profile)
+
+    # Budget feasibility verdict for this party (single financial authority)
+    feasibility = check_budget_feasibility(
+        budget=budget_val,
+        destination=trip.destination_name or "",
+        mode="ADVENTUROUS_MODE",
+        profile={"party_type": party_label, "adults": adults, "children": children},
+        requested_days=3,
+    )
+
     return {
         "status": "ok",
         "trip_id": trip.id,
         "budget_set": bool(trip.budget),
+        "budget": budget_val,
         "party_type": trip_profile.party_type,
         "experience_type": trip_profile.experience_type,
         "adults": adults,
@@ -190,8 +196,19 @@ def adaptive_discovery(
     }
 
 
-@router.get("/{trip_id}/profile", response_model=dict)
-def get_trip_profile(
+@router.get("/my-trips", response_model=List[TripResponse])
+def get_user_trips(
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.identity_id == current["identity_id"]).first()
+    if not user:
+        return []
+    return db.query(Trip).filter(Trip.user_id == user.id).order_by(Trip.created_at.desc()).all()
+
+
+@router.get("/{trip_id}", response_model=TripResponse)
+def get_trip(
     trip_id: str,
     current: dict = Depends(get_current_identity),
     db: Session = Depends(get_db)
@@ -199,21 +216,103 @@ def get_trip_profile(
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    profile = db.query(TripProfile).filter(TripProfile.trip_id == trip_id).first()
-    if not profile:
-        return {"trip_id": trip_id, "profile_not_populated": True}
+    return trip
+
+
+@router.get("/{trip_id}/assignment")
+def get_trip_assignment(
+    trip_id: str,
+    current: dict = Depends(get_current_identity),
+    db: Session = Depends(get_db)
+):
+    """Real assigned-guide context for a trip (never hardcoded on the client)."""
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    assignment = trip.guide_assignment
+    guide_data = None
+    if assignment and assignment.guide:
+        g = assignment.guide
+        guide_data = {
+            "guide_id": g.id,
+            "name": f"{g.first_name} {g.last_name}".strip(),
+            # Privacy policy: full phone numbers are never exposed in the UI —
+            # only the masked form (+91 830959****) ever leaves the backend.
+            "phone": mask_phone(g.phone),
+            "phone_masked": True,
+            "rating": g.rating,
+            "review_count": g.review_count,
+            "languages": g.languages or []
+        }
     return {
-        "trip_id": trip_id,
-        "party_type": profile.party_type,
-        "experience_type": profile.experience_type,
-        "food_pref": profile.food_pref,
-        "stay_pref": profile.stay_pref,
-        "transport_pref": profile.transport_pref,
-        "adults": profile.adults,
-        "children": profile.children,
-        "budget": trip.budget,
-        "mode": trip.mode
+        "trip_id": trip.id,
+        "mode": trip.mode,
+        "assignment_status": assignment.status if assignment else None,
+        "guide": guide_data
     }
+
+
+@router.patch("/{trip_id}/complete", response_model=TripResponse)
+def complete_trip(
+    trip_id: str,
+    current: dict = Depends(get_current_identity),
+    db: Session = Depends(get_db)
+):
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    trip.status = "COMPLETED"
+
+    # If guide assigned, free guide status BUSY -> ACTIVE
+    if trip.guide_assignment and trip.guide_assignment.guide:
+        trip.guide_assignment.guide.status = "ACTIVE"
+        trip.guide_assignment.guide.current_trip_id = None
+
+    db.commit()
+    db.refresh(trip)
+    return trip
+
+
+@router.put("/profile/basic", response_model=dict)
+def update_basic_profile(
+    req: BasicProfileUpdate,
+    current: dict = Depends(require_role("USER")),
+    db: Session = Depends(get_db)
+):
+    """Stable traveller profile (Step 0 onboarding) — persists across every trip
+    so the AI never asks the same questions again. Home city and phone are
+    mandatory and re-validated server-side (direct API calls cannot bypass)."""
+    user = db.query(User).filter(User.identity_id == current["identity_id"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Home City is MANDATORY — users cannot bypass it via direct API calls.
+    if not (req.home_city or "").strip():
+        raise HTTPException(status_code=400, detail="Please enter your home city to continue.")
+
+    user.first_name = req.first_name
+    user.last_name = req.last_name
+    user.preferred_name = req.preferred_name or req.first_name
+    user.photo_url = req.photo_url
+    user.age = req.age
+    user.gender = req.gender
+    user.preferred_language = req.preferred_language
+    user.additional_languages = req.additional_languages
+    user.country = req.country
+    # Phone is mandatory for travellers; verified by Pydantic before reaching here.
+    if not req.phone or len("".join(c for c in (req.phone or "") if c.isdigit())) < 10:
+        raise HTTPException(status_code=400, detail="A valid phone number is mandatory to start planning trips.")
+
+    user.home_city = req.home_city
+    user.phone = req.phone
+    user.preferred_communication = req.preferred_communication
+    user.emergency_contact_name = req.emergency_contact_name
+    user.emergency_contact_phone = req.emergency_contact_phone
+    user.is_profile_complete = True
+
+    db.commit()
+    return {"message": "Profile updated successfully", "user_id": user.id}
 
 
 @router.patch("/{trip_id}/mode", response_model=dict)

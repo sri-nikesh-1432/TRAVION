@@ -270,6 +270,90 @@ def test_full_user_trip_flow():
     assert pkg["trip_id"] == trip_id
     assert "Offline mode verified" in pkg["offline_notice"]
 
+
+def test_stable_profile_and_adaptive_discovery_persist():
+    """Step 0/2 contract: the 'Tell us a little about you' sheet (PUT
+    /profile/basic) must actually persist home city + phone and flip
+    is_profile_complete; the Adaptive Discovery step (POST /trips/adaptive-
+    discovery) must persist budget, party breakdown and experience onto the
+    DRAFT trip's TripProfile — and reject invalid traveller counts before
+    writing anything."""
+    user_email = f"adap_{datetime.now().timestamp()}@test.com"
+    s = client.post("/api/v1/auth/signup", json={
+        "email": user_email, "password": "Password123!", "role": "USER",
+        "first_name": "Datta", "last_name": "Chinta", "phone": "+918309594383",
+    })
+    headers = {"Authorization": f"Bearer {s.json()['access_token']}"}
+
+    # Step 0: stable profile sheet
+    prof = client.put("/api/v1/trips/profile/basic", headers=headers, json={
+        "first_name": "Datta Srinikesh", "last_name": "Chinta",
+        "preferred_name": "Datta Srinikesh", "preferred_language": "English",
+        "home_city": "Hyderabad", "phone": "+918309594383",
+        "preferred_communication": "Voice",
+        "emergency_contact_name": "Datta Srinikesh Chinta",
+        "emergency_contact_phone": "8309594383",
+    })
+    assert prof.status_code == 200, prof.text
+
+    me = client.get("/api/v1/auth/me", headers=headers).json()["user"]
+    assert me["home_city"] == "Hyderabad"
+    assert me["is_profile_complete"] is True
+
+    # Step 1: create the DRAFT trip the discovery step writes onto
+    locs = client.get("/api/v1/locations/all", headers=headers).json()
+    src = next(l for l in locs if l["name"] == "Bangalore")
+    dst = next(l for l in locs if l["name"] == "Ooty")
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=headers, json={
+        "source_location_id": src["id"], "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=7)).isoformat(),
+        "end_datetime": (now + timedelta(days=10)).isoformat(),
+    }).json()
+
+    # Step 2: adaptive discovery — invalid counts rejected BEFORE any write
+    bad = client.post("/api/v1/trips/adaptive-discovery", headers=headers, json={
+        "budget": 25000, "group_type": "Family", "adults": 4, "children": -2,
+        "experience_type": "Adventure",
+    })
+    assert bad.status_code == 400
+    over = client.post("/api/v1/trips/adaptive-discovery", headers=headers, json={
+        "budget": 25000, "group_type": "Family", "adults": 25, "children": 5,
+        "experience_type": "Adventure",
+    })
+    assert over.status_code == 400
+
+    ok = client.post("/api/v1/trips/adaptive-discovery", headers=headers, json={
+        "budget": 25000, "group_type": "Family", "adults": 4, "children": 2,
+        "experience_type": "Food & Culture", "language": "Telugu",
+    })
+    assert ok.status_code == 200, ok.text
+    data = ok.json()
+    assert data["trip_id"] == trip["id"]
+    assert data["adults"] == 4 and data["children"] == 2
+    assert data["total_travellers"] == 6
+    assert data["party_type"] == "Family"
+    assert data["experience_type"] == "Food & Culture"
+    assert data["budget_feasibility"] in ("affordable", "restricted", "impossible")
+
+    # Persisted on the trip: budget synced + profile readable via the
+    # canonical discovery profile endpoint (questions_answers contract).
+    t = client.get(f"/api/v1/trips/{trip['id']}", headers=headers).json()
+    assert float(t["budget"]) == 25000.0
+    prof = client.get(f"/api/v1/trips/{trip['id']}/profile", headers=headers).json()
+    assert prof["party"]["adults"] == 4 and prof["party"]["children"] == 2
+    assert prof["party"]["total"] == 6
+    assert float(prof["budget"]["max"]) >= 25000
+
+    # Re-submitting updates the SAME rows (idempotent get-or-create, no crash)
+    again = client.post("/api/v1/trips/adaptive-discovery", headers=headers, json={
+        "budget": 30000, "group_type": "Friends", "adults": 3, "children": 0,
+        "experience_type": "Adventure",
+    })
+    assert again.status_code == 200
+    assert again.json()["total_travellers"] == 3
+
+
 def test_planned_trip_first_step_is_departure_from_source():
     """
     The first step of any planned trip must be the departure from the source.
