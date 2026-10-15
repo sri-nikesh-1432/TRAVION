@@ -9,9 +9,22 @@ import {
   FoodTier, BudgetGate, WeatherPayload, ReviewSnapshot, BudgetSnapshot,
 } from '../types';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:8002/api/v1' : '/api/v1');
+const API_BASE_URL = (() => {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (fromEnv) return fromEnv;
+  // Local development AND local preview builds have no same-origin backend,
+  // so they must talk to the backend directly. Only real deployments (page
+  // served from a non-local host) use the same-origin '/api/v1' path.
+  try {
+    const host = typeof window !== 'undefined' ? window.location.hostname : '';
+    if (host === 'localhost' || host === '127.0.0.1' || host === '' || import.meta.env.DEV) {
+      return 'http://localhost:8002/api/v1';
+    }
+  } catch {
+    return 'http://localhost:8002/api/v1';
+  }
+  return '/api/v1';
+})();
 
 export const resolveApiBaseUrl = () => API_BASE_URL;
 

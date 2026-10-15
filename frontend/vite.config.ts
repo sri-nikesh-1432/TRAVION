@@ -4,6 +4,20 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    port: 5173,
+    // Local dev: same-origin '/api/*' also reaches the backend, so the UI
+    // works whether API_BASE_URL is absolute or relative.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8002',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 4173,
+  },
   build: {
     rollupOptions: {
       output: {
