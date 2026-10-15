@@ -31,7 +31,7 @@ def update_netlify_toml(render_url: str):
         content = f.read()
 
     # Replace any existing onrender.com redirect
-    new_redirect = f'  to = "{render_url}/:splat"'
+    new_redirect = f'  to = "{render_url}/api/v1/:splat"'
     new_content, count = re.subn(
         r'  to = "https://[^"]+\.onrender\.com[^"]*"',
         new_redirect,

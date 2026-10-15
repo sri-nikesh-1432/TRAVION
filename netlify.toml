@@ -24,9 +24,16 @@
 #   if yours differs from "travion-api".
 [[redirects]]
   from = "/api/v1/*"
-  to = "https://travion-1.onrender.com/:splat"
+  to = "https://travion-1.onrender.com/api/v1/:splat"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/health"
+  to = "https://travion-1.onrender.com/health"
+  status = 200
+  force = true
+
 
 # Single-page app: every client route is served by index.html.
 [[redirects]]
