@@ -46,13 +46,12 @@ def update_netlify_toml(render_url: str):
     with open(toml_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    print(f"\n[OK] netlify.toml updated!")
-    print(f"     Proxy: /api/v1/* → {render_url}/:splat")
+    print(f"     Proxy: /api/v1/* -> {render_url}/:splat")
     print(f"\nNext steps:")
     print(f"  git add netlify.toml")
     print(f"  git commit -m \"chore: point Netlify proxy to new Render deployment\"")
     print(f"  git push origin main")
-    print(f"\nAlso set in Netlify dashboard (Site configuration → Environment variables):")
+    print(f"\nAlso set in Netlify dashboard (Site configuration -> Environment variables):")
     print(f"  VITE_API_BASE_URL = {render_url}/api/v1")
 
 

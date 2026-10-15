@@ -24,7 +24,7 @@
 #   if yours differs from "travion-api".
 [[redirects]]
   from = "/api/v1/*"
-  to = "https://travion-api.onrender.com/:splat"
+  to = "https://travion-1.onrender.com/:splat"
   status = 200
   force = true
 
