@@ -31,7 +31,12 @@ def _classify_kind(text: str) -> str:
     t = (text or "").lower()
     if any(k in t for k in ("flight", "air-connect", "airconnect", " plane")):
         return "flight"
-    if any(k in t for k in ("train", "rail", "express", "vande", "toy train", "intercity", "kovai", "nilgiri")):
+    # Bus/coach BEFORE train: intercity coaches ("Day Intercity Bus") contain
+    # rail-sounding words ("intercity", "express") but are buses. 'Sleeper'
+    # alone is NOT a bus signal (overnight trains have sleeper coaches).
+    if any(k in t for k in ("bus", "coach", "volvo", "ksrtc", "hptdc", "tempo traveller", "minibus")):
+        return "bus"
+    if any(k in t for k in ("train", "rail", "express", "vande", "toy train", "intercity", "kovai", "nilgiri", "metro", "mmts")):
         return "train"
     return "bus"
 
@@ -49,6 +54,23 @@ def _duration_to_min(text: str) -> int:
         return total if total > 0 else 300
     except Exception:
         return 300
+
+
+def _to_fare(value: Any) -> float:
+    """Parse an LLM fare that may arrive as '1,650', 'Rs.1,150' or 1650.0.
+    Takes the FIRST number run (so a 'Rs.' prefix can never corrupt the
+    value) and drops the option (0.0) when nothing parseable exists."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        match = re.search(r"\d[\d,]*\.?\d*", str(value))
+        if not match:
+            return 0.0
+        return float(match.group(0).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _norm_city(name: str) -> str:
@@ -173,17 +195,16 @@ def build_round_trip_options(
     def convert(raw_list: List[Dict[str, Any]], direction: str, base: Optional[datetime]) -> List[Dict[str, Any]]:
         converted: List[Dict[str, Any]] = []
         for i, raw in enumerate(raw_list[:5]):
-            try:
-                fare = float(raw.get("fare") or 0)
-            except (TypeError, ValueError):
-                continue  # LLM/unparseable fare: drop the option, never invent
+            fare = _to_fare(raw.get("fare"))
             if fare <= 0:
-                continue
+                continue  # LLM/unparseable fare: drop the option, never invent
             verified = str(raw.get("source") or "") == "verified_api"
+            from_llm = str(raw.get("source") or "") == "llm_suggestion"
             date_iso, dep, _arr = _iso_day(base, 0, str(raw.get("departure") or ""))
             _d2, _dep2, arr = _iso_day(base, 0, str(raw.get("arrival") or ""))
             dur_min = _duration_to_min(str(raw.get("duration") or ""))
             oid = f"{'ob' if direction == 'outbound' else 'rt'}-{len(converted) + 1}"
+            source = "verified_catalog" if verified else ("llm_suggestion" if from_llm else "estimate")
             converted.append({
                 "id": oid,
                 "direction": direction,
@@ -200,10 +221,12 @@ def build_round_trip_options(
                 "travellers": travellers,
                 "availability": "AVAILABLE" if verified else "UNCONFIRMED_ESTIMATE",
                 "verified": verified,
-                "source": "verified_catalog" if verified else "estimate",
+                "source": source,
                 "note": (
                     "Verified schedule and fare." if verified
-                    else "Estimate band for this route — schedule, fare and availability are unconfirmed."
+                    else ("Suggested by the travel assistant — unconfirmed schedule, fare and availability."
+                          if from_llm else
+                          "Estimate band for this route — schedule, fare and availability are unconfirmed.")
                 ),
             })
         return converted
@@ -217,6 +240,11 @@ def build_round_trip_options(
         ret_raw = _estimate_bands(destination, source)
 
     # LLM enrichment: accept well-formed candidates only (numeric fare, known shape).
+    # Field names mirror the prompt contract (mode/provider/departure/arrival/
+    # duration/per_person_fare_estimate/...) plus legacy aliases. Anything
+    # unparseable is dropped — never invented. LLM options are ALWAYS labelled
+    # suggestions with unconfirmed availability (only the verified catalog and
+    # transparent estimate bands carry their own labels).
     if isinstance(llm_options, dict):
         for direction in ("outbound", "return"):
             extra = llm_options.get(direction)
@@ -225,18 +253,19 @@ def build_round_trip_options(
                 for cand in extra:
                     if not isinstance(cand, dict):
                         continue
-                    try:
-                        fare = float(cand.get("price_per_person") or cand.get("fare") or 0)
-                    except (TypeError, ValueError):
-                        continue
+                    fare = _to_fare(
+                        cand.get("per_person_fare_estimate")
+                        or cand.get("price_per_person")
+                        or cand.get("fare")
+                    )
                     if fare <= 0:
                         continue
                     base_list.append({
-                        "type": str(cand.get("operator") or cand.get("type") or "Suggested service")[:80],
-                        "code": str(cand.get("service") or cand.get("note") or "LLM-suggested option")[:120],
-                        "departure": str(cand.get("depart_time") or "—"),
-                        "arrival": str(cand.get("arrive_time") or "—"),
-                        "duration": str(cand.get("duration_label") or "—"),
+                        "type": str(cand.get("provider") or cand.get("operator") or cand.get("type") or "Suggested service")[:80],
+                        "code": str(cand.get("service") or cand.get("note") or cand.get("conditions") or "LLM-suggested option")[:120],
+                        "departure": str(cand.get("departure") or cand.get("depart_time") or "—"),
+                        "arrival": str(cand.get("arrival") or cand.get("arrive_time") or "—"),
+                        "duration": str(cand.get("duration") or cand.get("duration_label") or "—"),
                         "fare": fare,
                         "comfort_level": "LLM-suggested",
                         "source": "llm_suggestion",

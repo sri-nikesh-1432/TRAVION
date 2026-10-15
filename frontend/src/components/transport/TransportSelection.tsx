@@ -57,8 +57,17 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
       const opts = await api.getTransportOptions(tripId, regenerate);
       setOutbound(opts.outbound || []);
       setBack(opts.return || []);
+      if ((opts.outbound || []).length === 0 && (opts.return || []).length === 0) {
+        setLoadError('No transport options came back for this route. Please retry — your trip details are saved.');
+      }
     } catch (err: any) {
-      setLoadError(err?.message || 'Transport options could not be loaded. Please retry.');
+      const status = (err as ApiError)?.status;
+      // A route-level 404 here means the app bundle is older than the
+      // backend: hard-refresh (Ctrl+Shift+R) to load the current screens.
+      const hint = status === 404
+        ? ' (the server did not recognise this step — hard-refresh with Ctrl+Shift+R, then continue from your saved trip)'
+        : '';
+      setLoadError(`${err?.message || 'Transport options could not be loaded. Please retry.'}${hint}`);
     } finally {
       setLoading(false);
       setRegenerating(false);
@@ -66,7 +75,8 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
   };
 
   useEffect(() => {
-    if (!initial || (initial.options.outbound.length === 0 && initial.options.return.length === 0)) {
+    const hasOptions = (initial?.options?.outbound?.length || 0) + (initial?.options?.return?.length || 0) > 0;
+    if (!initial || !hasOptions) {
       void load(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

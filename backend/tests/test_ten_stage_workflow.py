@@ -314,6 +314,41 @@ def test_plan_prices_selected_transport_fares():
     assert bd["selected_transport"]["outbound"]["id"] == chosen["selected"]["outbound"]["id"]
 
 
+# ── LLM chain (offline): prompt-schema payload → honest options ───────────────
+def test_llm_suggestion_payload_flows_through_labelled_unconfirmed():
+    """The prompt contract (mode/provider/departure/arrival/duration/
+    per_person_fare_estimate, possibly fenced + string fares) must survive
+    into the pool as UNCONFIRMED llm_suggestion rows with party pricing —
+    verified rows always lead. No network involved."""
+    import json as _json
+    import re as _re
+    from app.services import stage_transport as _stra
+    raw = (
+        "```json\n"
+        '{"outbound": [{"mode": "Private Minibus 12-Seater AC Tempo Traveller", '
+        '"provider": "Savaari Car Rentals", '
+        '"departure": "2026-12-25T16:30:00+05:30", "arrival": "2026-12-25T23:45:00+05:30", '
+        '"duration": "7h 15m", "per_person_fare_estimate": "1,650", '
+        '"availability": "Estimate only"}], '
+        '"return": [{"mode": "AC Sleeper Bus", "provider": "KSRTC", '
+        '"departure": "2026-12-28T21:00:00+05:30", "arrival": "2026-12-29T06:00:00+05:30", '
+        '"duration": "9h", "per_person_fare_estimate": "Rs.1,150", '
+        '"availability": "Estimate"}]}\n```'
+    )
+    m = _re.search(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", raw, _re.S)
+    parsed = _json.loads(m.group(1))
+    pool = _stra.build_round_trip_options("Bangalore", "Ooty", None, None, 10, llm_options=parsed)
+    llm_rows = [o for d in ("outbound", "return") for o in pool[d]
+                if o["source"] == "llm_suggestion"]
+    assert len(llm_rows) == 2
+    by_id = {o["operator"]: o for o in llm_rows}
+    assert by_id["Savaari Car Rentals"]["party_total"] == 1650.0 * 10
+    assert by_id["KSRTC"]["party_total"] == 1150.0 * 10
+    assert all(o["availability"] == "UNCONFIRMED_ESTIMATE" and o["verified"] is False
+               for o in llm_rows)
+    assert pool["outbound"][0]["verified"] is True  # verified always leads
+
+
 # ── weather honesty ───────────────────────────────────────────────────────────
 def test_weather_labels_every_day_honestly():
     h = _auth()

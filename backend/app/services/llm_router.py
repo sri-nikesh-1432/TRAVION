@@ -12,6 +12,7 @@ Design principles (from spec §5/§10/§30):
 """
 
 import os
+import re
 import time
 import logging
 import json
@@ -49,7 +50,9 @@ def _ensure_llm():
 
     try:
         genai.configure(api_key=key)
-        _llm_model = genai.GenerativeModel("gemini-1.5-flash")
+        # Pinned legacy model ids (1.5/2.0/2.5-flash) are retired server-side
+        # (API 404s); the -latest alias tracks the supported flash model.
+        _llm_model = genai.GenerativeModel("gemini-flash-latest")
         logger.info("LLM router initialised with Gemini flash")
     except Exception as e:
         logger.error(f"Failed to initialise Gemini: {e}")
@@ -499,14 +502,23 @@ def route_task(task: str, context: Dict[str, Any]) -> Dict[str, Any]:
                 response = model.generate_content(prompt,
                                                   )
                 raw = response.text
-                # Attempt lightweight JSON parse if the model returned JSON
+                # Attempt lightweight JSON parse if the model returned JSON.
+                # Models habitually wrap JSON in ```json fences — strip those
+                # before parsing so structured outputs stay consumable.
                 try:
                     result = json.loads(raw)
                     # Strip any price fields that look like they weren't labelled
                     # (the prompt already labels them, but double-check)
                 except json.JSONDecodeError:
-                    # Not JSON — store as raw text; backend will parse what it needs
-                    result = {"raw_text": raw}
+                    fenced = re.search(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", raw, re.S)
+                    if fenced:
+                        try:
+                            result = json.loads(fenced.group(1))
+                        except json.JSONDecodeError:
+                            result = {"raw_text": raw}
+                    else:
+                        # Not JSON — store as raw text; backend will parse what it needs
+                        result = {"raw_text": raw}
                 model_name = getattr(model, 'model_name', 'gemini-1.5-flash')
                 break  # success
             except Exception as e:
