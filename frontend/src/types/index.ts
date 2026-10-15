@@ -599,3 +599,167 @@ export interface ConfirmPlanResponse {
   within_budget: boolean;
   missing: string[];
 }
+
+/* ── 10-stage booking flow (new staged API contract) ── */
+
+export type StageKey =
+  | 'trip' | 'travellers' | 'transport' | 'explore' | 'mode'
+  | 'local' | 'budget' | 'itinerary' | 'review' | 'payment';
+
+export interface StageInfo {
+  index: number;
+  key: string;
+  label: string;
+  complete: boolean;
+  locked: boolean;
+}
+
+export interface TransportOption {
+  id: string;
+  direction: 'outbound' | 'return';
+  type: 'flight' | 'train' | 'bus';
+  operator: string;
+  date: string;
+  depart_time: string;
+  arrive_time: string;
+  duration_min: number;
+  price_per_person: number;
+  party_total: number;
+  availability: string;
+  verified: boolean;
+  source: string;
+  note?: string | null;
+}
+
+export interface LocalTransportOption {
+  id: string;
+  type: string;
+  label: string;
+  fare_per_person: number;
+  fare_vehicle?: number | null;
+  vehicles_needed?: number | null;
+  party_total: number;
+  verified: boolean;
+  source: string;
+  feasibility_reason?: string | null;
+}
+
+export interface LocalLeg {
+  index: number;
+  origin: string;
+  origin_lat?: number | null;
+  origin_lng?: number | null;
+  destination: string;
+  dest_lat?: number | null;
+  dest_lng?: number | null;
+  distance_km: number;
+  duration_min: number;
+  options: LocalTransportOption[];
+  selected_id?: string | null;
+}
+
+export type FoodTier = 'BASIC' | 'STANDARD' | 'PREMIUM';
+
+export interface BudgetGateSpend {
+  transport: number;
+  stay: number;
+  food: number;
+  activities: number;
+  local_transport: number;
+  base_total: number;
+}
+
+export interface BudgetGateFees {
+  guide: number;
+  platform: number;
+  safety_reserve: number;
+  insurance: number;
+}
+
+export interface BudgetGate {
+  budget_max: number;
+  adjustments: Array<Record<string, any>>;
+  spend: BudgetGateSpend;
+  fees: BudgetGateFees;
+  final_amount: number;
+  remaining_budget: number;
+  can_continue: boolean;
+  violations: string[];
+  food_tier: FoodTier;
+  food_allowance: number;
+  pricing_unit_notes: string[];
+}
+
+export interface StageState {
+  trip_id: string;
+  current_stage: number;
+  stage_key: string;
+  stages: StageInfo[];
+  trip: TripItem;
+  preferences: Record<string, any>;
+  transport: {
+    options: { outbound: TransportOption[]; return: TransportOption[] };
+    selected: { outbound: TransportOption | null; return: TransportOption | null };
+  };
+  places: {
+    counts: Record<string, number>;
+    stay: Record<string, any> | null;
+    items: SelectedPlaceItem[];
+  };
+  mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE' | null;
+  local_transport: { legs: LocalLeg[] };
+  food_tier: FoodTier;
+  budget: BudgetGate;
+  itinerary: { exists: boolean; version: number; active: boolean };
+  payment: { status: string; amount: number };
+  guide: { required: boolean; available: boolean; assigned: boolean };
+}
+
+export interface WeatherDay {
+  date: string;
+  day: string;
+  temp_c: number;
+  condition: string;
+  icon: string;
+  source: string;
+  reliable: boolean;
+}
+
+export interface WeatherPayload {
+  destination: string;
+  travel_dates: string;
+  forecast: WeatherDay[];
+  label: string;
+  disclaimer: string;
+}
+
+export interface ReviewSnapshot {
+  trip: Record<string, any>;
+  party: Record<string, any> | null;
+  transport: Record<string, any> | null;
+  places: Record<string, any> | null;
+  stay: Record<string, any> | null;
+  mode: string | null;
+  local_transport: Record<string, any> | null;
+  food_tier: FoodTier | string | null;
+  itinerary_summary: Record<string, any> | null;
+  pricing: Record<string, any> | null;
+  payment_amount: number;
+  guide: Record<string, any> | null;
+}
+
+export interface BudgetSnapshot {
+  trip_id: string;
+  currency: string;
+  base_budget: number;
+  committed_expenses: number;
+  remaining_budget: number;
+  place_stage: {
+    selection_total: number;
+    protected_buffer: number;
+    place_selection_allowance: number;
+    within_allowance: boolean;
+    exceeds_by: number;
+  };
+  adjustments: Array<Record<string, any>>;
+}

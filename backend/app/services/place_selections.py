@@ -151,7 +151,7 @@ def upsert_selection(
             "id", "name", "category", "latitude", "longitude", "distance_km",
             "placement", "entry_fee", "duration_minutes", "rating", "source",
             "address", "price_per_night", "avg_cost_for_two", "cuisine",
-            "budget_category", "tier",
+            "budget_category", "tier", "rooms_needed", "nights",
         )
         if item.get(k) is not None
     }
@@ -257,6 +257,16 @@ def selections_for_plan(db: Session, trip_id: str) -> Dict[str, Any]:
         snapshot = dict(r.item_json or {})
         snapshot.setdefault("name", r.name)
         snapshot.setdefault("id", r.place_id or r.provider_place_id)
+        if r.price is not None:
+            # Ledger price fallback for rows synced before price passthrough
+            # existed: stay rows carry the per-night rate, activity rows the
+            # ticket, food rows (if any) the avg cost for two.
+            if kind == "stay":
+                snapshot.setdefault("price_per_night", float(r.price))
+            elif kind == "food":
+                snapshot.setdefault("avg_cost_for_two", float(r.price))
+            else:
+                snapshot.setdefault("entry_fee", float(r.price))
         if r.latitude is not None:
             snapshot["latitude"] = r.latitude
         if r.longitude is not None:

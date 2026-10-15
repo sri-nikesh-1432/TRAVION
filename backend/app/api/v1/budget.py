@@ -46,7 +46,13 @@ PLACE_SELECTION_BUFFER_RATE = 0.20
 MAX_SINGLE_TOPUP = 5_000_000.0
 MIN_SINGLE_TOPUP = 1.0
 
-TOPUP_STAGES = {"transport", "places", "local_transport", "plan", "review", "other"}
+TOPUP_STAGES = {
+    # Legacy stage names (plan/review flows) plus the 10-stage workflow keys —
+    # a top-up returns the traveller to the SAME stage, so every stage key
+    # that can show the BudgetAlert must be accepted here.
+    "transport", "places", "local_transport", "plan", "review", "other",
+    "details", "preferences", "mode", "budget_food", "itinerary", "payment",
+}
 
 
 # ── Shared budget math (the single source of truth for this router) ──────────

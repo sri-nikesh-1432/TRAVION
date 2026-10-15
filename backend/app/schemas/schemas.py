@@ -477,6 +477,14 @@ class SelectionPayload(BaseModel):
     distance_km: Optional[float] = None
     rating: Optional[float] = None
     price: Optional[float] = None
+    # Stage-4 pricing passthrough (all optional; upsert_selection maps them
+    # onto the ledger row price): stay rows carry the PER-ROOM PER-NIGHT rate
+    # (rooms x nights is applied by the budget gate), activity rows the ticket.
+    price_per_night: Optional[float] = None
+    entry_fee: Optional[float] = None
+    avg_cost_for_two: Optional[float] = None
+    rooms_needed: Optional[int] = None
+    nights: Optional[int] = None
     selection_source: str = "map"  # recommendation | map | search | nearby | step5
     item_json: Optional[Dict[str, Any]] = None
 

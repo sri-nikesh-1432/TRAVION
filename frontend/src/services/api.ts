@@ -5,7 +5,8 @@ import {
   ItineraryChangeResponse, ExplorePlace, DestinationCatalog, MapPlacesPayload,
   SelectedPlaceItem, SelectedFoodItem, SelectedStay, TripEventItem,
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
-  GeoTileUrl, GeoViewportPayload,
+  GeoTileUrl, GeoViewportPayload, StageState, TransportOption, LocalLeg,
+  FoodTier, BudgetGate, WeatherPayload, ReviewSnapshot, BudgetSnapshot,
 } from '../types';
 
 const API_BASE_URL =
@@ -520,6 +521,57 @@ export const api = {
 
   sendChatMessage: (tripId: string, message: string, channel: 'AI' | 'GUIDE', position?: { lat: number; lng: number } | null) =>
     request<ChatMessageItem>(`/trips/${tripId}/chat-message`, { method: 'POST', body: JSON.stringify({ message, channel, lat: position?.lat, lng: position?.lng }) }),
+
+  // ── 10-stage booking flow (NEW staged API contract) ────────────────
+  // Every number rendered downstream comes from these responses — the client
+  // never invents prices or fees.
+  getStageState: (tripId: string) =>
+    request<StageState>(`/trips/${tripId}/stage`),
+
+  setStage: (tripId: string, stage: number) =>
+    request<StageState>(`/trips/${tripId}/stage`, { method: 'PUT', body: JSON.stringify({ stage }) }),
+
+  getTransportOptions: (tripId: string, regenerate = false) =>
+    request<{ outbound: TransportOption[]; return: TransportOption[] }>(`/trips/${tripId}/transport/options`, {
+      method: 'POST', body: JSON.stringify({ regenerate }),
+    }),
+
+  selectTransport: (tripId: string, outboundId: string, returnId: string) =>
+    request<{ selected: { outbound: TransportOption | null; return: TransportOption | null }; gate: BudgetGate; next_stage: number }>(
+      `/trips/${tripId}/transport/select`, { method: 'POST', body: JSON.stringify({ outbound_id: outboundId, return_id: returnId }) }),
+
+  planLocalTransport: (tripId: string) =>
+    request<{ legs: LocalLeg[] }>(`/trips/${tripId}/local-transport/plan`, { method: 'POST', body: JSON.stringify({}) }),
+
+  selectLocalTransport: (tripId: string, legIndex: number, optionId: string) =>
+    request<{ legs: LocalLeg[]; gate: BudgetGate; all_selected: boolean }>(
+      `/trips/${tripId}/local-transport/select`, { method: 'POST', body: JSON.stringify({ leg_index: legIndex, option_id: optionId }) }),
+
+  setFoodTier: (tripId: string, tier: FoodTier) =>
+    request<{ food_tier: FoodTier; food_allowance: number; gate: BudgetGate }>(
+      `/trips/${tripId}/food-tier`, { method: 'PUT', body: JSON.stringify({ tier }) }),
+
+  getBudgetGate: (tripId: string) =>
+    request<BudgetGate>(`/trips/${tripId}/budget/gate`),
+
+  getWeather: (tripId: string) =>
+    request<WeatherPayload>(`/trips/${tripId}/weather`),
+
+  getReviewSnapshot: (tripId: string) =>
+    request<ReviewSnapshot>(`/trips/${tripId}/review`),
+
+  // ── Existing budget snapshot + top-ups (spec §8/§11/§14) ─────────────
+  // A top-up is a BUDGET ADJUSTMENT, never a payment — no Payment row is made.
+  getBudgetSnapshot: (tripId: string) =>
+    request<BudgetSnapshot>(`/trips/${tripId}/budget`),
+
+  previewBudgetTopup: (tripId: string, amount: number, stage = 'plan') =>
+    request<{ previous_budget: number; amount: number; updated_budget: number; updated_remaining: number; currency: string }>(
+      `/trips/${tripId}/budget/topup-preview`, { method: 'POST', body: JSON.stringify({ amount, stage }) }),
+
+  confirmBudgetTopup: (tripId: string, amount: number, stage = 'plan', reason?: string) =>
+    request<{ updated_budget: number; adjustment: Record<string, any> }>(
+      `/trips/${tripId}/budget/topup`, { method: 'POST', body: JSON.stringify({ amount, stage, ...(reason ? { reason } : {}) }) }),
 
   // Contact / Support (public form — no account required)
   submitContactMessage: (data: { name: string; email: string; topic: string; priority: string; message: string }) =>

@@ -6,7 +6,7 @@ from app.core.db import engine, Base, SessionLocal
 from app.api.v1 import (
     auth, locations, trips, discovery, planning, guides, managers, admin,
     payments, replanning, offline, reviews, chat, trip_edit, geoapify, support,
-    budget
+    budget, stages
 )
 from app.services.verified_data import VERIFIED_LOCATIONS
 from app.models.entities import Location, Identity, Guide, Manager, Admin, TripProfile, Itinerary
@@ -45,6 +45,16 @@ def _ensure_runtime_columns():
         "guides": {"rate_per_day": "FLOAT"},
         "payments": {"non_refundable_acknowledged": "BOOLEAN", "acknowledged_at": "DATETIME"},
         "payment_splits": {"safety_reserve": "FLOAT", "insurance_fee": "FLOAT"},
+        # 10-stage workflow state (additive; ORM attrs already on Trip).
+        "trips": {
+            "current_stage": "INTEGER",
+            "stage_history": "JSON",
+            "transport_options": "JSON",
+            "selected_transport": "JSON",
+            "local_transport": "JSON",
+            "food_tier": "VARCHAR(16)",
+            "weather": "JSON",
+        },
     }
     try:
         inspector = inspect(engine)
@@ -312,6 +322,7 @@ app.include_router(trip_edit.router, prefix=settings.API_V1_STR)
 app.include_router(geoapify.router, prefix=settings.API_V1_STR)
 app.include_router(support.router, prefix=settings.API_V1_STR)
 app.include_router(budget.router, prefix=settings.API_V1_STR)
+app.include_router(stages.router, prefix=settings.API_V1_STR)
 
 
 # ── WebSocket for real-time trip chat ────────────────────────────────────────

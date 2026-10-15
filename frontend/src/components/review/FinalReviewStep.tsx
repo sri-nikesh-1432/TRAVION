@@ -1,12 +1,16 @@
 import React, { useMemo } from 'react';
 import {
-  ArrowLeft, ArrowRight, CalendarDays, MapPin, ShieldCheck,
-  Sparkles, Users, Wallet, PencilLine, Compass, Mountain,
+  ArrowLeft, ArrowRight, BedDouble, Bus, CalendarDays, Car, MapPin, ShieldCheck,
+  Sparkles, Users, Utensils, Wallet, PencilLine, Compass, Mountain,
+  Plane, TrainFront, Route,
 } from 'lucide-react';
 import type { TripItinerary } from '../../types';
 import { calculateTripBudget, formatINR } from '../../utils/tripPricing';
+import { WeatherStrip } from '../weather/WeatherStrip';
 
-export type ReviewEditTarget = 'basics' | 'travellers' | 'places' | 'plans' | 'itinerary';
+export type ReviewEditTarget =
+  | 'basics' | 'travellers' | 'places' | 'plans' | 'itinerary'
+  | 'transport' | 'discovery_select' | 'mode_select' | 'local_transport' | 'budget_food';
 
 interface FinalReviewStepProps {
   trip: {
@@ -22,6 +26,11 @@ interface FinalReviewStepProps {
   travellers?: { total?: number; adults?: number; children?: number } | null;
   experienceLabel?: string | null;
   itinerary: TripItinerary;
+  /** One-line summaries rendered from the review snapshot (server truth). */
+  transportLabel?: string | null;
+  localLabel?: string | null;
+  foodLabel?: string | null;
+  stayLabel?: string | null;
   onEdit: (target: ReviewEditTarget) => void;
   onConfirm: () => void;
   busy?: boolean;
@@ -33,25 +42,35 @@ const fmtDay = (iso: string) => {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
-const fmtTime = (iso: string) => {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-};
-
-const categoryEmoji = (c: string): string => {
-  switch (c) {
-    case 'food': return '🍽️';
-    case 'meal_hold': return '🍴';
-    case 'stay': return '🏨';
-    case 'activity': return '🥾';
-    case 'transport': return '🚗';
-    default: return '📍';
+const CategoryIcon: React.FC<{ category: string; className?: string }> = ({ category, className }) => {
+  const cls = className || 'w-3.5 h-3.5';
+  switch (String(category)) {
+    case 'food':
+    case 'meal_hold':
+      return <Utensils className={cls} />;
+    case 'stay':
+      return <BedDouble className={cls} />;
+    case 'transport':
+      return <Car className={cls} />;
+    default:
+      return <MapPin className={cls} />;
   }
 };
 
+const EditBtn: React.FC<{ target: ReviewEditTarget; label?: string; onEdit: (target: ReviewEditTarget) => void }> = ({ target, label, onEdit }) => (
+  <button
+    type="button"
+    onClick={() => onEdit(target)}
+    className="inline-flex items-center gap-1 text-[12px] font-bold text-travion-600 hover:text-travion-700"
+  >
+    <PencilLine className="w-3.5 h-3.5" /> {label || 'Edit'}
+  </button>
+);
+
 export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
-  trip, planLabel, travellers, experienceLabel, itinerary, onEdit, onConfirm, busy,
+  trip, planLabel, travellers, experienceLabel, itinerary,
+  transportLabel, localLabel, foodLabel, stayLabel,
+  onEdit, onConfirm, busy,
 }) => {
   const days = itinerary.days || [];
 
@@ -75,7 +94,7 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="text-center mb-8">
-        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 7 · Final review</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 9 · Final review</span>
         <h2 className="mt-2 text-2xl font-extrabold text-charcoal-900 tracking-tight">Review your trip</h2>
         <p className="mt-1.5 text-[13px] font-medium text-charcoal-500">
           Your edited plan — the final source of truth. Nothing is regenerated here.
@@ -86,50 +105,116 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
       <section className="bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-trip-details">
         <div className="flex items-center justify-between mb-4">
           <h3 id="review-trip-details" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Trip details</h3>
-          <button
-            type="button"
-            onClick={() => onEdit('basics')}
-            className="inline-flex items-center gap-1 text-[12px] font-bold text-travion-600 hover:text-travion-700"
-          >
-            <PencilLine className="w-3.5 h-3.5" /> Edit
-          </button>
+          <EditBtn onEdit={onEdit} target="basics" />
         </div>
         <div className="grid sm:grid-cols-2 gap-3 text-[13px] font-semibold text-charcoal-700">
           <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-travion-600" />{trip.source_name} → {trip.destination_name}</p>
           <p className="flex items-center gap-2"><CalendarDays className="w-4 h-4 text-travion-600" />{fmtDay(trip.start_datetime)} – {fmtDay(trip.end_datetime)} · {dayCount} days · {nights} nights</p>
           {totalTravellers ? (
-            <p className="flex items-center gap-2"><Users className="w-4 h-4 text-travion-600" />{totalTravellers} traveller{totalTravellers === 1 ? '' : 's'}</p>
+            <p className="flex items-center gap-2"><Users className="w-4 h-4 text-travion-600" />{totalTravellers} traveller{totalTravellers === 1 ? '' : 's'} <EditBtn onEdit={onEdit} target="travellers" label="Edit travellers" /></p>
           ) : null}
           <p className="flex items-center gap-2"><Wallet className="w-4 h-4 text-travion-600" />{formatINR(pricing.baseBudget)} travel budget</p>
           {experienceLabel ? (
             <p className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-travion-600" />{experienceLabel}</p>
           ) : null}
-          <p className="flex items-center gap-2">
-            {/* MODE IS EXPLICIT — never inferred from the plan name (spec §35). */}
-            {isGuide
-              ? <Compass className="w-4 h-4 text-cognac-600" />
-              : <Mountain className="w-4 h-4 text-[#4c6151]" />}
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wide ${isGuide ? 'bg-cognac-50 text-cognac-600' : 'bg-sage-100 text-[#4c6151]'}`}>
-              {isGuide ? 'Guide Mode — verified local guide + AI' : 'Adventurous Mode — independent + AI'}
-            </span>
-          </p>
           {planLabel ? (
             <p className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-travion-600" />Selected plan: {planLabel}</p>
           ) : null}
         </div>
+        <div className="mt-4">
+          <WeatherStrip tripId={trip.id} />
+        </div>
+      </section>
+
+      {/* Transport */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-transport">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-transport" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Transport</h3>
+          <EditBtn onEdit={onEdit} target="transport" />
+        </div>
+        {transportLabel ? (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
+            <TrainFront className="w-4 h-4 text-travion-600" />{transportLabel}
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-400">
+            <Bus className="w-4 h-4" />Outbound + return options confirmed in the Transport step.
+          </p>
+        )}
+      </section>
+
+      {/* Places & stay */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-places">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-places" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Places & stay</h3>
+          <EditBtn onEdit={onEdit} target="discovery_select" />
+        </div>
+        {stayLabel ? (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
+            <BedDouble className="w-4 h-4 text-travion-600" />{stayLabel}
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-400">
+            <Plane className="w-4 h-4" />Places and your one stay, as selected in Explore.
+          </p>
+        )}
+      </section>
+
+      {/* Mode */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-mode">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-mode" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Travel mode</h3>
+          <EditBtn onEdit={onEdit} target="mode_select" />
+        </div>
+        <p className="flex items-center gap-2">
+          {isGuide
+            ? <Compass className="w-4 h-4 text-cognac-600" />
+            : <Mountain className="w-4 h-4 text-[#4c6151]" />}
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wide ${isGuide ? 'bg-cognac-50 text-cognac-600' : 'bg-sage-100 text-[#4c6151]'}`}>
+            {isGuide ? 'Guide Mode — verified local guide + AI' : 'Adventurous Mode — independent + AI'}
+          </span>
+        </p>
+      </section>
+
+      {/* Local transport */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-local">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-local" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Local transport</h3>
+          <EditBtn onEdit={onEdit} target="local_transport" />
+        </div>
+        {localLabel ? (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
+            <Route className="w-4 h-4 text-travion-600" />{localLabel}
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-400">
+            <Car className="w-4 h-4" />Local legs confirmed in the Local step.
+          </p>
+        )}
+      </section>
+
+      {/* Food */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-food">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-food" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Food plan</h3>
+          <EditBtn onEdit={onEdit} target="budget_food" />
+        </div>
+        {foodLabel ? (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
+            <Utensils className="w-4 h-4 text-travion-600" />{foodLabel}
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-400">
+            <Utensils className="w-4 h-4" />Food tier chosen in the Budget step.
+          </p>
+        )}
       </section>
 
       {/* Final itinerary (READ-ONLY — the exact stored finalItinerary) */}
       <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-itinerary">
         <div className="flex items-center justify-between mb-4">
           <h3 id="review-itinerary" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Your final itinerary</h3>
-          <button
-            type="button"
-            onClick={() => onEdit('itinerary')}
-            className="inline-flex items-center gap-1 text-[12px] font-bold text-travion-600 hover:text-travion-700"
-          >
-            <PencilLine className="w-3.5 h-3.5" /> Edit itinerary
-          </button>
+          <EditBtn onEdit={onEdit} target="itinerary" label="Edit itinerary" />
         </div>
         <div className="space-y-6">
           {days.map((day: any) => (
@@ -142,9 +227,10 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
                 {(day.stops || []).map((stop: any) => (
                   <li key={stop.id} className="pl-4 relative">
                     <span className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-travion-500 border-2 border-white" aria-hidden />
-                    <p className="text-[13px] font-bold text-charcoal-800">
+                    <p className="text-[13px] font-bold text-charcoal-800 flex items-center gap-1.5">
                       <span className="text-charcoal-400 font-semibold tabular-nums">{stop.time}</span>
-                      {' · '}<span aria-hidden>{categoryEmoji(String(stop.category))}</span> {stop.title}
+                      <span className="text-travion-600"><CategoryIcon category={String(stop.category)} /></span>
+                      <span>{stop.title}</span>
                     </p>
                     {stop.duration_minutes ? (
                       <p className="text-[11.5px] font-semibold text-charcoal-400">~{stop.duration_minutes} min</p>
@@ -161,13 +247,7 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
       <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-budget">
         <div className="flex items-center justify-between mb-4">
           <h3 id="review-budget" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Budget breakdown</h3>
-          <button
-            type="button"
-            onClick={() => onEdit('plans')}
-            className="inline-flex items-center gap-1 text-[12px] font-bold text-travion-600 hover:text-travion-700"
-          >
-            <PencilLine className="w-3.5 h-3.5" /> Edit plan
-          </button>
+          <EditBtn onEdit={onEdit} target="budget_food" label="Edit budget" />
         </div>
         <div className="space-y-1.5 text-[13px] font-semibold text-charcoal-600 max-w-md">
           <div className="flex justify-between"><span>Base trip budget</span><span className="font-bold text-charcoal-800">{formatINR(pricing.baseBudget)}</span></div>
@@ -184,10 +264,10 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
             <span>Platform fee <span className="font-semibold opacity-70">3%</span></span><span>{formatINR(pricing.platformFee)}</span>
           </div>
           <div className="flex justify-between rounded-lg bg-sage-100 px-2 py-1 text-[#4c6151] font-bold">
-            <span>Safety reserve <span className="font-semibold opacity-70">15%</span></span><span>{formatINR(pricing.safetyReserve)}</span>
+            <span>Safety reserve <span className="font-semibold opacity-70">15% · PROTECTED</span></span><span>{formatINR(pricing.safetyReserve)}</span>
           </div>
           <p className="text-[10.5px] font-semibold text-charcoal-400 px-2">
-            Reserved for unexpected travel or emergency needs — never spent automatically.
+            PROTECTED — reserved for unexpected travel or emergency needs, never spent automatically.
           </p>
           <div className="flex justify-between rounded-lg bg-sky-100 px-2 py-1 text-travion-800 font-bold">
             <span>Insurance <span className="font-semibold opacity-70">fixed</span></span><span>{formatINR(pricing.insuranceFee)}</span>

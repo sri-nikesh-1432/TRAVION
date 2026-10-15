@@ -1,0 +1,379 @@
+"""Stage 3 + 6 generation: round-trip transport options and local legs.
+
+LLM proposes (prompt-routed via llm_router with the saved trip context);
+THIS module validates, prices and persists. Deterministic estimators are the
+fallback so every route — verified or not — always yields honest options:
+
+- options sourced from VERIFIED_TRANSPORT are labelled verified/AVAILABLE;
+- everything else is an ESTIMATE (availability UNCONFIRMED_ESTIMATE), with
+  fares derived transparently from per-km bands, never presented as live data.
+
+Party pricing: per-person fare x travellers (spec S4A). The ONE exception is
+private cabs: per-VEHICLE fare, vehicles = ceil(party / 4).
+"""
+import math
+import re
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from app.services.verified_data import VERIFIED_TRANSPORT
+
+METRO_CITIES = {"hyderabad", "delhi", "bengaluru", "bangalore", "chennai", "mumbai", "kolkata"}
+
+_TRANSPORT_KIND = [
+    ("flight", ("flight", "air ", "air-connect", "airconnect", "plane")),
+    ("train", ("train", "rail", "express", "vande", "shatabdi", "volvo", "bus", "sleeper", "ksrtc", "hptdc")),
+    ("bus", ("bus", "volvo", "sleeper", "ksrtc", "hptdc", "coach")),
+]
+
+
+def _classify_kind(text: str) -> str:
+    t = (text or "").lower()
+    if any(k in t for k in ("flight", "air-connect", "airconnect", " plane")):
+        return "flight"
+    if any(k in t for k in ("train", "rail", "express", "vande", "toy train", "intercity", "kovai", "nilgiri")):
+        return "train"
+    return "bus"
+
+
+def _duration_to_min(text: str) -> int:
+    try:
+        h = m = 0
+        mh = re.search(r"(\d+)\s*h", text or "")
+        mm = re.search(r"(\d+)\s*m(?!o)", text or "")
+        if mh:
+            h = int(mh.group(1))
+        if mm:
+            m = int(mm.group(1))
+        total = h * 60 + m
+        return total if total > 0 else 300
+    except Exception:
+        return 300
+
+
+def _norm_city(name: str) -> str:
+    n = (name or "").strip().lower()
+    aliases = {
+        "bengaluru": "Bangalore", "bangalore": "Bangalore",
+        "ooty": "Ooty", "udagamandalam": "Ooty",
+        "munnar": "Munnar", "goa": "Goa", "jaipur": "Jaipur",
+        "manali": "Manali", "varanasi": "Varanasi", "banaras": "Varanasi",
+        "delhi": "Delhi", "new delhi": "Delhi", "mumbai": "Mumbai",
+        "bombay": "Mumbai", "chennai": "Chennai", "madras": "Chennai",
+        "hyderabad": "Hyderabad",
+    }
+    return aliases.get(n, (name or "").strip().title())
+
+
+def _verified_for(source: str, destination: str) -> List[Dict[str, Any]]:
+    s, d = _norm_city(source), _norm_city(destination)
+    found = VERIFIED_TRANSPORT.get((s, d)) or []
+    if found:
+        return list(found)
+    # fuzzy: any catalog pair whose names contain both cities
+    for (cs, cd), opts in VERIFIED_TRANSPORT.items():
+        if s in cs and d in cd:
+            return list(opts)
+    return []
+
+
+def _estimate_bands(source: str, destination: str) -> List[Dict[str, Any]]:
+    """Honest estimate bands for routes with no verified data.
+
+    Fares come from transparent per-mode bands (not live prices) and are
+    ALWAYS labelled estimates. Distances are粗略 crow-flies proxies between
+    well-known city coordinates; unknown cities fall back to a 400 km band.
+    """
+    CITY_KM = {
+        "Hyderabad": (17.38, 78.48), "Bangalore": (12.97, 77.59), "Ooty": (11.41, 76.69),
+        "Munnar": (10.08, 77.05), "Goa": (15.49, 74.08), "Delhi": (28.61, 77.20),
+        "Jaipur": (26.91, 75.79), "Mumbai": (19.07, 72.87), "Chennai": (13.08, 80.27),
+        "Manali": (32.23, 77.18), "Varanasi": (25.31, 82.98), "Kolkata": (22.57, 88.36),
+        "Mysuru": (12.29, 76.65), "Mysore": (12.29, 76.65), "Puducherry": (11.93, 79.83),
+        "Hampi": (15.33, 76.45), "Udaipur": (24.58, 73.71), "Agra": (27.17, 78.00),
+    }
+    s, d = _norm_city(source), _norm_city(destination)
+
+    def hav(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+        r = 6371.0
+        p1, p2 = math.radians(a[0]), math.radians(b[0])
+        dp = math.radians(b[0] - a[0])
+        dl = math.radians(b[1] - a[1])
+        h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        return 2 * r * math.asin(math.sqrt(h))
+
+    dist = round(hav(CITY_KM[s], CITY_KM[d]) * 1.25, 0) if s in CITY_KM and d in CITY_KM else 400.0
+    short = dist < 250
+    # (mode label, operator template, per-person band, typical duration rule, kind)
+    bands = [
+        ("AC Sleeper Bus", "Overnight AC Sleeper Coach", max(700.0, round(dist * 2.6, -1)),
+         f"{max(6, round(dist / 45, 1))}h", "bus"),
+        ("Express Train (AC 3-Tier)", "Overnight Express Rail", max(600.0, round(dist * 2.1, -1)),
+         f"{max(5, round(dist / 50, 1))}h", "train"),
+        ("Day Intercity Bus", "Daytime Intercity Coach", max(450.0, round(dist * 1.8, -1)),
+         f"{max(4, round(dist / 45, 1))}h", "bus"),
+    ]
+    if not short:
+        bands.append(("Economy Flight", "Via nearest airports (1 stop may apply)",
+                      max(2800.0, round(dist * 9.0, -2)), f"{max(3, round(dist / 500 + 2, 1))}h", "flight"))
+    else:
+        bands.append(("Premium Day Train", "Intercity Chair Car", max(550.0, round(dist * 2.4, -1)),
+                      f"{max(3, round(dist / 55, 1))}h", "train"))
+    out = []
+    for label, code, fare, dur, kind in bands:
+        out.append({
+            "type": label, "code": code, "departure": "—", "arrival": "—",
+            "duration": dur, "fare": float(fare), "comfort_level": "Estimate band",
+            "source": "estimate_band",
+        })
+    return out
+
+
+def _iso_day(base: Optional[datetime], offset_days: int, time_label: str) -> Tuple[str, str, str]:
+    """Return (date, depart_time, arrive_time) for an option.
+
+    Verified times like '10:30 PM' / '06:00 AM (+1)' are normalised onto the
+    trip's start (outbound) / end (return) date; (+1) rolls to the next day.
+    """
+    day = (base or datetime.now(timezone.utc)) + timedelta(days=offset_days)
+    plus_one = "(+1)" in (time_label or "")
+    m = re.search(r"(\d{1,2}):(\d{2})\s*([AP]M)", (time_label or "").upper())
+    if m:
+        hh, minute, ap = int(m.group(1)), m.group(2), m.group(3)
+        if ap == "PM" and hh != 12:
+            hh += 12
+        if ap == "AM" and hh == 12:
+            hh = 0
+        t = f"{hh:02d}:{minute}"
+    else:
+        t = "08:00" if "outbound" in (time_label or "").lower() else time_label
+        if not re.match(r"^\d{2}:\d{2}$", t or ""):
+            t = "08:00"
+    if plus_one:
+        day = day + timedelta(days=1)
+    return day.date().isoformat(), t, t
+
+
+def build_round_trip_options(
+    source: str,
+    destination: str,
+    start: Optional[datetime],
+    end: Optional[datetime],
+    travellers: int,
+    llm_options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Build up to 5 outbound + 5 return options, verified first.
+
+    `llm_options` (prompt-routed narrative) may contribute extra candidates,
+    but every price shown is validated here: non-numeric LLM fares are
+    discarded, never trusted.
+    """
+    travellers = max(int(travellers or 1), 1)
+
+    def convert(raw_list: List[Dict[str, Any]], direction: str, base: Optional[datetime]) -> List[Dict[str, Any]]:
+        converted: List[Dict[str, Any]] = []
+        for i, raw in enumerate(raw_list[:5]):
+            try:
+                fare = float(raw.get("fare") or 0)
+            except (TypeError, ValueError):
+                continue  # LLM/unparseable fare: drop the option, never invent
+            if fare <= 0:
+                continue
+            verified = str(raw.get("source") or "") == "verified_api"
+            date_iso, dep, _arr = _iso_day(base, 0, str(raw.get("departure") or ""))
+            _d2, _dep2, arr = _iso_day(base, 0, str(raw.get("arrival") or ""))
+            dur_min = _duration_to_min(str(raw.get("duration") or ""))
+            oid = f"{'ob' if direction == 'outbound' else 'rt'}-{len(converted) + 1}"
+            converted.append({
+                "id": oid,
+                "direction": direction,
+                "type": _classify_kind(f"{raw.get('type')} {raw.get('code')}"),
+                "operator": str(raw.get("type") or "Transport")[:80],
+                "service": str(raw.get("code") or "")[:120],
+                "date": date_iso,
+                "depart_time": dep,
+                "arrive_time": arr,
+                "duration_min": dur_min,
+                "duration_label": str(raw.get("duration") or f"{dur_min // 60}h {dur_min % 60}m"),
+                "price_per_person": round(fare, 2),
+                "party_total": round(fare * travellers, 2),
+                "travellers": travellers,
+                "availability": "AVAILABLE" if verified else "UNCONFIRMED_ESTIMATE",
+                "verified": verified,
+                "source": "verified_catalog" if verified else "estimate",
+                "note": (
+                    "Verified schedule and fare." if verified
+                    else "Estimate band for this route — schedule, fare and availability are unconfirmed."
+                ),
+            })
+        return converted
+
+    out_raw = _verified_for(source, destination)
+    ret_raw = _verified_for(destination, source)
+    if not out_raw:
+        out_raw = _estimate_bands(source, destination)
+    if not ret_raw:
+        # Return uses the same corridor bands (mirrored times are estimates).
+        ret_raw = _estimate_bands(destination, source)
+
+    # LLM enrichment: accept well-formed candidates only (numeric fare, known shape).
+    if isinstance(llm_options, dict):
+        for direction in ("outbound", "return"):
+            extra = llm_options.get(direction)
+            if isinstance(extra, list):
+                base_list = out_raw if direction == "outbound" else ret_raw
+                for cand in extra:
+                    if not isinstance(cand, dict):
+                        continue
+                    try:
+                        fare = float(cand.get("price_per_person") or cand.get("fare") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if fare <= 0:
+                        continue
+                    base_list.append({
+                        "type": str(cand.get("operator") or cand.get("type") or "Suggested service")[:80],
+                        "code": str(cand.get("service") or cand.get("note") or "LLM-suggested option")[:120],
+                        "departure": str(cand.get("depart_time") or "—"),
+                        "arrival": str(cand.get("arrive_time") or "—"),
+                        "duration": str(cand.get("duration_label") or "—"),
+                        "fare": fare,
+                        "comfort_level": "LLM-suggested",
+                        "source": "llm_suggestion",
+                    })
+
+    outbound = convert(out_raw, "outbound", start)[:5]
+    return_ = convert(ret_raw, "return", end)[:5]
+    # Guarantee non-empty pools: pad with estimate bands (worst case, honest).
+    if not outbound:
+        outbound = convert(_estimate_bands(source, destination), "outbound", start)[:5]
+    if not return_:
+        return_ = convert(_estimate_bands(destination, source), "return", end)[:5]
+    return {"outbound": outbound, "return": return_}
+
+
+# ── Local transport legs ──────────────────────────────────────────────────────
+def _haversine_km(a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(a_lat), math.radians(b_lat)
+    dp = math.radians(b_lat - a_lat)
+    dl = math.radians(b_lng - a_lng)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return round(2 * r * math.asin(math.sqrt(h)), 1)
+
+
+def _order_stops(stops: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Nearest-neighbour visit order from the first stop (stay first when the
+    first stop is the stay). Pure geometry; the LLM only writes reasons."""
+    if len(stops) <= 2:
+        return list(stops)
+    ordered = [stops[0]]
+    remaining = stops[1:]
+    while remaining:
+        last = ordered[-1]
+        def dist(s: Dict[str, Any]) -> float:
+            try:
+                return _haversine_km(float(last["lat"]), float(last["lng"]),
+                                     float(s["lat"]), float(s["lng"]))
+            except (TypeError, ValueError, KeyError):
+                return 1e9
+        nxt = min(remaining, key=dist)
+        ordered.append(nxt)
+        remaining = [s for s in remaining if s is not nxt]
+    return ordered
+
+
+def build_local_legs(
+    stops: List[Dict[str, Any]],
+    travellers: int,
+    destination: str,
+) -> List[Dict[str, Any]]:
+    """One leg per consecutive stop pair with honest per-leg options.
+
+    Options per leg: shared auto (per-person), city bus where the corridor is
+    a metro city (per-person), private cab (PER VEHICLE, vehicles =
+    ceil(party/4)). No metro rail option is invented outside metro cities; no
+    MMTS outside Hyderabad.
+    """
+    travellers = max(int(travellers or 1), 1)
+    dest_l = (destination or "").lower()
+    is_metro = any(c in dest_l for c in METRO_CITIES)
+    is_hyderabad = "hyderabad" in dest_l
+    ordered = _order_stops(stops)
+    vehicles = max(1, math.ceil(travellers / 4))
+
+    legs: List[Dict[str, Any]] = []
+    for i in range(len(ordered) - 1):
+        a, b = ordered[i], ordered[i + 1]
+        try:
+            dist = _haversine_km(float(a["lat"]), float(a["lng"]), float(b["lat"]), float(b["lng"]))
+        except (TypeError, ValueError, KeyError):
+            dist = 3.0
+        dist = max(dist, 0.5)
+        duration = max(10, round(dist * 3.2))  # ~19 km/h urban avg, honest estimate
+
+        auto_pp = round(max(30.0, dist * 14.0), 0)
+        options: List[Dict[str, Any]] = [
+            {
+                "id": f"lt-{i}-auto",
+                "type": "auto",
+                "label": "Shared auto",
+                "fare_per_person": auto_pp,
+                "fare_vehicle": None,
+                "vehicles_needed": 1,
+                "party_total": round(auto_pp * travellers, 0),
+                "verified": False,
+                "source": "estimate",
+                "feasibility_reason": (
+                    f"{dist:.1f} km hop, about {duration} min by road — autos serve "
+                    "this corridor through the day."
+                ),
+            },
+        ]
+        if is_metro:
+            bus_pp = round(max(15.0, dist * 4.0), 0)
+            options.append({
+                "id": f"lt-{i}-bus",
+                "type": "city_bus",
+                "label": "City bus" + (" / MMTS" if is_hyderabad else " / metro where connected"),
+                "fare_per_person": bus_pp,
+                "fare_vehicle": None,
+                "vehicles_needed": 1,
+                "party_total": round(bus_pp * travellers, 0),
+                "verified": False,
+                "source": "estimate",
+                "feasibility_reason": (
+                    f"{dist:.1f} km on the city network — cheapest for a party of "
+                    f"{travellers}; confirm the exact route number locally."
+                ),
+            })
+        cab_vehicle = round(max(400.0, 250.0 + dist * 32.0), 0)
+        options.append({
+            "id": f"lt-{i}-cab",
+            "type": "private_cab",
+            "label": f"Private cab x {vehicles}",
+            "fare_per_person": None,
+            "fare_vehicle": cab_vehicle,
+            "vehicles_needed": vehicles,
+            "party_total": round(cab_vehicle * vehicles, 0),
+            "verified": False,
+            "source": "estimate",
+            "feasibility_reason": (
+                f"Door-to-door for {travellers} traveller(s) needs {vehicles} cab(s); "
+                f"Rs.{cab_vehicle:,.0f} per vehicle for {dist:.1f} km."
+            ),
+        })
+        legs.append({
+            "index": i,
+            "origin": a.get("name", f"Stop {i + 1}"),
+            "origin_lat": a.get("lat"),
+            "origin_lng": a.get("lng"),
+            "destination": b.get("name", f"Stop {i + 2}"),
+            "dest_lat": b.get("lat"),
+            "dest_lng": b.get("lng"),
+            "distance_km": dist,
+            "duration_min": duration,
+            "options": options,
+            "selected_id": options[0]["id"],
+        })
+    return legs

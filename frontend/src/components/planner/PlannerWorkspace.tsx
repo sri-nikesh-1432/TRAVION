@@ -19,7 +19,7 @@ interface PlannerWorkspaceProps {
   budgetMax: number;
   onItineraryChange: (itinerary: TripItinerary, warnings: string[]) => void;
   onBackToPlans: () => void;
-  /** Open the final pre-payment experience choice (Guide vs Adventurous). */
+  /** Continue to Final Review (Stage 9) once the itinerary is finalized. */
   onProceedToExperience: () => void;
   onProceedToPayment: () => void;
   /** Guide Mode pricing (fees from the backend pricing engine) — shown on the review screen. */
@@ -199,7 +199,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Step 5 header + Confirm to Payment */}
+      {/* Step 8 header + Continue to Review */}
       <div className="p-5 rounded-3xl bg-white border border-charcoal-200/80 shadow-soft flex flex-col lg:flex-row lg:items-center justify-between gap-4"
         style={{ background: 'linear-gradient(120deg,#1b232c 0%,#1e3a5f 60%,#0f766e 130%)' }}>
         <div className="flex items-center gap-3 text-white">
@@ -207,10 +207,10 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
             <Compass className="w-5 h-5" />
           </span>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-travion-200">Step 5 · Interactive Trip Planner</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-travion-200">Step 8 · Interactive Trip Planner</p>
             <h2 className="text-lg font-black tracking-tight text-white">Perfect your day-by-day plan before you pay</h2>
             <p className="text-[12px] font-medium text-charcoal-200/90 mt-0.5">
-              Drag stops between days, add real places, optimize routing — every change is versioned. Next: choose how to experience this trip.
+              Drag stops between days, add real places, optimize routing — every change is versioned. Next: review the full trip.
             </p>
           </div>
         </div>
@@ -235,7 +235,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
             className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white text-[13px] font-black shadow-md transition-all disabled:opacity-60"
           >
             {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Choose Trip Experience
+            Continue to Review
           </button>
         </div>
       </div>

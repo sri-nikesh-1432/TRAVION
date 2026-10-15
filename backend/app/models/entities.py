@@ -162,6 +162,24 @@ class Trip(Base):
     payment = relationship("Payment", back_populates="trip", uselist=False)
     replanning_logs = relationship("ReplanningLog", back_populates="trip")
     offline_package = relationship("OfflinePackage", back_populates="trip", uselist=False)
+    # ── 10-stage prompt-routed workflow state (all persisted on the trip) ──
+    # current_stage: furthest-reached stage pointer 1..10 (completion itself is
+    # DERIVED from saved data, never from this pointer alone).
+    current_stage = Column(Integer, default=1)
+    # stage_history: audit trail of stage transitions [{from,to,at,actor}].
+    stage_history = Column(JSON, default=list)
+    # transport_options: persisted candidate pool {outbound:[...], return:[...]}.
+    transport_options = Column(JSON, default=dict)
+    # selected_transport: {outbound:{...}|None, return:{...}|None} snapshots of
+    # the chosen options (party_total already = per-person × travellers).
+    selected_transport = Column(JSON, default=dict)
+    # local_transport: {legs:[{origin,destination,distance_km,duration_min,
+    # options:[...],selected_id}]}
+    local_transport = Column(JSON, default=dict)
+    # food_tier: BASIC | STANDARD | PREMIUM (changes ONLY the food allowance).
+    food_tier = Column(String(16), default="STANDARD")
+    # weather: cached stage-8 weather payload with honesty labels.
+    weather = Column(JSON, default=dict)
 
 
 class TripProfile(Base):

@@ -146,9 +146,21 @@ def test_switching_modes_reprices_both_ways_and_logs():
     assert len(modes) >= 3, "every experience switch is auditable"
 
 
-def test_experience_mode_requires_a_chosen_plan():
+def test_experience_mode_before_itinerary_stage5():
+    """Stage 5 precedes any itinerary: the mode choice persists WITHOUT
+    requiring a plan first (10-stage flow) and flags the guide pipeline
+    without claiming a guide exists."""
     trip_id, headers = _build_trip()
     res = client.post(f"/api/v1/trips/{trip_id}/experience-mode", headers=headers, json={
         "mode": "GUIDE_MODE",
     })
-    assert res.status_code == 400, "no itinerary exists yet — the choice must come after a plan"
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["mode"] == "GUIDE_MODE"
+    assert data["guide_fee"] == round(data["base_budget"] * 0.125, 0)
+    assert _trip(trip_id, headers)["status"] == "REQUESTED"
+    # Switching back pre-itinerary clears the dangling request, no crash.
+    back = client.post(f"/api/v1/trips/{trip_id}/experience-mode", headers=headers, json={
+        "mode": "ADVENTUROUS_MODE",
+    })
+    assert back.status_code == 200 and back.json()["guide_fee"] == 0

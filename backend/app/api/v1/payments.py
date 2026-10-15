@@ -208,6 +208,25 @@ def process_payment_webhook(
         logger.warning("Payment webhook for unknown order %s", req.razorpay_order_id[:24])
         raise HTTPException(status_code=404, detail="Order reference not found")
 
+    # Idempotency: repeated callbacks for an already-successful payment must
+    # NEVER re-activate the trip, duplicate charges or duplicate offline
+    # packages — return the settled state instead.
+    if payment.status == "SUCCESS":
+        logger.info("Duplicate webhook for settled order %s — returning settled state", req.razorpay_order_id[:24])
+        split = db.query(PaymentSplit).filter(PaymentSplit.payment_id == payment.id).first()
+        return {
+            "status": "success",
+            "trip_id": payment.trip_id,
+            "payment_status": "SUCCESS",
+            "trip_status": payment.trip.status if payment.trip else None,
+            "amount_collected": payment.total_amount,
+            "guide_fee": round(float(split.guide_fee or 0), 0) if split else 0.0,
+            "platform_fee": round(float(split.platform_fee or 0), 0) if split else 0.0,
+            "amount_delta_vs_authoritative": 0.0,
+            "offline_package_ready": True,
+            "duplicate_callback": True,
+        }
+
     # §53: a fabricated payment id must never activate a REAL Razorpay order.
     # Simulated payment ids are only meaningful for simulated orders.
     is_simulated_order = req.razorpay_order_id.startswith("order_sim_")

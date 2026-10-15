@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Compass, MapPin, Sparkles, Navigation, Phone, ShieldCheck,
-  CreditCard, MessageSquare, Download, RefreshCw, CheckCircle2,
-  LogOut, ArrowLeft, Star, Heart, Clock, User, AlertCircle,
-  TrainFront, BedDouble, Utensils, Mountain, Wallet, Lock, BadgeCheck, Check
+  Compass, Sparkles, Navigation, ShieldCheck,
+  MessageSquare, Download, RefreshCw, CheckCircle2,
+  LogOut, ArrowLeft, Star, Clock, AlertCircle,
+  Mountain, Lock, BadgeCheck, Check
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
-  ItineraryStop, UserProfile, PlanOption, BudgetRecovery,
-  SelectedPlaceItem, SelectedFoodItem, SelectedStay
+  ItineraryStop, UserProfile, BudgetRecovery,
+  SelectedPlaceItem, SelectedFoodItem, SelectedStay, StageState
 } from '../types';
 import { api, ApiError } from '../services/api';
 import { TripSearchBar } from '../components/search-bar/TripSearchBar';
@@ -25,26 +25,33 @@ import { OfflineManager } from '../components/offline/OfflineManager';
 import { ReviewModal } from '../components/review/ReviewModal';
 import { FinalReviewStep, ReviewEditTarget } from '../components/review/FinalReviewStep';
 import { BasicProfileSheet } from '../components/profile/BasicProfileSheet';
-import { PlanChoiceCards } from '../components/plan-choice/PlanChoiceCards';
 import { ItineraryEditor } from '../components/itinerary-editor/ItineraryEditor';
 import { DiscoverySelect } from '../components/discovery-select/DiscoverySelect';
 import { PlannerWorkspace } from '../components/planner/PlannerWorkspace';
 import { ModeSelectionScreen, TripMode } from '../components/mode-selection/ModeSelectionModal';
+import { TransportSelection } from '../components/transport/TransportSelection';
+import { LocalTransportPlanner } from '../components/local-transport/LocalTransportPlanner';
+import { BudgetFoodPlan } from '../components/budget/BudgetFoodPlan';
+import { PaymentStep } from '../components/payment/PaymentStep';
 import { resolveBudgetMax } from '../utils/budget';
 
-/* ─── Booking flow stepper: the visible 7-step journey ─────────────
-   Steps 01–03 choose WHAT the trip contains (trip, travellers, explore);
-   step 04 is the dedicated Guide-vs-Adventurous EXPERIENCE decision (the
-   major product choice — always BEFORE plans so every plan card prices the
-   chosen mode); step 06 is the Final Review read/confirm state. The step
-   ORDER follows the master spec: Trip → Travellers → Explore → Mode → Plan
-   → Itinerary → Review → Payment. */
+/* ─── Booking flow stepper: the visible 10-stage journey ────────────
+   Stages 1–4 choose WHAT the trip contains (trip, travellers, transport,
+   explore); stage 5 is the dedicated Guide-vs-Adventurous EXPERIENCE decision
+   (always BEFORE local/budget/itinerary so everything prices the chosen
+   mode); stages 6–7 lock local transport + budget/food; stage 8 generates the
+   itinerary directly from saved state (no plan cards); stages 9–10 are Final
+   Review and Payment.
+   ORDER: Trip → Travellers → Transport → Explore → Mode → Local → Budget →
+   Itinerary → Review → Payment. */
 const BOOKING_STEPS = [
   { key: 'search', label: 'Trip' },
   { key: 'discovery', label: 'Travellers' },
+  { key: 'transport', label: 'Transport' },
   { key: 'discovery_select', label: 'Explore' },
   { key: 'mode_select', label: 'Mode' },
-  { key: 'plan_choice', label: 'Plan' },
+  { key: 'local_transport', label: 'Local' },
+  { key: 'budget_food', label: 'Budget' },
   { key: 'planner', label: 'Itinerary' },
   { key: 'review', label: 'Review' },
   { key: 'pay', label: 'Payment' },
@@ -98,20 +105,49 @@ declare global {
   }
 }
 
-let razorpayScriptPromise: Promise<boolean> | null = null;
-function loadRazorpayScript(): Promise<boolean> {
-  if (typeof window !== 'undefined' && window.Razorpay) return Promise.resolve(true);
-  if (razorpayScriptPromise) return razorpayScriptPromise;
-  razorpayScriptPromise = new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-  return razorpayScriptPromise;
-}
+type PlannerView =
+  | 'search' | 'discovery' | 'transport' | 'discovery_select' | 'mode_select'
+  | 'local_transport' | 'budget_food' | 'planner' | 'review' | 'pay'
+  | 'workspace' | 'my_trips';
+
+/** Stage index (1–10) → PlannerView. stage_key is honored when present via
+ *  STAGE_KEY_TO_VIEW; the numeric index is the fallback. */
+const STAGE_INDEX_TO_VIEW: Record<number, PlannerView> = {
+  1: 'search',
+  2: 'discovery',
+  3: 'transport',
+  4: 'discovery_select',
+  5: 'mode_select',
+  6: 'local_transport',
+  7: 'budget_food',
+  8: 'planner',
+  9: 'review',
+  10: 'pay',
+};
+
+const STAGE_KEY_TO_VIEW: Record<string, PlannerView> = {
+  trip: 'search',
+  travellers: 'discovery',
+  transport: 'transport',
+  explore: 'discovery_select',
+  discovery_select: 'discovery_select',
+  mode: 'mode_select',
+  mode_select: 'mode_select',
+  local: 'local_transport',
+  local_transport: 'local_transport',
+  budget: 'budget_food',
+  budget_food: 'budget_food',
+  itinerary: 'planner',
+  planner: 'planner',
+  review: 'review',
+  payment: 'pay',
+  pay: 'pay',
+};
+
+/** Best-effort forward stage advance: honors 422 gate violations (returns
+ *  them so the caller can stay put and show the alert); 404 means the staged
+ *  endpoint is not live yet — the caller proceeds with locally saved state. */
+const STAGE_NOT_LIVE = 'STAGE_NOT_LIVE' as const;
 
 interface UserDomainProps {
   session: AuthSession;
@@ -122,8 +158,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   session,
   onLogout
 }) => {
-  // Navigation views: 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips'
-  type PlannerView = 'search' | 'discovery' | 'planning' | 'discovery_select' | 'mode_select' | 'plan_choice' | 'planner' | 'review' | 'workspace' | 'my_trips';
+  // Navigation views: the 10-stage booking flow + workspace + my_trips.
   const [currentView, setCurrentViewState] = useState<PlannerView>('search');
   // §25/§26 — GLOBAL BACK: the traveller can always return to the ACTUAL
   // previous screen (not a hardcoded Home) with the trip state untouched —
@@ -151,11 +186,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [activeTrip, setActiveTrip] = useState<TripItem | null>(null);
   const [itinerary, setItinerary] = useState<TripItinerary | null>(null);
 
-  // Multi-plan state (VALUE / RECOMMENDED / PREMIUM)
-  const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
-  const [isChoosingPlan, setIsChoosingPlan] = useState(false);
-  const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
-  const [selectedFood, setSelectedFood] = useState<string[]>([]);
+  // 10-stage server state — the source of truth for resume + gate decisions.
+  const [stageState, setStageState] = useState<StageState | null>(null);
+  // Review snapshot (single-source summary for the Review step + payment).
+  const [reviewSnapshot, setReviewSnapshot] = useState<{
+    transport?: string | null; local?: string | null; food?: string | null;
+    stay?: string | null; paymentAmount?: number | null;
+  } | null>(null);
   
   // Discovery Interview state
   const [currentQuestion, setCurrentQuestion] = useState<any>(null);
@@ -166,9 +203,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // manager assignment. The guide signup stays a separate landing-page flow.
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  // Step 3 selections held while the traveller picks the trip experience
-  // (Guide / Adventurous). Nothing is lost between discovery and planning —
-  // these ride the plan-multi request once the mode is chosen (spec §6).
+  // Step 4 (Explore) selections held while the traveller picks the trip
+  // experience (Guide / Adventurous). Nothing is lost between stages — the
+  // stage-8 itinerary is generated from this saved server state.
   const [pendingSelection, setPendingSelection] = useState<{
     places: string[];
     foods: string[];
@@ -177,18 +214,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     stay: SelectedStay | null;
     stayRequired: boolean;
   } | null>(null);
-  // Real ACTIVITY count (things to do, not places) from Step 3 — shown on the
-  // experience-choice summary chips instead of a broken heuristic.
+  // Real ACTIVITY count (things to do, not places) from Explore — shown on
+  // the experience-choice summary chips instead of a broken heuristic.
   const [selectedActivityCount, setSelectedActivityCount] = useState(0);
-  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [checkoutData, setCheckoutData] = useState<any>(null);
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentNote, setPaymentNote] = useState<string | null>(null);
-  // §20 non-refundable acknowledgement — must be checked before Confirm & Pay.
-  const [nonRefundableAcknowledged, setNonRefundableAcknowledged] = useState(false);
-  // Authoritative pricing preview shown while the popup opens (order created
-  // only after the acknowledgement is checked).
-  const [pricingSummary, setPricingSummary] = useState<{ travel_spend: number; guide_fee: number; platform_fee: number; safety_reserve: number; insurance_fee: number; final_planned_amount: number; amount_payable: number; guide_required: boolean; guide_assigned: boolean; breakdown: Record<string, any> } | null>(null);
   const [navigatingStop, setNavigatingStop] = useState<ItineraryStop | null>(null);
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
@@ -309,17 +337,95 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       }
       const midPlanning = trips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
       if (midPlanning) {
-        resumePlanningTrip(midPlanning);
+        // STAGE-AWARE resume: jump to the trip's current_stage view.
+        void resumeFromStageState(midPlanning);
       }
     }).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Resume an in-flight planning trip from server state (refresh / back-nav).
-  // Everything needed is already persisted server-side: the interview answers
-  // (TripProfile.questions_answers) and the trip record itself — so the flow
-  // picks up exactly where the traveller left off, with the SAME trip_id.
+  // STAGE-AWARE resume: with an active trip, GET the stage state and jump to
+  // its current_stage view (stage_key → view, numeric index as fallback).
+  // Falls back to the legacy interview resume when the staged endpoint is
+  // not live yet (404) — the flow keeps working either way.
+  const applyStageState = (stage: StageState): PlannerView => {
+    setStageState(stage);
+    if (stage.trip) setActiveTrip(stage.trip as TripItem);
+    if (stage.mode && stage.trip) {
+      setActiveTrip((prev) => (prev ? { ...prev, mode: stage.mode as TripItem['mode'] } : prev));
+    }
+    const byKey = stage.stage_key ? STAGE_KEY_TO_VIEW[stage.stage_key] : undefined;
+    const view = byKey || STAGE_INDEX_TO_VIEW[Number(stage.current_stage)] || 'search';
+    return view;
+  };
+
+  const resumeFromStageState = async (trip: TripItem) => {
+    try {
+      const stage = await api.getStageState(trip.id);
+      const view = applyStageState(stage);
+      if (view === 'planner' || view === 'review' || view === 'pay' || view === 'workspace') {
+        // Stage 8+ needs the generated itinerary — load it; if it does not
+        // exist yet, drop back to the budget step (never a blank screen).
+        try {
+          const itn = await api.getItinerary(trip.id);
+          setItinerary(itn);
+          setCurrentView(view === 'workspace' ? 'workspace' : view);
+        } catch {
+          setCurrentView('budget_food');
+        }
+        return;
+      }
+      if (view === 'discovery' || view === 'search') {
+        await resumeInterviewState(trip);
+        return;
+      }
+      setActiveTrip(trip);
+      // Restore the interview answers for traveller counts on later screens.
+      try {
+        const saved = await api.getTripProfile(trip.id).catch(() => null);
+        const answers = (saved?.questions_answers as Record<string, any>) || {};
+        setAnswersSoFar(answers);
+      } catch { /* counts stay unset */ }
+      setCurrentView(view);
+    } catch (err: any) {
+      if ((err as ApiError)?.status === 404) {
+        // Staged endpoint not live — legacy resume path.
+        await resumePlanningTrip(trip);
+        return;
+      }
+      await resumePlanningTrip(trip);
+    }
+  };
+
+  /** Advance one stage forward, honoring 422 gate violations.
+   *  Returns null on success; returns violations when blocked. Throws the
+   *  STAGE_NOT_LIVE sentinel (as a rejected value) when the endpoint 404s so
+   *  callers can proceed with locally saved state. */
+  const advanceStage = async (tripId: string, stage: number): Promise<string[] | null> => {
+    try {
+      const next = await api.setStage(tripId, stage);
+      setStageState(next);
+      if (next.trip) setActiveTrip(next.trip as TripItem);
+      return null;
+    } catch (err: any) {
+      const status = (err as ApiError)?.status;
+      if (status === 404) throw STAGE_NOT_LIVE;
+      const extra = (err as ApiError)?.extra;
+      const violations: string[] | undefined =
+        extra?.violations || extra?.gate?.violations || extra?.detail?.violations;
+      return violations && violations.length > 0 ? violations : [err?.message || 'This stage cannot be completed yet.'];
+    }
+  };
+
+  // Legacy resume (interview state only) — used when the staged endpoint is
+  // not live yet. Everything needed is already persisted server-side: the
+  // interview answers (TripProfile.questions_answers) and the trip record
+  // itself — so the flow picks up where the traveller left off.
   const resumePlanningTrip = async (trip: TripItem) => {
+    await resumeInterviewState(trip);
+  };
+
+  const resumeInterviewState = async (trip: TripItem) => {
     setActiveTrip(trip);
     setCurrentView('discovery');
     try {
@@ -328,6 +434,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       setAnswersSoFar(answers);
       const q = await api.getNextDiscoveryQuestion(trip.id, answers);
       if (q.is_complete) {
+        // Interview done — without stage state we cannot know how far the
+        // traveller went, so continue at Explore (stage 4).
         setCurrentView('discovery_select');
       } else {
         setCurrentQuestion(q);
@@ -418,7 +526,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 2. Answer question in Adaptive Interview (exactly 3 questions)
+  // 2. Answer question in Adaptive Interview (exactly 3 questions).
+  // Interview complete → Stage 3 Transport (forward PUT validates the gate;
+  // 422 violations keep the traveller here with the message inline).
   const handleAnswerQuestion = async (answer: any) => {
     if (!activeTrip || !currentQuestion?.question_id) return;
     const updatedAnswers = {
@@ -430,11 +540,19 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     try {
       const nextQ = await api.getNextDiscoveryQuestion(activeTrip.id, updatedAnswers);
       if (nextQ.is_complete) {
-        // Interview complete → destination discovery. The Guide/Adventurous
-        // EXPERIENCE choice happens ONLY after Step 3 selection — never here.
         setCurrentQuestion(null);
         setPlanError(null);
-        setCurrentView('discovery_select');
+        try {
+          const blocked = await advanceStage(activeTrip.id, 3);
+          if (blocked) {
+            setPlanError({ message: blocked.join(' ') });
+            return;
+          }
+        } catch (e) {
+          if (e !== STAGE_NOT_LIVE) throw e;
+          // Staged endpoint not live — proceed locally.
+        }
+        setCurrentView('transport');
       } else {
         setCurrentQuestion(nextQ);
       }
@@ -446,200 +564,134 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // 3a. Selections made → the traveller makes the MAJOR Guide-vs-Adventurous
-  // decision (Step 4) BEFORE any plan is generated, so all three plan cards
-  // price the chosen mode exactly as it will be charged (spec Step 4→5).
-  const handleGeneratePlans = (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
+  // Stage 4 (Explore) selections made → the traveller makes the MAJOR
+  // Guide-vs-Adventurous decision (Stage 5) BEFORE any itinerary is
+  // generated, so the plan prices the chosen mode exactly as charged.
+  // Selections are already persisted server-side by DiscoverySelect.
+  const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
+    if (!activeTrip) return;
     setPendingSelection({ places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
-    setSelectedPlaces(places);
-    setSelectedFood(foods);
     setSelectedActivityCount(Number(activityCount) || 0);
+    try {
+      const blocked = await advanceStage(activeTrip.id, 5);
+      if (blocked) {
+        setPlanError({ message: blocked.join(' ') });
+        return;
+      }
+    } catch (e) {
+      if (e !== STAGE_NOT_LIVE) throw e;
+    }
     setCurrentView('mode_select');
   };
 
-  // Shared plan generation. Mode is only an interim pricing input here — the
-  // authoritative experience choice is made (and repriced) later.
-  const generatePlans = async (mode: 'GUIDE_MODE' | 'ADVENTUROUS_MODE', sel: NonNullable<typeof pendingSelection>) => {
-    if (!activeTrip) return;
+  // STAGE 5 → STAGE 6: the traveller picks HOW to experience the trip. The
+  // mode is persisted on the trip (setExperienceMode reprices server-side);
+  // the forward PUT then unlocks Local transport.
+  const handleModeSelect = async (mode: TripMode) => {
+    if (!activeTrip || isGeneratingPlan) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
     try {
-      const plans = await api.planMulti(activeTrip.id, mode, {
-        selected_places: sel.places,
-        selected_food: sel.foods,
-        selected_place_items: sel.placeItems,
-        selected_food_items: sel.foodItems,
-        ...(sel.stay ? { selected_stay: sel.stay } : {}),
-        stay_required: sel.stayRequired,
-      });
-      setPlanOptions(plans);
+      try {
+        await api.setExperienceMode(activeTrip.id, mode);
+      } catch { /* staged flow persists mode via PUT below; keep going */ }
+      setActiveTrip((prev) => (prev ? { ...prev, mode } : prev));
+      try {
+        const blocked = await advanceStage(activeTrip.id, 6);
+        if (blocked) {
+          setPlanError({ message: blocked.join(' ') });
+          setIsGeneratingPlan(false);
+          return;
+        }
+      } catch (e) {
+        if (e !== STAGE_NOT_LIVE) throw e;
+      }
       setIsGeneratingPlan(false);
-      setCurrentView('plan_choice');
-      return plans;
+      setCurrentView('local_transport');
     } catch (err) {
-      console.error("Plan generation failed:", err);
       setIsGeneratingPlan(false);
       setPlanError(getPlanErrorMessage(err));
-      setCurrentView('mode_select');
-      return null;
     }
   };
 
-  // STEP 4 → STEP 5: the traveller picks HOW to experience the trip. The mode
-  // is persisted on the trip via planMulti(mode) — every plan card is priced
-  // with that exact mode (12.5% guide fee in Guide Mode, none in Adventurous,
-  // 3% platform + 15% safety always) and nothing after this step loses it.
-  const handleModeSelect = async (mode: TripMode) => {
-    if (!activeTrip || isGeneratingPlan) return;
-    void generatePlans(mode, pendingSelection!);
-  };
-
-  // User picked one of the three plans → activate it & open the editor.
-  // NO payment happens here: editing comes first, the experience choice after.
-  const handleChoosePlan = async (planType: 'VALUE' | 'RECOMMENDED' | 'PREMIUM') => {
-    if (!activeTrip) return;
-    setIsChoosingPlan(true);
+  // STAGE 8: generate the itinerary DIRECTLY from saved state (no plan
+  // cards) via the existing planTrip endpoint, then open the editor.
+  const handleBuildItinerary = async (stage: StageState | null) => {
+    const trip = activeTrip;
+    if (!trip) return;
+    if (stage && Object.keys(stage).length > 0) setStageState(stage);
+    const mode = (stage && (stage as StageState).mode) || stageState?.mode || trip.mode || 'ADVENTUROUS_MODE';
+    setIsGeneratingPlan(true);
     setPlanError(null);
     try {
-      const itn = await api.choosePlan(activeTrip.id, planType);
+      const itn = await api.planTrip(trip.id, mode as 'GUIDE_MODE' | 'ADVENTUROUS_MODE', true);
       setItinerary(itn);
-      setActiveTrip(prev => prev ? {
-        ...prev,
-        total_cost: itn.total_cost,
-        status: 'PLANNED'
-      } : null);
-      setIsChoosingPlan(false);
-      // Next: edit & finalize the itinerary (Step 6) before Final Review.
+      setActiveTrip((prev) => (prev ? { ...prev, total_cost: itn.total_cost, status: 'PLANNED' } : prev));
+      setIsGeneratingPlan(false);
       setCurrentView('planner');
     } catch (err) {
-      console.error("Choosing plan failed:", err);
-      setIsChoosingPlan(false);
+      setIsGeneratingPlan(false);
       setPlanError(getPlanErrorMessage(err));
     }
   };
 
-  // Final Review → payment: opens the confirmation popup. §20: the order is
-  // only created after the traveller checks the non-refundable acknowledgement
-  // in the popup itself — the backend independently enforces the same rule.
-  const handlePlannerProceedToPayment = async () => {
+  // Stage 8 → Stage 9: open Final Review. Loads the single-source review
+  // snapshot when available (labels + payment amount); the editor state is
+  // untouched either way.
+  const handlePlannerProceedToReview = async () => {
     if (!activeTrip) return;
-    setNonRefundableAcknowledged(false);
-    setPaymentNote(null);
-    setCheckoutData(null); // always create a FRESH order on confirmation
-    setShowCheckoutModal(true);
     try {
-      // Spec §34: the SAME pricing object prices Review and the Razorpay order.
-      const pricing = await api.getTripPricing(activeTrip.id);
-      setPricingSummary({
-        travel_spend: pricing.travel_spend,
-        guide_fee: pricing.guide_fee,
-        platform_fee: pricing.platform_fee,
-        safety_reserve: Number(pricing.safety_reserve ?? 0),
-        insurance_fee: Number(pricing.insurance_fee ?? 50),
-        final_planned_amount: Number(pricing.final_planned_amount ?? pricing.amount_payable ?? 0),
-        amount_payable: pricing.amount_payable,
-        guide_required: pricing.guide_required,
-        guide_assigned: pricing.guide_assigned,
-        breakdown: pricing.breakdown || {},
-      });
-    } catch (err) {
-      setShowCheckoutModal(false);
-      setPlanError(getPlanErrorMessage(err));
+      const blocked = await advanceStage(activeTrip.id, 9);
+      if (blocked) {
+        setPlanError({ message: blocked.join(' ') });
+        return;
+      }
+    } catch (e) {
+      if (e !== STAGE_NOT_LIVE) throw e;
     }
+    try {
+      const snap = await api.getReviewSnapshot(activeTrip.id);
+      const str = (v: any): string | null => (v == null || v === '' ? null : String(v));
+      setReviewSnapshot({
+        transport: str((snap.transport as any)?.summary || (snap.transport as any)?.label),
+        local: str((snap.local_transport as any)?.summary || (snap.local_transport as any)?.label),
+        food: str((snap.food_tier as any)?.label || (typeof snap.food_tier === 'string' ? snap.food_tier : null)),
+        stay: str((snap.stay as any)?.name || (snap.stay as any)?.summary),
+        paymentAmount: typeof snap.payment_amount === 'number' ? snap.payment_amount : null,
+      });
+    } catch {
+      setReviewSnapshot(null);
+    }
+    setCurrentView('review');
+  };
+
+  // Stage 9 → Stage 10: open the Payment step (forward PUT validates the
+  // gate; 422 violations keep the traveller on Review).
+  const handleReviewConfirm = async () => {
+    if (!activeTrip) return;
+    try {
+      const blocked = await advanceStage(activeTrip.id, 10);
+      if (blocked) {
+        setPlanError({ message: blocked.join(' ') });
+        return;
+      }
+    } catch (e) {
+      if (e !== STAGE_NOT_LIVE) throw e;
+    }
+    setCurrentView('pay');
+  };
+
+  // Payment success → the activated trip workspace.
+  const handlePaymentSuccess = async () => {
+    if (!activeTrip) return;
+    setPlanError(null);
+    await loadTripWorkspace(activeTrip.id, true);
   };
 
   // 3c. Live itinerary edits (drag & drop / remove / add) — recalculated server-side
   const handleItineraryChange = (updated: TripItinerary, _warnings: string[]) => {
     setItinerary(updated);
     setActiveTrip(prev => prev ? { ...prev, total_cost: updated.total_cost } : null);
-  };
-
-  // 4. Razorpay Checkout & Webhook Confirmation
-  // Live checkout = genuine Razorpay test-mode order (real keys configured & reachable).
-  // If the SDK/API is unavailable, gracefully falls back to the verified simulation flow.
-  const handleExecutePayment = async () => {
-    if (!activeTrip) return;
-    // §20 hard rule: payment confirmation is impossible until the checkbox
-    // is checked. The backend rejects the order for the same reason.
-    if (!nonRefundableAcknowledged) {
-      setPaymentNote("Please accept the non-refundable acknowledgement before confirming payment.");
-      return;
-    }
-    setPaymentNote(null);
-    setIsProcessingPayment(true);
-
-    try {
-      // Order creation happens here — only after the acknowledgement is
-      // checked — so the stored transaction carries proof of acceptance.
-      const checkout = checkoutData ?? await api.checkoutTrip(activeTrip.id, true);
-      setCheckoutData(checkout);
-
-      const canDoLive = checkout.live_checkout === true;
-      const sdkReady = canDoLive ? await loadRazorpayScript() : false;
-
-      if (canDoLive && sdkReady && window.Razorpay) {
-        await new Promise<void>((resolve, reject) => {
-          const rzp = new window.Razorpay({
-            key: checkout.key_id,
-            amount: Math.round(checkout.amount * 100),
-            currency: checkout.currency || 'INR',
-            name: 'Travion',
-            description: `${activeTrip.source_name} to ${activeTrip.destination_name} trip`,
-            order_id: checkout.order_id,
-            prefill: { email: session.email },
-            theme: { color: '#267aa8' },
-            handler: async (response: any) => {
-              try {
-                await api.verifyPaymentWebhook({
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature
-                });
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
-            },
-            modal: {
-              ondismiss: () => reject(new Error('cancelled'))
-            }
-          });
-          rzp.open();
-        });
-      } else {
-        // Simulated fallback — same server-side signature-verified flow. The
-        // signature is the SERVER-ISSUED HMAC from the checkout response: the
-        // client can never mint its own payment success (§33/§53).
-        await api.verifyPaymentWebhook({
-          razorpay_order_id: checkout.order_id,
-          razorpay_payment_id: `pay_sim_${Date.now()}`,
-          razorpay_signature: checkout.simulated_signature || ''
-        });
-      }
-
-      // Server truth after signature verification (spec §45: no fake success).
-      // The webhook response carries the authoritative status — an earlier
-      // optimistic update could mask a verification failure.
-      let verifiedTripStatus = 'ACTIVE';
-      try {
-        const t = await api.getTrip(activeTrip.id);
-        verifiedTripStatus = t.status || 'ACTIVE';
-      } catch { /* keep webhook-declared status */ }
-      setActiveTrip(prev => prev ? { ...prev, status: verifiedTripStatus as any } : null);
-      setPlanError(null);
-      setShowCheckoutModal(false);
-      setCurrentView('workspace');
-      // Refresh silently in the background so workspace surfaces (final map,
-      // chat, guide banner) render from the ACTIVATED backend trip.
-      loadTripWorkspace(activeTrip.id, true);
-    } catch (err: any) {
-      console.error("Payment failed or cancelled:", err);
-      if (String(err?.message || '').toLowerCase().includes('cancel')) {
-        setPaymentNote("Payment was cancelled. Your trip is safely saved — you can retry payment anytime.");
-      }
-    } finally {
-      setIsProcessingPayment(false);
-    }
   };
 
   // 5. Dynamic Replanning Trigger
@@ -694,38 +746,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       onClick: () => setShowReviewModal(true)
     }
   ];
-
-  // Unified checkout-display values: the popup shows the authoritative pricing
-  // summary the moment it opens, then the real Razorpay order once created.
-  // Both sources are backend truth — the same numbers checkout stores.
-  const checkoutView = checkoutData
-    ? {
-        live: !!checkoutData.live_checkout,
-        transport: Number(checkoutData.breakdown?.transport || 0),
-        stay: Number(checkoutData.breakdown?.stay || 0),
-        food: Number(checkoutData.breakdown?.food || 0),
-        activities: Number(checkoutData.breakdown?.activities || 0),
-        travelSpend: Number(checkoutData.breakdown?.travel_spend ?? pricingSummary?.travel_spend ?? 0),          guideFee: Number(checkoutData.breakdown?.guide_fee || 0),
-          platformFee: Number(checkoutData.breakdown?.platform_fee || 0),
-          safetyReserve: Number(checkoutData.breakdown?.safety_reserve ?? 0),
-          insuranceFee: Number(checkoutData.breakdown?.insurance_fee ?? 50),
-          payable: Number(checkoutData.amount || 0),
-        }
-    : pricingSummary
-      ? {
-          live: false,
-          transport: Number(pricingSummary.breakdown?.transport || 0),
-          stay: Number(pricingSummary.breakdown?.stay || 0),
-          food: Number(pricingSummary.breakdown?.food || 0),
-          activities: Number(pricingSummary.breakdown?.activities || 0),
-          travelSpend: Number(pricingSummary.travel_spend || 0),
-          guideFee: Number(pricingSummary.guide_fee || 0),
-          platformFee: Number(pricingSummary.platform_fee || 0),
-          safetyReserve: Number(pricingSummary.safety_reserve || 0),
-          insuranceFee: Number(pricingSummary.insurance_fee ?? 50),
-          payable: Number(pricingSummary.amount_payable || 0),
-        }
-      : null;
 
   return (
     <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
@@ -1051,10 +1071,28 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
         )}
 
-        {/* VIEW 2a-2: STEP 4 — CHOOSE YOUR TRAVEL MODE. The dedicated
+        {/* STAGE 3 — Transport: outbound + return picks, gate-checked. */}
+        {currentView === 'transport' && activeTrip && (
+          <>
+            <FlowStepper current="transport" />
+            <TransportSelection
+              tripId={activeTrip.id}
+              initial={stageState?.trip_id === activeTrip.id ? stageState.transport : null}
+              partySize={Number(answersSoFar?.party?.total) || null}
+              onComplete={(stage) => {
+                if (stage && Object.keys(stage).length > 0) setStageState(stage);
+                setCurrentView('discovery_select');
+              }}
+              onBack={() => setCurrentView('discovery')}
+            />
+          </>
+        )}
+
+        {/* VIEW 2a-2: STAGE 5 — CHOOSE YOUR TRAVEL MODE. The dedicated
             major-decision screen (Guide = human + AI, 12.5% guide fee;
-            Adventurous = independent + AI, no guide fee), shown BEFORE plans
-            so every plan card prices the chosen mode exactly. */}
+            Adventurous = independent + AI, no guide fee), shown BEFORE local
+            transport, budget and itinerary so everything prices the chosen
+            mode exactly. */}
         {currentView === 'mode_select' && activeTrip && (
           <>
             <FlowStepper current="mode_select" />
@@ -1065,6 +1103,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             foodCount={pendingSelection?.foods.length ?? 0}
             hasStay={!!(pendingSelection?.stayRequired && pendingSelection?.stay)}
             totalCost={activeTrip.budget}
+            guide={stageState?.trip_id === activeTrip.id ? stageState.guide : null}
             onBack={() => setCurrentView('discovery_select')}
             onSelect={(mode) => void handleModeSelect(mode)}
             busy={isGeneratingPlan}
@@ -1072,23 +1111,46 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* VIEW 2b: Three-plan choice (Budget / Recommended / Premium) — priced
-            with the mode chosen in Step 4; the Final Review follows editing. */}
-        {currentView === 'plan_choice' && activeTrip && (
+        {/* STAGE 6 — Local transport: one option per generated leg. */}
+        {currentView === 'local_transport' && activeTrip && (
           <>
-            <FlowStepper current="plan_choice" />
-            <PlanChoiceCards
-              plans={planOptions}
-              destinationName={activeTrip.destination_name}
-              onSelect={handleChoosePlan}
-              onBack={() => { setPlanOptions([]); setCurrentView('mode_select'); }}
-              busy={isChoosingPlan}
+            <FlowStepper current="local_transport" />
+            <LocalTransportPlanner
+              tripId={activeTrip.id}
+              initialLegs={stageState?.trip_id === activeTrip.id ? stageState.local_transport?.legs : null}
+              onComplete={(stage) => {
+                if (stage && Object.keys(stage).length > 0) setStageState(stage);
+                setCurrentView('budget_food');
+              }}
+              onBack={() => setCurrentView('mode_select')}
             />
           </>
         )}
 
-        {/* VIEW 2c: Step 6 Interactive Trip Planner — finalize the itinerary
-            (the traveller's source of truth) before the Final Review step. */}
+        {/* STAGE 7 — Budget + food: full gate breakdown, tier switching,
+            top-up recovery. Continue builds the itinerary (stage 8). */}
+        {currentView === 'budget_food' && activeTrip && (
+          <>
+            <FlowStepper current="budget_food" />
+            <BudgetFoodPlan
+              tripId={activeTrip.id}
+              initialGate={stageState?.trip_id === activeTrip.id ? stageState.budget : null}
+              travellers={Number(answersSoFar?.party?.total) || null}
+              days={(() => {
+                const s = new Date(activeTrip.start_datetime).getTime();
+                const e = new Date(activeTrip.end_datetime).getTime();
+                if (Number.isNaN(s) || Number.isNaN(e) || e < s) return null;
+                return Math.max(1, Math.ceil((e - s) / 86_400_000));
+              })()}
+              onComplete={(stage) => void handleBuildItinerary(stage)}
+              onBack={() => setCurrentView('local_transport')}
+            />
+          </>
+        )}
+
+        {/* STAGE 8: Interactive Trip Planner — finalize the itinerary (the
+            traveller's source of truth), generated directly from saved state
+            via planTrip (no plan cards). */}
         {currentView === 'planner' && itinerary && activeTrip && (
           <>
             <FlowStepper current="planner" />
@@ -1101,14 +1163,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               itinerary.total_cost,
             )}
             onItineraryChange={handleItineraryChange}
-            onBackToPlans={() => setCurrentView('plan_choice')}
-            onProceedToExperience={() => setCurrentView('review')}
-            onProceedToPayment={() => setCurrentView('review')}
-            feePreview={pricingSummary ? {
-              guide_fee: pricingSummary.guide_fee,
-              platform_fee: pricingSummary.platform_fee,
-              amount_payable: pricingSummary.amount_payable,
-            } : null}
+            onBackToPlans={() => setCurrentView('budget_food')}
+            onProceedToExperience={() => void handlePlannerProceedToReview()}
+            onProceedToPayment={() => void handlePlannerProceedToReview()}
+            feePreview={null}
             tripInfo={{
               destination: activeTrip.destination_name,
               start: activeTrip.start_datetime,
@@ -1122,10 +1180,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* VIEW 2d: STEP 7 — FINAL REVIEW. Read/confirm state: shows the EXACT
+        {/* STAGE 9 — FINAL REVIEW. Read/confirm state: shows the EXACT
             stored itinerary (the user's final edits) + the same centralized
-            pricing object the Razorpay order uses. Every Edit returns to the
-            right step WITHOUT destroying state (spec §39/§36). */}
+            pricing object the Razorpay order uses. Every Edit jumps to its
+            own stage WITHOUT destroying state. */}
         {currentView === 'review' && itinerary && activeTrip && (
           <>
             <FlowStepper current="review" />
@@ -1139,7 +1197,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 budget: activeTrip.budget,
                 mode: activeTrip.mode,
               }}
-              planLabel={planOptions.find(p => p.recommended)?.label || planOptions[0]?.label || null}
+              planLabel={null}
               travellers={
                 answersSoFar?.party && typeof answersSoFar.party === 'object'
                   ? { total: Number(answersSoFar.party.total) || undefined, adults: Number(answersSoFar.party.adults) || undefined, children: Number(answersSoFar.party.children) || undefined }
@@ -1151,15 +1209,39 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   : null
               }
               itinerary={itinerary}
+              transportLabel={reviewSnapshot?.transport}
+              localLabel={reviewSnapshot?.local}
+              foodLabel={reviewSnapshot?.food}
+              stayLabel={reviewSnapshot?.stay}
               onEdit={(target: ReviewEditTarget) => {
                 if (target === 'basics') setCurrentView('search');
                 else if (target === 'travellers') setCurrentView('discovery');
-                else if (target === 'places') setCurrentView('discovery_select');
-                else if (target === 'plans') setCurrentView('plan_choice');
+                else if (target === 'places' || target === 'discovery_select') setCurrentView('discovery_select');
+                else if (target === 'transport') setCurrentView('transport');
+                else if (target === 'mode_select') setCurrentView('mode_select');
+                else if (target === 'local_transport') setCurrentView('local_transport');
+                else if (target === 'budget_food' || target === 'plans') setCurrentView('budget_food');
                 else setCurrentView('planner');
               }}
-              onConfirm={() => void handlePlannerProceedToPayment()}
-              busy={isProcessingPayment}
+              onConfirm={() => void handleReviewConfirm()}
+              busy={false}
+            />
+          </>
+        )}
+
+        {/* STAGE 10 — Payment: extracted checkout step (Razorpay order,
+            webhook verify, activation). On success → workspace. */}
+        {currentView === 'pay' && activeTrip && (
+          <>
+            <FlowStepper current="pay" />
+            <PaymentStep
+              tripId={activeTrip.id}
+              sourceName={activeTrip.source_name}
+              destinationName={activeTrip.destination_name}
+              userEmail={session.email}
+              expectedAmount={reviewSnapshot?.paymentAmount}
+              onSuccess={() => void handlePaymentSuccess()}
+              onBack={() => setCurrentView('review')}
             />
           </>
         )}
@@ -1266,8 +1348,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           server operation (place validation, geo-fencing, chronology, budget
           fitting). The animated stage list reflects those real stages and
           never fakes completion; the loader simply rides along until the
-          response lands. The same experience covers plan CHOOSING (server
-          generates + validates the full itinerary before responding). */}
+          response lands. Stage 8 generates the full itinerary from saved
+          state via planTrip before responding. */}
       <AnimatePresence>
         {isGeneratingPlan && (
           <BrandedLoader
@@ -1285,204 +1367,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             durationPerStep={1100}
             onComplete={() => {}}
           />
-        )}
-        {isChoosingPlan && (
-          <BrandedLoader
-            headline="Building your TRAVION itinerary"
-            steps={[
-              'Locking in your selected plan…',
-              'Validating real locations…',
-              'Optimizing your daily route…',
-              'Placing meals into real windows…',
-              'Balancing your travel budget…',
-              'Arranging your days…',
-              'Finalizing your TRAVION journey…',
-            ]}
-            durationPerStep={1100}
-            onComplete={() => {}}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Transparent Checkout & Payment Split Modal — §20: the non-refundable
-          acknowledgement checkbox lives HERE, and Confirm & Pay stays disabled
-          until it is checked. The order is created only on confirmation. */}
-      <AnimatePresence>
-        {showCheckoutModal && (checkoutData || pricingSummary) && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-travion-900/45 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg bg-white rounded-3xl p-6 md:p-8 shadow-floating border border-travion-100"
-            >
-              <div className="flex items-center justify-between pb-4 border-b border-charcoal-100 mb-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-2xl bg-travion-100 text-travion-700 flex items-center justify-center shrink-0">
-                    <CreditCard className="w-4.5 h-4.5" />
-                  </span>
-                  <div>
-                    <h3 className="text-[15px] font-extrabold text-charcoal-900 tracking-tight">Transparent Checkout</h3>
-                    <p className="text-[9px] font-black uppercase tracking-wider text-charcoal-400 mt-0.5">Step 07 · Payment</p>
-                  </div>
-                </div>
-                <span className="text-[9px] font-black px-2.5 py-1 rounded-full bg-travion-100 text-travion-700">
-                  {checkoutData?.live_checkout ? 'Razorpay · Test Mode' : 'Razorpay Verified'}
-                </span>
-              </div>
-
-              {/* Itemized Cost Breakdown */}
-              {/* Section 1 — Estimated travel spend (paid locally during the trip) */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Wallet className="w-4 h-4 text-travion-600" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-charcoal-500">Estimated travel spend — paid locally as you travel</span>
-                </div>
-                <div className="space-y-2 text-xs text-charcoal-700 font-medium">
-                  {[
-                    { icon: TrainFront, color: '#267aa8', label: 'Transport (round trip)', value: checkoutView!.transport },
-                    { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: checkoutView!.stay },
-                    { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: checkoutView!.food },
-                    { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: checkoutView!.activities }
-                  ].map((row) => (
-                    <div key={row.label} className="flex justify-between py-1 border-b border-charcoal-100">
-                      <span className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: row.color }}>
-                          <row.icon className="w-3.5 h-3.5" />
-                        </span>
-                        <span>{row.label}</span>
-                      </span>
-                      <span className="font-bold">₹{row.value.toLocaleString()}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between pt-1 text-[11px] text-charcoal-500">
-                    <span>Travel spend estimate</span>
-                    <span className="font-bold">₹{checkoutView!.travelSpend.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2 — Fees + safety reserve: the FINAL PLANNED AMOUNT is
-                  what the Razorpay order charges (same pricing object as Review). */}
-              <div className="rounded-2xl bg-travion-50/70 border border-travion-100 p-4 mb-5">
-                <div className="flex items-center gap-2 mb-2.5">
-                  <ShieldCheck className="w-4 h-4 text-travion-700" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-travion-700">Fees & reserve — final planned amount</span>
-                </div>
-                <div className="space-y-2 text-xs font-medium">
-                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
-                    <span className="font-semibold flex items-center gap-1.5">
-                      <Compass className="w-3.5 h-3.5" />
-                      <span>Guide fee</span>
-                    </span>
-                    <span className="font-bold">{checkoutView!.guideFee > 0 ? `₹${checkoutView!.guideFee.toLocaleString()}` : '₹0 — Adventurous Mode'}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
-                    <span className="font-semibold flex items-center gap-1.5">
-                      <BadgeCheck className="w-3.5 h-3.5" />
-                      <span>Platform fee (3%)</span>
-                    </span>
-                    <span className="font-bold">₹{checkoutView!.platformFee.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
-                    <span className="font-semibold flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Safety reserve (15%)</span>
-                    </span>
-                    <span className="font-bold">₹{checkoutView!.safetyReserve.toLocaleString()}</span>
-                  </div>
-                  <p className="text-[10.5px] font-semibold text-charcoal-400">
-                    Reserved for unexpected travel or emergency needs — never spent automatically.
-                  </p>
-                  <div className="flex justify-between py-1 border-b border-travion-100 text-travion-800">
-                    <span className="font-semibold flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Insurance (fixed)</span>
-                    </span>
-                    <span className="font-bold">₹{checkoutView!.insuranceFee.toLocaleString()}</span>
-                  </div>
-                  <p className="text-[10.5px] font-semibold text-charcoal-400">
-                    ₹50 fixed — TRAVION Refund Protection: if TRAVION cancels your trip, the platform fee + this insurance are refunded.
-                  </p>
-                  <div className="flex justify-between pt-2 text-sm font-black text-charcoal-900">
-                    <span>Final planned amount</span>
-                    <span className="text-travion-700">₹{checkoutView!.payable.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-charcoal-500 font-medium leading-relaxed mb-4 bg-ivory-50 border border-charcoal-100 rounded-xl px-3 py-2.5">
-                The final planned amount = your base trip budget + fees + safety reserve — the exact total shown on your Final Review. {checkoutView!.guideFee > 0 ? 'The 12.5% guide fee applies because this is a Guide Mode trip.' : 'No guide fee applies — this is an Adventurous Mode trip.'}
-              </p>
-
-              {/* §20 — Non-refundable acknowledgement: MANDATORY before Confirm & Pay.
-                  The pay button stays disabled until this box is checked, and the
-                  backend independently refuses the order without it. */}
-              <label
-                htmlFor="non-refundable-ack"
-                className={`flex items-start gap-3 mb-5 p-3.5 rounded-2xl border cursor-pointer select-none transition-colors ${
-                  nonRefundableAcknowledged
-                    ? 'border-travion-300 bg-travion-50/60'
-                    : paymentNote && !nonRefundableAcknowledged
-                      ? 'border-amber-300 bg-amber-50/50'
-                      : 'border-charcoal-200 bg-ivory-50/60 hover:border-charcoal-300'
-                }`}
-              >
-                <input
-                  id="non-refundable-ack"
-                  type="checkbox"
-                  checked={nonRefundableAcknowledged}
-                  onChange={(e) => {
-                    setNonRefundableAcknowledged(e.target.checked);
-                    if (e.target.checked) setPaymentNote(null);
-                  }}
-                  className="mt-0.5 w-[18px] h-[18px] shrink-0 accent-travion-600 cursor-pointer"
-                />
-                <span className="text-[11.5px] leading-relaxed text-charcoal-700 font-medium">
-                  I understand that the applicable fee paid is <span className="font-bold text-charcoal-900">non-refundable</span> if a guide has not yet been assigned and the trip plan has not yet become active.
-                </span>
-              </label>
-
-              <button
-                type="button"
-                onClick={handleExecutePayment}
-                disabled={isProcessingPayment || !nonRefundableAcknowledged}
-                title={nonRefundableAcknowledged ? undefined : "Please accept the non-refundable acknowledgement first"}
-                className="w-full py-3.5 rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-black text-sm shadow-md hover:shadow-soft transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isProcessingPayment ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}>
-                      <Compass className="w-4 h-4" />
-                    </motion.div>
-                    {checkoutData?.live_checkout ? "Opening Secure Checkout…" : "Verifying Signature…"}
-                  </span>
-                ) : `Confirm & Pay ₹${checkoutView!.payable.toLocaleString()} · Activate Trip`}
-              </button>
-
-              <p className="text-center text-[10px] text-charcoal-500 font-medium mt-3 flex items-center justify-center gap-1.5">
-                <Lock className="w-3 h-3 text-emerald-500" />
-                <span>
-                  {checkoutData?.live_checkout
-                    ? 'Secure Razorpay test mode — UPI, cards and netbanking supported'
-                    : 'Secure checkout — verified payment flow, no real charge is created'}
-                </span>
-              </p>
-
-              <AnimatePresence>
-                {paymentNote && (
-                  <motion.p
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="text-center text-[11px] text-amber-600 font-semibold mt-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2"
-                  >
-                    {paymentNote}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
 

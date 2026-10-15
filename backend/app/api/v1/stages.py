@@ -1,0 +1,423 @@
+"""10-stage workflow API (spec S1-S10): one persistent trip state.
+
+Every endpoint reads/writes the SAME trip record. The LLM proposes options;
+every price, fee, total and gate decision below is computed deterministically
+by stage_service / stage_transport — never by the model.
+
+Endpoints (all authenticated; ownership via _own_trip):
+    GET  /trips/{id}/stage                    full state (resume + stepper)
+    PUT  /trips/{id}/stage                    move pointer (forward validated)
+    POST /trips/{id}/transport/options        generate 5+5 round-trip options
+    POST /trips/{id}/transport/select         choose outbound + return
+    POST /trips/{id}/local-transport/plan     legs between selected places+stay
+    POST /trips/{id}/local-transport/select   choose option per leg
+    PUT  /trips/{id}/food-tier                Basic|Standard|Premium (food only)
+    GET  /trips/{id}/budget/gate              authoritative gate math
+    GET  /trips/{id}/weather                  honest forecast w/ labels
+    GET  /trips/{id}/review                   single-source review snapshot
+"""
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import requests
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.v1.trip_edit import _own_trip
+from app.core.config import settings
+from app.core.db import get_db
+from app.core.security import require_role
+from app.models.entities import Location, get_utc_now
+from app.services import stage_service as stages
+from app.services import stage_transport as stra
+from app.services.llm_router import route_task
+
+router = APIRouter(prefix="/trips", tags=["Trip Stages"])
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def _party_total(trip) -> int:
+    return stages._party(trip)["total"]
+
+
+def _llm_enrich(task: str, trip, extra: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Prompt-routed LLM enrichment with the SAVED trip context injected.
+
+    Returns a parsed dict when the model cooperates, else None — the caller
+    always falls back to deterministic data. User text is data, never
+    instructions (prompts are built server-side from saved state only).
+    """
+    profile = trip.profile
+    answers = dict(profile.questions_answers or {}) if profile else {}
+    context: Dict[str, Any] = {
+        "source_name": trip.source_name,
+        "destination_name": trip.destination_name,
+        "start_datetime": trip.start_datetime.isoformat() if trip.start_datetime else "",
+        "end_datetime": trip.end_datetime.isoformat() if trip.end_datetime else "",
+        "duration_days": stages._days_nights(trip)["days"],
+        "total_travellers": _party_total(trip),
+        "adults": stages._party(trip)["adults"],
+        "children": stages._party(trip)["children"],
+        "group_type": answers.get("travelling_type") or answers.get("party_type"),
+        "interests": answers.get("experience"),
+        "budget": float(trip.budget or 0.0),
+        "mode": trip.mode,
+        "food_tier": trip.food_tier,
+    }
+    if extra:
+        context.update(extra)
+    try:
+        out = route_task(task, context)
+    except Exception:
+        return None
+    if not out or out.get("status") != "OK":
+        return None
+    result = out.get("result")
+    return result if isinstance(result, dict) else None
+
+
+# ── stage state ───────────────────────────────────────────────────────────────
+@router.get("/{trip_id}/stage")
+def get_stage(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Full persistent state for resume + stepper + every stage screen."""
+    trip = _own_trip(trip_id, current, db)
+    return stages.build_stage_state(db, trip)
+
+
+@router.put("/{trip_id}/stage")
+def set_stage(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Move the resume pointer. Forward moves validate prerequisites AND the
+    budget gate (422 + violations, selections preserved); back moves always."""
+    trip = _own_trip(trip_id, current, db)
+    if "stage" not in body:
+        raise HTTPException(status_code=422, detail="Provide 'stage' (1-10).")
+    try:
+        return stages.advance_stage(db, trip, body["stage"], actor=str(current.get("email") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error_code": "STAGE_BLOCKED", "message": "This stage is not complete yet.",
+                    "violations": str(exc).split(" | ")},
+        )
+
+
+# ── stage 3: round-trip transport ─────────────────────────────────────────────
+@router.post("/{trip_id}/transport/options")
+def transport_options(
+    trip_id: str,
+    body: Optional[Dict[str, Any]] = None,
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Generate up to 5 outbound + 5 return options (verified first, honest
+    estimate bands otherwise) and PERSIST the pool on the trip."""
+    trip = _own_trip(trip_id, current, db)
+    party = stages._party(trip)
+    if party["total"] <= 0:
+        raise HTTPException(status_code=422, detail="Complete stage 2 (party size) before transport options.")
+    llm = _llm_enrich("transport", trip)
+    llm_opts = None
+    if isinstance(llm, dict):
+        llm_opts = {k: llm.get(k) for k in ("outbound", "return")}
+    pool = stra.build_round_trip_options(
+        trip.source_name, trip.destination_name,
+        trip.start_datetime, trip.end_datetime,
+        party["total"], llm_options=llm_opts,
+    )
+    trip.transport_options = pool
+    trip.updated_at = get_utc_now()
+    db.commit()
+    return pool
+
+
+@router.post("/{trip_id}/transport/select")
+def transport_select(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Persist the chosen outbound + return options (must come from the saved
+    pool — client prices are never trusted) and return the fresh budget gate."""
+    trip = _own_trip(trip_id, current, db)
+    pool = dict(trip.transport_options or {})
+    if not pool.get("outbound"):
+        raise HTTPException(status_code=409, detail="Generate transport options first.")
+    by_id = {o.get("id"): o for o in (pool.get("outbound") or []) + (pool.get("return") or [])}
+    out = by_id.get(body.get("outbound_id"))
+    ret = by_id.get(body.get("return_id"))
+    if not out or out.get("direction") != "outbound":
+        raise HTTPException(status_code=422, detail="Unknown outbound option id.")
+    if not ret or ret.get("direction") != "return":
+        raise HTTPException(status_code=422, detail="Unknown return option id.")
+    trip.selected_transport = {"outbound": out, "return": ret}
+    trip.updated_at = get_utc_now()
+    db.commit()
+    stages.bump_pointer(db, trip, 3)
+    db.refresh(trip)
+    gate = stages.evaluate_budget_gate(db, trip)
+    return {"selected": trip.selected_transport, "gate": gate, "next_stage": int(trip.current_stage or 4)}
+
+
+# ── stage 6: local transport ──────────────────────────────────────────────────
+@router.post("/{trip_id}/local-transport/plan")
+def local_transport_plan(
+    trip_id: str,
+    body: Optional[Dict[str, Any]] = None,
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Legs between the ACTUAL selected places + stay (sensible visit order),
+    with per-leg options. Re-planning replaces legs (e.g. after a stay
+    change) — selections of unchanged legs are preserved by option id."""
+    trip = _own_trip(trip_id, current, db)
+    rows = stages._active_selections(db, trip.id)
+    stops: List[Dict[str, Any]] = []
+    stay = next((r for r in rows if str(r.category or "").lower() in stages.STAY_CATEGORIES), None)
+    if stay and stay.latitude is not None and stay.longitude is not None:
+        stops.append({"name": stay.name, "lat": float(stay.latitude), "lng": float(stay.longitude), "stay": True})
+    for r in rows:
+        if r is stay or r.latitude is None or r.longitude is None:
+            continue
+        stops.append({"name": r.name, "lat": float(r.latitude), "lng": float(r.longitude)})
+    if len(stops) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Select a stay plus at least one mappable place before planning local transport.",
+        )
+    _llm = _llm_enrich("local_transport", trip, {
+        "selected_places": [{"name": s["name"]} for s in stops],
+    })  # reasons may be enriched later; geometry stays deterministic
+    legs = stra.build_local_legs(stops, stages._party(trip)["total"], trip.destination_name or "")
+    previous = {leg.get("origin") + ">" + leg.get("destination"): leg.get("selected_id")
+                for leg in (dict(trip.local_transport or {}).get("legs") or [])}
+    for leg in legs:
+        key = leg["origin"] + ">" + leg["destination"]
+        if previous.get(key) in {o["id"] for o in leg["options"]}:
+            leg["selected_id"] = previous[key]
+    trip.local_transport = {"legs": legs, "planned_at": datetime.now(timezone.utc).isoformat()}
+    trip.updated_at = get_utc_now()
+    db.commit()
+    stages.bump_pointer(db, trip, 6)
+    return {"legs": legs, "gate": stages.evaluate_budget_gate(db, trip)}
+
+
+@router.post("/{trip_id}/local-transport/select")
+def local_transport_select(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    data = dict(trip.local_transport or {})
+    legs = list(data.get("legs") or [])
+    try:
+        idx = int(body.get("leg_index"))
+        leg = legs[idx]
+    except (TypeError, ValueError, IndexError):
+        raise HTTPException(status_code=422, detail="Unknown leg_index.")
+    opt_ids = {o.get("id") for o in leg.get("options") or []}
+    if body.get("option_id") not in opt_ids:
+        raise HTTPException(status_code=422, detail="Unknown option_id for this leg.")
+    leg["selected_id"] = body["option_id"]
+    data["legs"] = legs
+    trip.local_transport = data
+    trip.updated_at = get_utc_now()
+    db.commit()
+    gate = stages.evaluate_budget_gate(db, trip)
+    return {"legs": legs, "gate": gate,
+            "all_selected": all(bool(l.get("selected_id")) for l in legs)}
+
+
+# ── stage 7: food tier + gate ─────────────────────────────────────────────────
+@router.put("/{trip_id}/food-tier")
+def set_food_tier(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Switch the food tier. Changes ONLY the dining allowance — transport,
+    stay, mode and selections are untouched."""
+    trip = _own_trip(trip_id, current, db)
+    tier = str(body.get("tier") or "").upper()
+    if tier not in stages.FOOD_TIERS:
+        raise HTTPException(status_code=422, detail="Tier must be BASIC, STANDARD or PREMIUM.")
+    trip.food_tier = tier
+    trip.updated_at = get_utc_now()
+    db.commit()
+    stages.bump_pointer(db, trip, 7)
+    gate = stages.evaluate_budget_gate(db, trip)
+    return {"food_tier": tier, "food_allowance": gate["food_allowance"], "gate": gate}
+
+
+@router.get("/{trip_id}/budget/gate")
+def budget_gate(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    trip = _own_trip(trip_id, current, db)
+    return stages.evaluate_budget_gate(db, trip)
+
+
+# ── stage 8 helper: honest weather ────────────────────────────────────────────
+@router.get("/{trip_id}/weather")
+def trip_weather(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Daily weather for the destination across the trip dates.
+
+    Within the ~5-day forecast horizon: live OpenWeather data labelled with
+    its source. Beyond it: clearly labelled TYPICAL seasonal conditions, never
+    presented as confirmed forecast. Without a key/coords: honest unavailable.
+    """
+    trip = _own_trip(trip_id, current, db)
+    loc = db.query(Location).filter(Location.id == trip.destination_location_id).first()
+    lat = float(loc.lat) if loc and loc.lat is not None else None
+    lng = float(loc.lng) if loc and loc.lng is not None else None
+    try:
+        days = max(1, (trip.end_datetime.date() - trip.start_datetime.date()).days + 1)
+    except Exception:
+        days = 1
+    start = trip.start_datetime.date() if trip.start_datetime else None
+
+    forecast: List[Dict[str, Any]] = []
+    live_days = 0
+    if lat is not None and lng is not None and settings.OPENWEATHER_API_KEY and start:
+        try:
+            resp = requests.get(
+                "https://api.openweathermap.org/data/2.5/forecast",
+                params={"lat": lat, "lon": lng, "appid": settings.OPENWEATHER_API_KEY,
+                        "units": "metric", "cnt": 40},
+                timeout=8,
+            )
+            if resp.status_code == 200:
+                by_day: Dict[str, Dict[str, Any]] = {}
+                for item in resp.json().get("list", []):
+                    day = str(item.get("dt_txt") or "")[:10]
+                    if not day or day in by_day:
+                        continue
+                    main = item.get("main", {})
+                    conds = item.get("weather", [{}])
+                    by_day[day] = {
+                        "temp_c": round(float(main.get("temp", 0)), 1),
+                        "condition": str((conds[0].get("description") if conds else "clear") or "clear"),
+                        "icon": str((conds[0].get("icon") if conds else "") or ""),
+                    }
+                from datetime import timedelta as _td
+                for i in range(days):
+                    d = (start + _td(days=i)).isoformat()
+                    if d in by_day:
+                        live_days += 1
+                        forecast.append({"date": d, "day": i + 1, "reliable": True,
+                                         "source": "openweathermap", **by_day[d]})
+                    else:
+                        forecast.append(_typical_day(trip.destination_name, d, i + 1))
+        except Exception:
+            forecast = []
+    if not forecast and start:
+        from datetime import timedelta as _td
+        forecast = [_typical_day(trip.destination_name, (start + _td(days=i)).isoformat(), i + 1)
+                    for i in range(days)]
+    reliable = live_days > 0
+    label = (
+        f"Live forecast for the first {live_days} day(s); remaining days show typical "
+        "seasonal conditions — not a confirmed forecast." if 0 < live_days < days
+        else "Live forecast for your trip dates." if live_days == days and days
+        else "Forecast unavailable — showing typical seasonal conditions, not a confirmed forecast."
+    )
+    payload = {
+        "destination": trip.destination_name,
+        "travel_dates": [f["date"] for f in forecast],
+        "forecast": forecast,
+        "label": label,
+        "disclaimer": "Weather beyond the ~5-day forecast horizon cannot be confirmed in advance.",
+    }
+    trip.weather = payload
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    return payload
+
+
+def _typical_day(destination: str, date_iso: str, day_no: int) -> Dict[str, Any]:
+    try:
+        month = int(date_iso[5:7])
+    except (ValueError, IndexError):
+        month = 6
+    dest = (destination or "").lower()
+    hill = any(k in dest for k in ("ooty", "munnar", "manali", "shimla", "coorg", "kodaikanal", "mussoorie"))
+    if hill:
+        cond = "cool and pleasant" if month in (10, 11, 12, 1, 2) else ("misty with showers" if month in (6, 7, 8, 9) else "mild and clear")
+        temp = 14.0 if month in (12, 1, 2) else (18.0 if month in (6, 7, 8, 9) else 20.0)
+    else:
+        cond = "warm and dry" if month in (10, 11, 12, 1, 2) else ("hot with possible showers" if month in (6, 7, 8, 9) else "hot and dry")
+        temp = 27.0 if month in (12, 1, 2) else 33.0
+    return {"date": date_iso, "day": day_no, "temp_c": temp, "condition": cond,
+            "icon": "", "reliable": False, "source": "seasonal_typical"}
+
+
+# ── stage 9: single-source review snapshot ────────────────────────────────────
+@router.get("/{trip_id}/review")
+def review_snapshot(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Everything the traveller is about to pay for, from the SAVED plan:
+    details, party, transport, places+stay, mode, local legs, food tier,
+    itinerary summary and the authoritative budget math. Payment MUST charge
+    the final_amount shown here."""
+    from app.models.entities import Itinerary as _Itin
+    trip = _own_trip(trip_id, current, db)
+    state = stages.build_stage_state(db, trip)
+    itin = (
+        db.query(_Itin)
+        .filter(_Itin.trip_id == trip.id, _Itin.is_active == True)  # noqa: E712
+        .first()
+    )
+    summary = None
+    if itin:
+        days = itin.days_data or []
+        summary = {
+            "itinerary_id": itin.id,
+            "version": itin.version,
+            "days": len(days),
+            "total_cost": float(itin.total_cost or 0.0),
+            "day_summaries": [
+                {"day": d.get("day") or i + 1, "date": d.get("date"),
+                 "stops": len(d.get("stops") or []),
+                 "title": d.get("title") or d.get("theme") or f"Day {i + 1}"}
+                for i, d in enumerate(days)
+            ],
+        }
+    return {
+        "trip": state["trip"],
+        "party": {"answers": state["preferences"]},
+        "transport": state["transport"],
+        "places": state["places"],
+        "mode": state["mode"],
+        "local_transport": state["local_transport"],
+        "food_tier": state["food_tier"],
+        "itinerary_summary": summary,
+        "pricing": state["budget"],
+        "payment_amount": state["budget"]["final_amount"],
+        "guide": state["guide"],
+        "payment": state["payment"],
+    }

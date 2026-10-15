@@ -724,6 +724,45 @@ def sync_trip_selections(
         [p.model_dump(exclude_none=True) for p in req.items],
         replace=req.replace,
     )
+    # ── LEDGER → PROFILE mirror (10-stage flow): the plan engines read their
+    # selections from profile.questions_answers, so every stage-4 sync replays
+    # the durable ledger into the planner handshake (names + structured items
+    # + the single stay). /plan therefore builds from the SAVED selections,
+    # never from stale interview data.
+    try:
+        replay = selections_for_plan(db, trip.id)
+        if trip.profile is not None:
+            prof = dict(trip.profile.questions_answers or {})
+            prof["selected_places"] = [str(p.get("name") or "") for p in replay["places"] if p.get("name")]
+            prof["selected_place_items"] = [
+                {**_selection_item(p),
+                 "price_per_night": p.get("price_per_night"),
+                 "category": p.get("category")}
+                for p in replay["places"] if p.get("name")
+            ]
+            prof["selected_food"] = [str(f.get("name") or "") for f in replay["food"] if f.get("name")]
+            prof["selected_food_items"] = [
+                {**_selection_item(f), "cuisine": f.get("cuisine"),
+                 "avg_cost_for_two": f.get("avg_cost_for_two")}
+                for f in replay["food"] if f.get("name")
+            ]
+            if replay["stay"]:
+                s = replay["stay"]
+                prof["selected_stay"] = {
+                    "id": s.get("id"), "name": s.get("name", ""),
+                    "latitude": s.get("latitude"), "longitude": s.get("longitude"),
+                    "distance_km": s.get("distance_km"),
+                    "price_per_night": s.get("price_per_night"),
+                    "rating": s.get("rating"),
+                    "budget_category": s.get("budget_category") or s.get("tier") or "unknown",
+                }
+                prof["stay_required"] = True
+            elif req.replace:
+                prof.pop("selected_stay", None)
+                prof["stay_required"] = False
+            trip.profile.questions_answers = prof
+    except Exception:
+        pass  # the ledger is authoritative; a mirror failure must not block sync
     db.commit()
     data = selections_payload(db, trip.id)
     return SelectionsResponse(
@@ -1302,36 +1341,66 @@ def set_experience_mode(
     current: dict = Depends(require_role("USER")),
     db: Session = Depends(get_db),
 ):
-    """Record the traveller's trip-EXPERIENCE choice (Guide vs Adventurous) on
-    the final pre-payment screen.
+    """Record the traveller's trip-EXPERIENCE choice (Guide vs Adventurous).
 
-    Order of operations on the client: Step 3 discovery → three plan cards →
-    drag & drop itinerary editor → THIS mode choice → payment. By this point
-    the user has already edited the plan, so the ACTIVE itinerary is the
-    FINAL user-edited version and must NEVER be regenerated — switching modes
-    only reprices it with the authoritative fee rules (12.5% guide fee in
-    GUIDE_MODE, none in ADVENTUROUS_MODE; 3% platform fee in both).
-
-    Guide fee is always computed server-side from the CURRENT plan — never
-    trusted from the client and never frozen from an earlier version.
+    10-stage flow: mode is chosen at STAGE 5, BEFORE any itinerary exists. In
+    that case the mode (and the guide-request lifecycle) is persisted and the
+    stage pointer advances — pricing happens later from the saved mode. When
+    an active itinerary already exists (post-plan mode switch), the previous
+    behaviour is kept: the FINAL user-edited version is NEVER regenerated,
+    only repriced with the authoritative fee rules.
     """
     trip = _own_trip(trip_id, current, db)
     itin = db.query(Itinerary).filter(
         Itinerary.trip_id == trip.id, Itinerary.is_active == True
     ).first()
-    if not itin:
-        raise HTTPException(status_code=400, detail="Choose a plan before selecting the trip experience.")
     if not trip.profile:
         raise HTTPException(status_code=400, detail="Trip profile missing.")
-
-    profile = dict(trip.profile.questions_answers or {})
-    _party = profile.get("party") or (trip.profile.party_type if trip.profile else None)
 
     # ── Mode persistence: the single source of truth for pricing ────────────
     previous_mode = trip.mode
     trip.mode = req.mode
 
+    if not itin:
+        # Pre-itinerary (stage 5): persist mode + guide lifecycle, no reprice.
+        from app.services import stage_service as _stages
+        if req.mode == "GUIDE_MODE":
+            trip.status = "REQUESTED"
+            if not db.query(GuideAssignment).filter(GuideAssignment.trip_id == trip.id).first():
+                db.add(GuideAssignment(trip_id=trip.id, status="REQUESTED"))
+        else:
+            if (trip.status or "") == "REQUESTED":
+                trip.status = "DRAFT"
+            dangling = db.query(GuideAssignment).filter(
+                GuideAssignment.trip_id == trip.id,
+                GuideAssignment.status == "REQUESTED",
+                GuideAssignment.guide_id.is_(None),
+            ).first()
+            if dangling:
+                db.delete(dangling)
+        gate = _stages.evaluate_budget_gate(db, trip)
+        db.commit()
+        _stages.bump_pointer(db, trip, 5)
+        db.refresh(trip)
+        return {
+            "mode": req.mode,
+            "total_cost": gate["final_amount"],
+            "base_budget": gate["spend"]["base_total"],
+            "travel_spend": gate["spend"]["base_total"],
+            "guide_fee": gate["fees"]["guide"],
+            "platform_fee": gate["fees"]["platform"],
+            "safety_reserve": gate["fees"]["safety_reserve"],
+            "insurance_fee": gate["fees"]["insurance"],
+            "final_planned_amount": gate["final_amount"],
+            "amount_payable": gate["final_amount"],
+            "currency": "INR",
+            "days": gate["days"],
+            "status": trip.status,
+        }
+
     # ── Authoritative reprice of the user's FINAL edited itinerary ─────────
+    _profile = dict(trip.profile.questions_answers or {}) if trip.profile else {}
+    _party = _profile.get("party") or (trip.profile.party_type if trip.profile else None)
     _assigned_guide = (
         trip.guide_assignment.guide
         if trip.guide_assignment and trip.guide_assignment.status in ("ACCEPTED", "CONFIRMED")

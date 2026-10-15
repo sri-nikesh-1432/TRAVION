@@ -216,7 +216,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     }
   };
 
-  // Step 3 interactive map (raw Leaflet — leaflet is the only map dependency).
+  // Stage-4 interactive map (raw Leaflet — leaflet is the only map dependency).
   const mapDiv = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -302,6 +302,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // Places/activities/swapping categories → the places set; food → the food
   // set; stays → the single selected stay. Selections flow to the planner.
   const toggleMapItem = useCallback((key: string, item: MapPlace) => {
+    // Healthcare + educational categories are VIEW-ONLY — never selectable.
+    if (key === 'healthcare' || key === 'education') return;
     const kind = MAP_LAYERS[key]?.kind ?? 'place';
     if (kind === 'food') {
       toggle(selectedFood, setSelectedFood, item.name);
@@ -511,7 +513,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           if (vpSeq.current !== seq) return;
           setViewportPlaces([]);
           // NEVER a silent failure: surface why the live layer is empty.
-          console.error('[Step 3] live viewport POIs failed:', err?.message || err);
+          console.error('[Explore] live viewport POIs failed:', err?.message || err);
           const msg = String(err?.message || '');
           if (msg.includes('429') || /rate limit/i.test(msg)) {
             setVpError('Live browsing paused for a moment (provider rate limit) — recommended places below are unaffected.');
@@ -608,8 +610,15 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // Best Tourist Spots — the famousness-ranked attractions, DISTINCT from the
   // preference-matched Must Visit list (spec §4: two different sections).
   const touristSpots = useMemo(() => insideFirst(catalog?.tourist_spots ?? []), [catalog]);
+  // Candidate display cap: at most 10 cards per category (prevents overload;
+  // the map still shows the full verified dataset).
+  const MAX_CANDIDATES_PER_CATEGORY = 10;
 
-  const visiblePlaces = showAll ? places : places.slice(0, 6);
+  const visiblePlaces = showAll ? places.slice(0, MAX_CANDIDATES_PER_CATEGORY) : places.slice(0, 6);
+  // Stage-4 rule: EXACTLY ONE stay is required before Continue. Selections are
+  // local state only — they are never cleared by budget/gate refreshes, so a
+  // top-up elsewhere can never lose the traveller's picks.
+  const [stayRequiredNote, setStayRequiredNote] = useState<string | null>(null);
 
   const hasNothing = catalog
     && places.length === 0
@@ -629,6 +638,12 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const selectedStayCost = selectedStay?.price_per_night ?? 0;
 
   const handleConfirm = () => {
+    // EXACTLY ONE stay is required — block with a message otherwise.
+    if (!selectedStay) {
+      setStayRequiredNote('Please pick exactly one stay for your trip before continuing — every night uses the same stay.');
+      return;
+    }
+    setStayRequiredNote(null);
     const allItems = (catalog?.must_visit ?? []).concat((catalog?.tourist_spots ?? []) as CatalogPlace[]);
     // Map places can come from broader (non-recommended) categories too; look
     // them up across the full map dataset first, then the catalog cards.
@@ -700,13 +715,14 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     // Activities are counted separately: they are THINGS TO DO (action cards),
     // not places — the experience-choice screen shows the honest split.
     const activityCount = (catalog?.activities ?? []).filter((a: CatalogActivity) => selected.has(a.name)).length;
-    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null, activityCount);
+    // A stay is always selected here (enforced above) — the whole trip uses it.
+    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, true, activityCount);
   };
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="text-center mb-6">
-        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 3 · Destination discovery</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 4 · Destination discovery</span>
         <h2 className="mt-2 text-2xl font-extrabold text-charcoal-900 tracking-tight">Explore {destinationName}</h2>
         <p className="mt-1.5 text-[13px] font-medium text-charcoal-500">
           The map is your planner: pan the real destination, tap any pin or card for details, and build your own plan.
@@ -919,7 +935,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           Loading places in view…
                         </>
                       ) : vpError ? (
-                        <span className="text-amber-600" title={vpError}>⚠ {vpError}</span>
+                        <span className="text-amber-600 inline-flex items-center gap-1" title={vpError}><ShieldAlert className="w-3 h-3" /> {vpError}</span>
                       ) : (
                         <>
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
@@ -1115,7 +1131,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                       onClick={() => setShowAll((s) => !s)}
                       className="mt-3 text-[12px] font-extrabold text-travion-700 hover:text-travion-800"
                     >
-                      {showAll ? 'Show fewer' : `Show all ${places.length} verified places`}
+                      {showAll ? 'Show fewer' : `Show all ${Math.min(places.length, MAX_CANDIDATES_PER_CATEGORY)} verified places`}
                     </button>
                   )}
                 </>
@@ -1134,7 +1150,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   <span className="text-[11px] font-bold text-emerald-600 normal-case">most popular attractions in {destinationName}</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {touristSpots.map((spot: CatalogPlace) => {
+                  {touristSpots.slice(0, MAX_CANDIDATES_PER_CATEGORY).map((spot: CatalogPlace) => {
                     const active = selected.has(spot.name);
                     const focused = highlight?.name === spot.name;
                     const displayName = spot.name;
@@ -1218,7 +1234,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   <span className="text-[11px] font-bold text-emerald-600 normal-case">real experiences at real places</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {activities.map((activity: CatalogActivity) => {
+                  {activities.slice(0, MAX_CANDIDATES_PER_CATEGORY).map((activity: CatalogActivity) => {
                     const active = selected.has(activity.name);
                     const focused = highlight?.name === activity.location_name;
                     const displayName = activity.location_name || activity.name;
@@ -1377,7 +1393,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   <Utensils className="w-4 h-4 text-travion-600" /> Where to eat
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {catalog.food.map((food: CatalogFood) => {
+                  {catalog.food.slice(0, MAX_CANDIDATES_PER_CATEGORY).map((food: CatalogFood) => {
                     const active = selectedFood.has(food.name);
                     const focused = highlight?.name === food.name;
                     const displayName = food.name;
@@ -1407,9 +1423,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           <div className="min-w-0">
                             <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug">{food.name}</p>
                             <p className="mt-0.5 text-[11px] font-medium text-charcoal-500 truncate">{food.cuisine}</p>
+                            {/* No prices at selection — food is priced in the
+                                budget stage (spec §9); cards show cuisine,
+                                rating and verified status only. */}
                             <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
-                              {food.avg_cost_for_two != null && <span>₹{food.avg_cost_for_two} for two</span>}
-                              {food.rating != null && <span>· ★ {Number(food.rating).toFixed(1)}</span>}
+                              {food.rating != null && <span>★ {Number(food.rating).toFixed(1)}</span>}
                               <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified</span>
                             </div>
                           </div>
@@ -1447,33 +1465,18 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               </div>
               )}
 
-              {/* Stays — single-select radio. The chosen stay is used EVERY night of the trip. */}
+              {/* Stays — single-select, EXACTLY ONE required. The chosen stay is
+                  used EVERY night of the trip. There is no "continue without a
+                  stay" path: Continue is blocked until one stay is picked. */}
               {catalog.stays.length > 0 && (
               <div className="mb-6">
                 <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
                   <BedDouble className="w-4 h-4 text-travion-600" /> Pick your stay
                   <span className="text-charcoal-300">·</span>
-                  <span className="text-[11px] font-bold text-charcoal-400 normal-case">use one stay for the whole trip</span>
+                  <span className="text-[11px] font-bold text-travion-700 normal-case">exactly one required</span>
                 </h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStay(null)}
-                    className={`text-left p-4 rounded-2xl border transition-all ${
-                      selectedStay === null
-                        ? 'bg-ivory-50 border-charcoal-400 ring-2 ring-charcoal-100'
-                        : 'bg-white border-charcoal-200 hover:border-charcoal-300'
-                    }`}
-                  >
-                    <p className="text-[13.5px] font-extrabold text-charcoal-900">Continue without a stay</p>
-                    <p className="mt-1 text-[11px] font-medium text-charcoal-500">Plans will be day-trip style — great for low budgets.</p>
-                    <span className={`mt-2 inline-flex w-4 h-4 rounded-full border items-center justify-center ${
-                      selectedStay === null ? 'bg-travion-600 border-travion-400' : 'border-charcoal-300'
-                    }`}>
-                      {selectedStay === null && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </span>
-                  </button>
-                  {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).map((stay: CatalogStay) => {
+                  {insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]).slice(0, MAX_CANDIDATES_PER_CATEGORY).map((stay: CatalogStay) => {
                     const active = selectedStay?.name === stay.name;
                     const focused = highlight?.name === stay.name;
                     const displayName = stay.name;
@@ -1530,7 +1533,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSelectedStay({
+                            onClick={() => { setStayRequiredNote(null); setSelectedStay({
                               id: stay.id ?? null,
                               name: stay.name,
                               latitude: stay.latitude ?? null,
@@ -1538,7 +1541,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                               distance_km: stay.distance_km ?? null,
                               budget_category: stay.budget_category ?? null,
                               price_per_night: stay.price_per_night ?? null,
-                            })}
+                            }); }}
                             className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
                               active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
                             }`}
@@ -1583,6 +1586,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
               {/* Sticky action bar (inside the scrollable panel on desktop) */}
               <div className="sticky bottom-4 z-10">
+                {stayRequiredNote && (
+                  <div className="mb-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-[12.5px] font-bold text-amber-700">
+                    {stayRequiredNote}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 rounded-3xl bg-white border border-charcoal-200 shadow-floating px-5 py-4">
                   <button type="button" onClick={onBack} className="text-[13px] font-bold text-charcoal-500 hover:text-charcoal-700">
                     Back
@@ -1620,6 +1628,9 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         {popupPlace && (() => {
           const p = popupPlace.item;
           const kind = MAP_LAYERS[popupPlace.key]?.kind ?? 'place';
+          // Healthcare + educational pins are VIEW-ONLY: reference information
+          // for the traveller, never part of the plan — no select button.
+          const viewOnly = popupPlace.key === 'healthcare' || popupPlace.key === 'education';
           const active = kind === 'food'
             ? selectedFood.has(p.name)
             : kind === 'stay'
@@ -1666,12 +1677,16 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 <div className="px-5 pb-5">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-charcoal-500">
                     {(p as MapPlace).rating != null && <span>★ {Number((p as MapPlace).rating).toFixed(1)}</span>}
-                    {(p as MapPlace).opening_hours && <span>🕘 {(p as MapPlace).opening_hours}</span>}
+                    {(p as MapPlace).opening_hours && <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" /> {(p as MapPlace).opening_hours}</span>}
                     {p.distance_km != null && <span>{p.distance_km} km from centre</span>}
                     <span className="text-travion-600">{placementLabel(p.placement, p.distance_km)}</span>
                     <span className="inline-flex items-center gap-0.5 text-emerald-600"><BadgeCheck className="w-3 h-3" /> Verified place data</span>
                   </div>
-                  {kind === 'stay' ? (
+                  {viewOnly ? (
+                    <p className="mt-4 w-full rounded-2xl bg-ivory-50 border border-charcoal-200 px-4 py-3 text-[12px] font-bold text-charcoal-500 text-center">
+                      Reference only — {MAP_LAYERS[popupPlace.key]?.label ?? 'this place'} is shown for information and can't be added to your plan.
+                    </p>
+                  ) : kind === 'stay' ? (
                     <button
                       type="button"
                       onClick={() => { add(); setPopupPlace(null); }}
