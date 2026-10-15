@@ -18,8 +18,11 @@ import logging
 import json
 from typing import Dict, Any, List, Optional, Tuple
 
-from google.generativeai import types as gemini_types
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 
 from app.core.config import settings
 
@@ -39,6 +42,11 @@ def _ensure_llm():
     global _llm_model
     if _llm_model is not None:
         return _llm_model
+
+    if genai is None:
+        logger.warning("google.generativeai not installed — LLM router will return honest-unavailable text")
+        _llm_model = None
+        return None
 
     key = (settings.GEMINI_API_KEY or "").strip()
     if not key:
