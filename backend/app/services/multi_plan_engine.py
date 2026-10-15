@@ -135,6 +135,33 @@ def _insert_missing_meal_stops(
         def _sm(s: Dict[str, Any]) -> int:
             return _to_minutes(str(s.get("time", ""))) or 0
 
+        # DEPARTURE-FIRST RULE (spec: the first step of any planned trip is the
+        # departure from the source — navigation, the live map and the
+        # itinerary UI all read stops[0] as where the journey begins): on Day 1
+        # a meal hold may never sit BEFORE the outbound departure. Meals at
+        # home are not part of the trip, so leading holds are pruned and the
+        # day is floored at the departure — holds then re-place only into
+        # genuine post-boarding gaps inside their windows.
+        day_floor = d1_floor if day_num <= 1 else DAY_FLOOR
+        pruned_leading = False
+        if day_num <= 1:
+            transport_starts = [
+                _sm(s) for s in parseable
+                if str(s.get("category", "")).lower() == "transport"
+            ]
+            if transport_starts:
+                departure = min(transport_starts)
+                leading_holds = {
+                    id(s) for s in parseable
+                    if (str(s.get("category", "")).lower() == "meal_hold"
+                        or str(s.get("id", "")).startswith("meal-"))
+                    and _sm(s) < departure
+                }
+                if leading_holds:
+                    parseable = [s for s in parseable if id(s) not in leading_holds]
+                    pruned_leading = True
+                day_floor = max(day_floor, departure)
+
         # Occupied intervals [start, end) — includes meal holds as we add them.
         intervals: List[Tuple[int, int]] = [
             (_sm(s), _sm(s) + int(s.get("duration_minutes", 60) or 60))
@@ -149,7 +176,6 @@ def _insert_missing_meal_stops(
                     food_in_window[label] = True
 
         new_holds: List[Dict[str, Any]] = []
-        day_floor = d1_floor if day_num <= 1 else DAY_FLOOR
         for label, lo, hi in MEAL_WINDOWS:
             # A window that ends before the day may start (e.g. breakfast when
             # the trip only begins at 13:09) is skipped — never schedule a
@@ -205,9 +231,10 @@ def _insert_missing_meal_stops(
             new_holds.append(hold)
             intervals.append((t, t + HOLD_MIN))
             inserted += 1
-        if new_holds:
-            parseable.extend(new_holds)
-            parseable.sort(key=lambda s: _sm(s))
+        if new_holds or pruned_leading:
+            if new_holds:
+                parseable.extend(new_holds)
+                parseable.sort(key=lambda s: _sm(s))
             d["stops"] = parseable + unparseable
     return inserted
 

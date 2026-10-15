@@ -389,6 +389,99 @@ def test_planned_trip_first_step_is_departure_from_source():
     assert first["category"] == "transport"
     assert "departure from hyderabad" in first["title"].lower()
 
+
+def test_meal_holds_never_lead_day1_before_the_outbound_departure():
+    """The departure-first rule must hold through the CHRONOLOGY + MEAL-HOLD
+    pipeline too (not just the raw generator).
+
+    Regression: meal-window placeholders (07:00 AM breakfast ... 07:00 PM
+    dinner) were inserted against the trip's calendar start (a morning value),
+    so for a late-evening departure like the Bangalore->Ooty 10:30 PM KSRTC
+    bus they sorted AHEAD of the bus — burying the actual Step 1 down five
+    items. Live Voice Navigation, the live-map journey state and the itinerary
+    UI all read stops[0] as where the trip starts, so a placeholder meal can
+    never lead Day 1. Later days must keep filling their meal windows.
+    """
+    from app.services.multi_plan_engine import enforce_chronology
+
+    days = [
+        {"day": 1, "stops": [
+            {"id": "meal-1-breakfast", "time": "07:00 AM", "title": "Breakfast — local cuisine",
+             "category": "meal_hold", "duration_minutes": 45, "lat": 12.9716, "lng": 77.5946},
+            {"id": "meal-1-dinner", "time": "07:00 PM", "title": "Dinner — local cuisine",
+             "category": "meal_hold", "duration_minutes": 45, "lat": 12.9716, "lng": 77.5946},
+            {"id": "dep", "time": "10:30 PM", "title": "Depart Bangalore: KSRTC Airavat Club Class AC Sleeper",
+             "category": "transport", "duration_minutes": 360, "lat": 12.9716, "lng": 77.5946},
+        ]},
+        {"day": 2, "stops": [
+            {"id": "attr", "time": "10:00 AM", "title": "Botanical Gardens",
+             "category": "attraction", "duration_minutes": 90, "lat": 11.4134, "lng": 76.6960},
+        ]},
+    ]
+
+    enforce_chronology(days, first_day_start="10:45 AM")
+
+    d1 = days[0]["stops"]
+    assert d1[0]["id"] == "dep", f"departure must lead Day 1, got {[(s.get('id'), s.get('time')) for s in d1]}"
+    assert d1[0]["category"] == "transport"
+    assert not any(s.get("category") == "meal_hold" for s in d1), (
+        f"no meal hold may precede the outbound departure: {[s.get('id') for s in d1]}"
+    )
+
+    # The rule only protects Day 1: later days still get their meal windows.
+    d2 = days[1]["stops"]
+    assert any(s.get("category") == "meal_hold" for s in d2), (
+        "meal windows must still fill on later travel days"
+    )
+
+
+def test_http_plan_departure_leads_day1_for_late_evening_transport():
+    """End-to-end through POST /trips/{id}/plan: the verified Bangalore->Ooty
+    overnight bus (departs 10:30 PM) must render as Day 1 Step 1 with zero
+    pre-departure meal holds — the exact case that failed in the live smoke
+    test (navigation dock + live map read stops[0])."""
+    email = f"depfirst_{datetime.now().timestamp()}@travion.in"
+    s = client.post("/api/v1/auth/signup", json={
+        "email": email, "password": "Password123!", "role": "USER",
+        "first_name": "Datta", "last_name": "Chinta", "phone": "+918309594383",
+    })
+    assert s.status_code == 200, s.text
+    headers = {"Authorization": f"Bearer {s.json()['access_token']}"}
+
+    locs = client.get("/api/v1/locations/all", headers=headers).json()
+    src = next(l for l in locs if l["name"] == "Bangalore")
+    dst = next(l for l in locs if l["name"] == "Ooty")
+    now = datetime.now(timezone.utc)
+    trip = client.post("/api/v1/trips/search", headers=headers, json={
+        "source_location_id": src["id"], "destination_location_id": dst["id"],
+        "start_datetime": (now + timedelta(days=12)).isoformat(),
+        "end_datetime": (now + timedelta(days=15)).isoformat(),
+    })
+    assert trip.status_code == 200, trip.text
+    trip = trip.json()
+
+    # Budget (Step 2) — the same flow a traveller walks through.
+    disc = client.post("/api/v1/trips/adaptive-discovery", headers=headers, json={
+        "budget": 20000, "group_type": "Solo", "adults": 1, "children": 0,
+        "experience_type": "Mixed",
+    })
+    assert disc.status_code == 200, disc.text
+
+    res = client.post(f"/api/v1/trips/{trip['id']}/plan", headers=headers, json={
+        "mode": "ADVENTUROUS_MODE", "consent_acknowledged": True,
+    })
+    assert res.status_code == 200, res.text
+    d1 = res.json()["days"][0]["stops"]
+
+    cats = [st.get("category") for st in d1]
+    assert cats[0] == "transport", (
+        f"Day 1 must open with the departure, got: {[(c, d1[i].get('title')) for i, c in enumerate(cats)]}"
+    )
+    ti = cats.index("transport")
+    leading_holds = [d1[i].get("title") for i, c in enumerate(cats[:ti]) if c == "meal_hold"]
+    assert not leading_holds, f"meal holds before departure: {leading_holds}"
+    assert "depart" in d1[0]["title"].lower()
+
 def test_admin_dual_revenue():
     # Elevate to Admin
     adm_email = f"admin_{datetime.now().timestamp()}@travion.in"
