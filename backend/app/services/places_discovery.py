@@ -986,7 +986,7 @@ def _discover_osm(
         radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
         loc = f"(around:{radius_m},{lat},{lng})"
     q = _overpass_query_at(loc)
-    data = _overpass_cached(q, timeout=12, attempts=1)
+    data = _overpass_cached(q, timeout=4, attempts=1)
     if not data:
         return buckets
     for el in (data.get("elements") or []):
@@ -1058,7 +1058,7 @@ def _map_classify(tags: Dict[str, str]) -> Optional[str]:
     return None
 
 
-def _overpass_cached(query: str, timeout: int, attempts: int = 2,
+def _overpass_cached(query: str, timeout: int = 4, attempts: int = 1,
                      user_agent: str = "Travion/1.0 (travel planning)") -> Optional[Dict[str, Any]]:
     """Cached raw Overpass execution — the free API is slow and rate-limited, so
     identical destination queries are answered from a TTL cache instead of
@@ -1072,7 +1072,7 @@ def _overpass_cached(query: str, timeout: int, attempts: int = 2,
     for attempt in range(attempts):
         for endpoint in OVERPASS_ENDPOINTS:
             try:
-                resp = requests.post(endpoint, data={"data": query}, timeout=timeout,
+                resp = requests.post(endpoint, data={"data": query}, timeout=min(timeout, 4),
                                      headers={"User-Agent": user_agent})
                 if resp.status_code == 200:
                     data = resp.json()
@@ -1081,7 +1081,6 @@ def _overpass_cached(query: str, timeout: int, attempts: int = 2,
                 continue
         if data:
             break
-        time.sleep(2)
     _cache_set(key, data if data else {})
     return data
 
@@ -1104,7 +1103,7 @@ def _discover_map_osm(
         radius_m = int(DESTINATION_RADIUS_KM.get(str(resolved.get("kind") or "").lower(), 12.0) * 1000)
         loc = f"(around:{radius_m},{lat},{lng})"
     q = _map_overpass_query(loc)
-    data = _overpass_cached(q, timeout=18,
+    data = _overpass_cached(q, timeout=4, attempts=1,
                             user_agent="Travion/1.0 (travel planning; map tier)")
     if not data:
         return buckets
@@ -1434,34 +1433,25 @@ def discover_map(
     # already at MAP_TARGET are skipped, so this tier can only ever add real,
     # in-footprint, provider-verified POIs to genuinely thin categories. Any
     # model/network failure degrades to {} and the OSM top-up below proceeds.
-    if geoapify_key and any(len(buckets[c]) < MAP_TARGET for c in MAP_CATEGORIES):
-        try:
-            intents = gemini_search_intents(destination, preferences)
-        except Exception:
-            intents = {}
-        # Without a model (or on any model failure) fall back to the deterministic
-        # real search hints — the GeoApify text search still authenticates results.
-        if not intents:
-            intents = {
-                c: _INTENT_FALLBACKS.get(c, [])[:2]
-                for c in MAP_CATEGORIES if len(buckets[c]) < MAP_TARGET
-            }
+    if geoapify_key and any(len(buckets[c]) == 0 for c in MAP_CATEGORIES):
+        intents = {
+            c: _INTENT_FALLBACKS.get(c, [])[:1]
+            for c in MAP_CATEGORIES if len(buckets[c]) == 0
+        }
         if intents:
             geo_filter = _geoapify_filter(bounds, resolved)
             for cat, queries in intents.items():
-                if geo_filter is None or cat not in buckets or len(buckets[cat]) >= MAP_TARGET:
+                if geo_filter is None or cat not in buckets or len(buckets[cat]) > 0:
                     continue
-                if len(buckets[cat]) >= MAP_TARGET:
-                    continue
-                slack = MAP_TARGET - len(buckets[cat])
+                slack = 15
                 hits: List[Dict[str, Any]] = []
                 used_names = {str(i.get("name", "")) for i in buckets[cat]}
-                for q in queries:
+                for q in queries[:1]:
                     if len(hits) >= slack:
                         break
                     try:
                         from app.services import geoapify as _geo_txt
-                        page = _geo_txt.text_search(q, geo_filter, limit=40) or []
+                        page = _geo_txt.text_search(q, geo_filter, limit=20) or []
                     except Exception:
                         continue
                     for feature in page:
@@ -1483,7 +1473,7 @@ def discover_map(
     # bus stops, schools) is real, never fabricated. The query+response are
     # TTL-cached, so repeat Step-3 loads for the destination are instant; the
     # keyed tiers above remain the fast primary path.
-    if any(len(buckets[c]) < MAP_TARGET for c in MAP_CATEGORIES):
+    if not any(buckets.values()):
         try:
             osm = _discover_map_osm(resolved, bounds=bounds)
             for k, v in osm.items():
@@ -2524,7 +2514,7 @@ def discover_destination(
     # already delivered real data (spec rule 19: optimize API calls so place
     # generation is fast). It remains the honest fallback for destinations the
     # fast tiers cannot cover.
-    if anchor and any(not buckets[k] for k in buckets):
+    if anchor and any(not buckets.get(k) for k in ("must_visit", "food", "stays")):
         try:
             osm = _discover_osm(destination, anchor, bounds=bounds)
         except Exception:
