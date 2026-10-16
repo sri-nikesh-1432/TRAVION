@@ -15,9 +15,6 @@ email-validator==2.3.0
 PyMySQL==1.1.1
 cryptography==44.0.0
 
-#   PostgreSQL (legacy source database — kept while the live data migration
-#   reads from it; see scripts/migrate_to_mysql.py)
-psycopg2-binary==2.9.9
 
 # Schema migrations (alembic upgrade head) — see alembic.ini + alembic/
 alembic==1.18.5
