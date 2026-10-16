@@ -764,6 +764,7 @@ def sync_trip_selections(
     except Exception:
         pass  # the ledger is authoritative; a mirror failure must not block sync
     db.commit()
+    _stages.bump_pointer(db, trip, 4)
     data = selections_payload(db, trip.id)
     return SelectionsResponse(
         destination=trip.destination_name,
@@ -1380,7 +1381,7 @@ def set_experience_mode(
                 db.delete(dangling)
         gate = _stages.evaluate_budget_gate(db, trip)
         db.commit()
-        _stages.bump_pointer(db, trip, 5)
+        _stages.bump_pointer(db, trip, 6)
         db.refresh(trip)
         return {
             "mode": req.mode,

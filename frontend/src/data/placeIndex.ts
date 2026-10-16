@@ -4667,7 +4667,12 @@ export function searchPlaces(query: string, limit = 12): IndexedPlace[] {
     if (cls < 0) continue;
     hits.push({ p, cls, nlen: nm.length });
   }
-  hits.sort((a, b) => a.cls - b.cls || a.nlen - b.nlen || ORDER[a.p.kind] - ORDER[b.p.kind] || (a.p.name < b.p.name ? -1 : 1));
+  hits.sort((a, b) => {
+    const aIndia = a.p.country === 'India' ? 0 : 1;
+    const bIndia = b.p.country === 'India' ? 0 : 1;
+    if (aIndia !== bIndia) return aIndia - bIndia;
+    return a.cls - b.cls || a.nlen - b.nlen || ORDER[a.p.kind] - ORDER[b.p.kind] || (a.p.name < b.p.name ? -1 : 1);
+  });
   return hits.slice(0, limit).map(h => h.p);
 }
 

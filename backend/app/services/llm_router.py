@@ -19,9 +19,11 @@ import json
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
-    import google.generativeai as genai
+    from google import genai as _genai_sdk
+    from google.genai import types as _genai_types
 except ImportError:
-    genai = None
+    _genai_sdk = None
+    _genai_types = None
 
 
 from app.core.config import settings
@@ -32,20 +34,20 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────
 # LLM client setup — one per-process, configured once
 # ──────────────────────────────────────────────────────────────────────
-_llm_model = None
+_llm_client = None
 _max_retries = 3
 _backoff_base = 1.0  # seconds
 
 
 def _ensure_llm():
-    """Initialise the configured LLM model once. Safe to call multiple times."""
-    global _llm_model
-    if _llm_model is not None:
-        return _llm_model
+    """Initialise the configured LLM client once. Safe to call multiple times."""
+    global _llm_client
+    if _llm_client is not None:
+        return _llm_client
 
-    if genai is None:
-        logger.warning("google.generativeai not installed — LLM router will return honest-unavailable text")
-        _llm_model = None
+    if _genai_sdk is None:
+        logger.warning("google-genai not installed — LLM router will return honest-unavailable text")
+        _llm_client = None
         return None
 
     key = (settings.GEMINI_API_KEY or "").strip()
@@ -53,21 +55,18 @@ def _ensure_llm():
         logger.warning(
             "GEMINI_API_KEY not set — LLM router will return honest-unavailable text"
         )
-        _llm_model = None
+        _llm_client = None
         return None
 
     try:
-        genai.configure(api_key=key)
-        # Pinned legacy model ids (1.5/2.0/2.5-flash) are retired server-side
-        # (API 404s); the -latest alias tracks the supported flash model.
-        _llm_model = genai.GenerativeModel("gemini-flash-latest")
-        logger.info("LLM router initialised with Gemini flash")
+        _llm_client = _genai_sdk.Client(api_key=key)
+        logger.info("LLM router initialised with google-genai Client (gemini-2.0-flash)")
     except Exception as e:
-        logger.error(f"Failed to initialise Gemini: {e}")
-        _llm_model = None
+        logger.error(f"Failed to initialise Gemini client: {e}")
+        _llm_client = None
         return None
 
-    return _llm_model
+    return _llm_client
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -535,18 +534,20 @@ def route_task(task: str, context: Dict[str, Any]) -> Dict[str, Any]:
                         "GEMINI_API_KEY for LLM-assisted planning."}
         raw = str(result["honest"])
     else:
+        # model is now a google.genai.Client instance
+        _MODEL_ID = "gemini-2.0-flash"
         for attempt in range(1, _max_retries + 1):
             try:
-                response = model.generate_content(prompt,
-                                                  )
+                response = model.models.generate_content(
+                    model=_MODEL_ID,
+                    contents=prompt,
+                )
                 raw = response.text
                 # Attempt lightweight JSON parse if the model returned JSON.
                 # Models habitually wrap JSON in ```json fences — strip those
                 # before parsing so structured outputs stay consumable.
                 try:
                     result = json.loads(raw)
-                    # Strip any price fields that look like they weren't labelled
-                    # (the prompt already labels them, but double-check)
                 except json.JSONDecodeError:
                     fenced = re.search(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", raw, re.S)
                     if fenced:
@@ -557,7 +558,7 @@ def route_task(task: str, context: Dict[str, Any]) -> Dict[str, Any]:
                     else:
                         # Not JSON — store as raw text; backend will parse what it needs
                         result = {"raw_text": raw}
-                model_name = getattr(model, 'model_name', 'gemini-1.5-flash')
+                model_name = _MODEL_ID
                 break  # success
             except Exception as e:
                 logger.warning(

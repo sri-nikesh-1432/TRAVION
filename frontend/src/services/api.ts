@@ -7,7 +7,7 @@ import {
   PlanChangeItem, PlaceSearchItem, OptimizeDayResponse, ConfirmPlanResponse,
   GeoTileUrl, GeoViewportPayload, StageState, TransportOption, LocalLeg,
   FoodTier, BudgetGate, WeatherPayload, ReviewSnapshot, BudgetSnapshot,
-  DiscoveryRanking,
+  DiscoveryRanking, StayOption,
 } from '../types';
 
 const API_BASE_URL = (() => {
@@ -553,6 +553,27 @@ export const api = {
   selectTransport: (tripId: string, outboundId: string, returnId: string) =>
     request<{ selected: { outbound: TransportOption | null; return: TransportOption | null }; gate: BudgetGate; next_stage: number }>(
       `/trips/${tripId}/transport/select`, { method: 'POST', body: JSON.stringify({ outbound_id: outboundId, return_id: returnId }) }),
+
+  getStays: (tripId: string) =>
+    request<{
+      destination: string;
+      travellers: number;
+      nights: number;
+      rooms_needed: number;
+      stays: StayOption[];
+      selected_stay: Record<string, any> | null;
+    }>(`/trips/${tripId}/stays/options`),
+
+  selectStay: (tripId: string, stay: Record<string, any>) =>
+    request<{
+      status: string;
+      stay: Record<string, any>;
+      gate: BudgetGate;
+      next_stage: number;
+    }>(`/trips/${tripId}/stays/select`, {
+      method: 'POST',
+      body: JSON.stringify(stay),
+    }),
 
   planLocalTransport: (tripId: string) =>
     request<{ legs: LocalLeg[] }>(`/trips/${tripId}/local-transport/plan`, { method: 'POST', body: JSON.stringify({}) }),

@@ -32,23 +32,26 @@ import { ModeSelectionScreen, TripMode } from '../components/mode-selection/Mode
 import { TransportSelection } from '../components/transport/TransportSelection';
 import { LocalTransportPlanner } from '../components/local-transport/LocalTransportPlanner';
 import { BudgetFoodPlan } from '../components/budget/BudgetFoodPlan';
+import { StaySelection } from '../components/stay/StaySelection';
 import { PaymentStep } from '../components/payment/PaymentStep';
 import { resolveBudgetMax } from '../utils/budget';
 
-/* ─── Booking flow stepper: the visible 10-stage journey ────────────
-   Stages 1–4 choose WHAT the trip contains (trip, travellers, transport,
-   explore); stage 5 is the dedicated Guide-vs-Adventurous EXPERIENCE decision
-   (always BEFORE local/budget/itinerary so everything prices the chosen
-   mode); stages 6–7 lock local transport + budget/food; stage 8 generates the
-   itinerary directly from saved state (no plan cards); stages 9–10 are Final
-   Review and Payment.
-   ORDER: Trip → Travellers → Transport → Explore → Mode → Local → Budget →
+/* ─── Booking flow stepper: the visible 11-stage journey ────────────
+   Stages 1–3 choose basic constraints (trip, travellers, transport);
+   stage 4 is Explore (places & attractions in destination);
+   stage 5 is Stay (dedicated hotel / accommodation booking);
+   stage 6 is the dedicated Guide-vs-Adventurous EXPERIENCE decision;
+   stages 7–8 lock local transport + budget/food;
+   stage 9 generates the itinerary directly from saved state;
+   stages 10–11 are Final Review and Payment.
+   ORDER: Trip → Travellers → Transport → Explore → Stay → Mode → Local → Budget →
    Itinerary → Review → Payment. */
 const BOOKING_STEPS = [
   { key: 'search', label: 'Trip' },
   { key: 'discovery', label: 'Travellers' },
   { key: 'transport', label: 'Transport' },
   { key: 'discovery_select', label: 'Explore' },
+  { key: 'stay_select', label: 'Stay' },
   { key: 'mode_select', label: 'Mode' },
   { key: 'local_transport', label: 'Local' },
   { key: 'budget_food', label: 'Budget' },
@@ -106,31 +109,38 @@ declare global {
 }
 
 type PlannerView =
-  | 'search' | 'discovery' | 'transport' | 'discovery_select' | 'mode_select'
+  | 'search' | 'discovery' | 'transport' | 'discovery_select' | 'stay_select' | 'mode_select'
   | 'local_transport' | 'budget_food' | 'planner' | 'review' | 'pay'
   | 'workspace' | 'my_trips';
 
-/** Stage index (1–10) → PlannerView. stage_key is honored when present via
+/** Stage index (1–11) → PlannerView. stage_key is honored when present via
  *  STAGE_KEY_TO_VIEW; the numeric index is the fallback. */
 const STAGE_INDEX_TO_VIEW: Record<number, PlannerView> = {
   1: 'search',
   2: 'discovery',
   3: 'transport',
   4: 'discovery_select',
-  5: 'mode_select',
-  6: 'local_transport',
-  7: 'budget_food',
-  8: 'planner',
-  9: 'review',
-  10: 'pay',
+  5: 'stay_select',
+  6: 'mode_select',
+  7: 'local_transport',
+  8: 'budget_food',
+  9: 'planner',
+  10: 'review',
+  11: 'pay',
 };
 
 const STAGE_KEY_TO_VIEW: Record<string, PlannerView> = {
   trip: 'search',
+  details: 'search',
   travellers: 'discovery',
+  preferences: 'discovery',
   transport: 'transport',
   explore: 'discovery_select',
+  places: 'discovery_select',
   discovery_select: 'discovery_select',
+  stay: 'stay_select',
+  stays: 'stay_select',
+  stay_select: 'stay_select',
   mode: 'mode_select',
   mode_select: 'mode_select',
   local: 'local_transport',
@@ -564,9 +574,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // Stage 4 (Explore) selections made → the traveller makes the MAJOR
-  // Guide-vs-Adventurous decision (Stage 5) BEFORE any itinerary is
-  // generated, so the plan prices the chosen mode exactly as charged.
+  // Stage 4 (Explore) selections made → the traveller chooses Accommodation
+  // (Stage 5) with verified stays & Booking.com live inventory.
   // Selections are already persisted server-side by DiscoverySelect.
   const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
     if (!activeTrip) return;
@@ -581,10 +590,26 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     } catch (e) {
       if (e !== STAGE_NOT_LIVE) throw e;
     }
+    setCurrentView('stay_select');
+  };
+
+  // STAGE 5 → STAGE 6: Stay selected → choose experience mode (Guide vs Adventurous).
+  const handleStayComplete = async (stage?: StageState | null) => {
+    if (!activeTrip) return;
+    if (stage && Object.keys(stage).length > 0) setStageState(stage);
+    try {
+      const blocked = await advanceStage(activeTrip.id, 6);
+      if (blocked) {
+        setPlanError({ message: blocked.join(' ') });
+        return;
+      }
+    } catch (e) {
+      if (e !== STAGE_NOT_LIVE) throw e;
+    }
     setCurrentView('mode_select');
   };
 
-  // STAGE 5 → STAGE 6: the traveller picks HOW to experience the trip. The
+  // STAGE 6 → STAGE 7: the traveller picks HOW to experience the trip. The
   // mode is persisted on the trip (setExperienceMode reprices server-side);
   // the forward PUT then unlocks Local transport.
   const handleModeSelect = async (mode: TripMode) => {
@@ -597,7 +622,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       } catch { /* staged flow persists mode via PUT below; keep going */ }
       setActiveTrip((prev) => (prev ? { ...prev, mode } : prev));
       try {
-        const blocked = await advanceStage(activeTrip.id, 6);
+        const blocked = await advanceStage(activeTrip.id, 7);
         if (blocked) {
           setPlanError({ message: blocked.join(' ') });
           setIsGeneratingPlan(false);
@@ -614,7 +639,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // STAGE 8: generate the itinerary DIRECTLY from saved state (no plan
+  // STAGE 9: generate the itinerary DIRECTLY from saved state (no plan
   // cards) via the existing planTrip endpoint, then open the editor.
   const handleBuildItinerary = async (stage: StageState | null) => {
     const trip = activeTrip;
@@ -627,6 +652,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       const itn = await api.planTrip(trip.id, mode as 'GUIDE_MODE' | 'ADVENTUROUS_MODE', true);
       setItinerary(itn);
       setActiveTrip((prev) => (prev ? { ...prev, total_cost: itn.total_cost, status: 'PLANNED' } : prev));
+      try {
+        await advanceStage(trip.id, 9);
+      } catch { /* best effort */ }
       setIsGeneratingPlan(false);
       setCurrentView('planner');
     } catch (err) {
@@ -635,13 +663,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   };
 
-  // Stage 8 → Stage 9: open Final Review. Loads the single-source review
+  // Stage 9 → Stage 10: open Final Review. Loads the single-source review
   // snapshot when available (labels + payment amount); the editor state is
   // untouched either way.
   const handlePlannerProceedToReview = async () => {
     if (!activeTrip) return;
     try {
-      const blocked = await advanceStage(activeTrip.id, 9);
+      const blocked = await advanceStage(activeTrip.id, 10);
       if (blocked) {
         setPlanError({ message: blocked.join(' ') });
         return;
@@ -665,12 +693,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     setCurrentView('review');
   };
 
-  // Stage 9 → Stage 10: open the Payment step (forward PUT validates the
+  // Stage 10 → Stage 11: open the Payment step (forward PUT validates the
   // gate; 422 violations keep the traveller on Review).
   const handleReviewConfirm = async () => {
     if (!activeTrip) return;
     try {
-      const blocked = await advanceStage(activeTrip.id, 10);
+      const blocked = await advanceStage(activeTrip.id, 11);
       if (blocked) {
         setPlanError({ message: blocked.join(' ') });
         return;
@@ -1088,7 +1116,27 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* VIEW 2a-2: STAGE 5 — CHOOSE YOUR TRAVEL MODE. The dedicated
+        {/* STAGE 5 — Stay: dedicated accommodation selection */}
+        {currentView === 'stay_select' && activeTrip && (
+          <>
+            <FlowStepper current="stay_select" />
+            <StaySelection
+              tripId={activeTrip.id}
+              initialStay={stageState?.places?.stay}
+              partySize={Number(answersSoFar?.party?.total) || null}
+              nightsCount={(() => {
+                const s = new Date(activeTrip.start_datetime).getTime();
+                const e = new Date(activeTrip.end_datetime).getTime();
+                if (Number.isNaN(s) || Number.isNaN(e) || e < s) return null;
+                return Math.max(1, Math.round((e - s) / 86_400_000));
+              })()}
+              onComplete={(stage) => void handleStayComplete(stage)}
+              onBack={() => setCurrentView('discovery_select')}
+            />
+          </>
+        )}
+
+        {/* VIEW 2a-2: STAGE 6 — CHOOSE YOUR TRAVEL MODE. The dedicated
             major-decision screen (Guide = human + AI, 12.5% guide fee;
             Adventurous = independent + AI, no guide fee), shown BEFORE local
             transport, budget and itinerary so everything prices the chosen
@@ -1104,14 +1152,14 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             hasStay={!!(pendingSelection?.stayRequired && pendingSelection?.stay)}
             totalCost={activeTrip.budget}
             guide={stageState?.trip_id === activeTrip.id ? stageState.guide : null}
-            onBack={() => setCurrentView('discovery_select')}
+            onBack={() => setCurrentView('stay_select')}
             onSelect={(mode) => void handleModeSelect(mode)}
             busy={isGeneratingPlan}
             />
           </>
         )}
 
-        {/* STAGE 6 — Local transport: one option per generated leg. */}
+        {/* STAGE 7 — Local transport: one option per generated leg. */}
         {currentView === 'local_transport' && activeTrip && (
           <>
             <FlowStepper current="local_transport" />
@@ -1127,8 +1175,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* STAGE 7 — Budget + food: full gate breakdown, tier switching,
-            top-up recovery. Continue builds the itinerary (stage 8). */}
+        {/* STAGE 8 — Budget + food: full gate breakdown, tier switching,
+            top-up recovery. Continue builds the itinerary (stage 9). */}
         {currentView === 'budget_food' && activeTrip && (
           <>
             <FlowStepper current="budget_food" />
@@ -1148,7 +1196,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* STAGE 8: Interactive Trip Planner — finalize the itinerary (the
+        {/* STAGE 9: Interactive Trip Planner — finalize the itinerary (the
             traveller's source of truth), generated directly from saved state
             via planTrip (no plan cards). */}
         {currentView === 'planner' && itinerary && activeTrip && (
@@ -1180,7 +1228,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* STAGE 9 — FINAL REVIEW. Read/confirm state: shows the EXACT
+        {/* STAGE 10 — FINAL REVIEW. Read/confirm state: shows the EXACT
             stored itinerary (the user's final edits) + the same centralized
             pricing object the Razorpay order uses. Every Edit jumps to its
             own stage WITHOUT destroying state. */}
@@ -1217,6 +1265,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 if (target === 'basics') setCurrentView('search');
                 else if (target === 'travellers') setCurrentView('discovery');
                 else if (target === 'places' || target === 'discovery_select') setCurrentView('discovery_select');
+                else if (target === 'stay' || (target as string) === 'stay_select') setCurrentView('stay_select');
                 else if (target === 'transport') setCurrentView('transport');
                 else if (target === 'mode_select') setCurrentView('mode_select');
                 else if (target === 'local_transport') setCurrentView('local_transport');
@@ -1229,7 +1278,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </>
         )}
 
-        {/* STAGE 10 — Payment: extracted checkout step (Razorpay order,
+        {/* STAGE 11 — Payment: extracted checkout step (Razorpay order,
             webhook verify, activation). On success → workspace. */}
         {currentView === 'pay' && activeTrip && (
           <>

@@ -18,6 +18,7 @@ Endpoints (all authenticated; ownership via _own_trip):
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import logging
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,9 +31,11 @@ from app.core.security import require_role
 from app.models.entities import Location, get_utc_now
 from app.services import stage_service as stages
 from app.services import stage_transport as stra
+from app.services import stay_service
 from app.services.llm_router import route_task
 
 router = APIRouter(prefix="/trips", tags=["Trip Stages"])
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -82,7 +85,7 @@ def set_stage(
     budget gate (422 + violations, selections preserved); back moves always."""
     trip = _own_trip(trip_id, current, db)
     if "stage" not in body:
-        raise HTTPException(status_code=422, detail="Provide 'stage' (1-10).")
+        raise HTTPException(status_code=422, detail="Provide 'stage' (1-11).")
     try:
         return stages.advance_stage(db, trip, body["stage"], actor=str(current.get("email") or ""))
     except ValueError as exc:
@@ -153,7 +156,83 @@ def transport_select(
     return {"selected": trip.selected_transport, "gate": gate, "next_stage": int(trip.current_stage or 4)}
 
 
-# ── stage 6: local transport ──────────────────────────────────────────────────
+# ── stage 5: stays / accommodation ────────────────────────────────────────────
+@router.get("/{trip_id}/stays/options")
+def get_stay_options(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Fetch live & verified hotel/stay options for the trip's destination.
+    Uses Booking.com RapidAPI, verified catalog, and structured budget tiers."""
+    trip = _own_trip(trip_id, current, db)
+    party = stages._party(trip)
+    dn = stages._days_nights(trip)
+    budget = float(trip.budget or 50000.0)
+    dest = (trip.destination_name or "").strip()
+
+    stays = stay_service.fetch_destination_stays(
+        destination=dest,
+        travellers=party["total"],
+        nights=dn["nights"],
+        budget=budget,
+    )
+    active_rows = stages._active_selections(db, trip.id)
+    selected_row = next((r for r in active_rows if str(r.category or "").lower() in stages.STAY_CATEGORIES), None)
+    selected_stay_dict = None
+    if selected_row:
+        selected_stay_dict = {
+            "id": selected_row.id,
+            "name": selected_row.name,
+            "price_per_night": float(selected_row.price or 0.0),
+            "tier": (selected_row.item_json or {}).get("tier") or "4 Star",
+            "rating": (selected_row.item_json or {}).get("rating") or 4.5,
+            "latitude": selected_row.latitude,
+            "longitude": selected_row.longitude,
+            "amenities": (selected_row.item_json or {}).get("amenities") or [],
+            "source": selected_row.source,
+        }
+
+    return {
+        "destination": dest,
+        "travellers": party["total"],
+        "nights": dn["nights"],
+        "rooms_needed": max(1, -(-party["total"] // 2)),
+        "stays": stays,
+        "selected_stay": selected_stay_dict,
+    }
+
+
+@router.post("/{trip_id}/stays/select")
+def select_trip_stay_endpoint(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Save selected stay into TripPlaceSelection. Bumps pointer to stage 6."""
+    trip = _own_trip(trip_id, current, db)
+    if not body.get("name") and not body.get("stay_id"):
+        raise HTTPException(status_code=422, detail="Provide stay name or selection payload.")
+    selection = stay_service.select_trip_stay(db, trip, body)
+    stages.bump_pointer(db, trip, 5)
+    db.refresh(trip)
+    gate = stages.evaluate_budget_gate(db, trip)
+    return {
+        "status": "OK",
+        "stay": {
+            "id": selection.id,
+            "name": selection.name,
+            "price_per_night": float(selection.price or 0.0),
+            "tier": (selection.item_json or {}).get("tier"),
+            "rating": (selection.item_json or {}).get("rating"),
+        },
+        "gate": gate,
+        "next_stage": int(trip.current_stage or 6),
+    }
+
+
+# ── stage 7: local transport ──────────────────────────────────────────────────
 @router.post("/{trip_id}/local-transport/plan")
 def local_transport_plan(
     trip_id: str,
@@ -181,7 +260,7 @@ def local_transport_plan(
         )
     _llm = _llm_enrich("local_transport", db, trip, {
         "selected_places": [{"name": s["name"]} for s in stops],
-    })  # reasons may be enriched later; geometry stays deterministic
+    })
     legs = stra.build_local_legs(stops, stages._party(trip)["total"], trip.destination_name or "")
     previous = {leg.get("origin") + ">" + leg.get("destination"): leg.get("selected_id")
                 for leg in (dict(trip.local_transport or {}).get("legs") or [])}
@@ -192,7 +271,7 @@ def local_transport_plan(
     trip.local_transport = {"legs": legs, "planned_at": datetime.now(timezone.utc).isoformat()}
     trip.updated_at = get_utc_now()
     db.commit()
-    stages.bump_pointer(db, trip, 6)
+    stages.bump_pointer(db, trip, 7)
     return {"legs": legs, "gate": stages.evaluate_budget_gate(db, trip)}
 
 
@@ -224,7 +303,7 @@ def local_transport_select(
             "all_selected": all(bool(l.get("selected_id")) for l in legs)}
 
 
-# ── stage 7: food tier + gate ─────────────────────────────────────────────────
+# ── stage 8: food tier + gate ─────────────────────────────────────────────────
 @router.put("/{trip_id}/food-tier")
 def set_food_tier(
     trip_id: str,
@@ -241,7 +320,7 @@ def set_food_tier(
     trip.food_tier = tier
     trip.updated_at = get_utc_now()
     db.commit()
-    stages.bump_pointer(db, trip, 7)
+    stages.bump_pointer(db, trip, 8)
     gate = stages.evaluate_budget_gate(db, trip)
     return {"food_tier": tier, "food_allowance": gate["food_allowance"], "gate": gate}
 
@@ -383,7 +462,59 @@ def trip_weather(
 
     forecast: List[Dict[str, Any]] = []
     live_days = 0
-    if lat is not None and lng is not None and settings.OPENWEATHER_API_KEY and start:
+
+    # ── Primary: WeatherStack (current weather by city name) ──────────────
+    ws_key = (settings.WEATHERSTACK_API_KEY or "").strip()
+    dest_name = (trip.destination_name or "").strip()
+    if ws_key and dest_name and start:
+        try:
+            ws_resp = requests.get(
+                "http://api.weatherstack.com/current",
+                params={"access_key": ws_key, "query": dest_name, "units": "m"},
+                timeout=8,
+            )
+            if ws_resp.status_code == 200:
+                ws_data = ws_resp.json()
+                curr = ws_data.get("current", {})
+                loc_info = ws_data.get("location", {})
+                if curr and not ws_data.get("error"):
+                    temp = float(curr.get("temperature", 0) or 0)
+                    desc = str((curr.get("weather_descriptions") or [""])[0] or "")
+                    # WeatherStack free tier only returns CURRENT weather.
+                    # Build forecast from today's data; remaining days use typical.
+                    from datetime import timedelta as _td
+                    today_iso = start.isoformat()
+                    forecast.append({
+                        "date": today_iso,
+                        "day": 1,
+                        "temp_c": round(temp, 1),
+                        "feels_like": float(curr.get("feelslike", temp) or temp),
+                        "humidity": int(curr.get("humidity", 0) or 0),
+                        "wind_kmph": float(curr.get("wind_speed", 0) or 0),
+                        "condition": desc or "Partly cloudy",
+                        "icon": str((curr.get("weather_icons") or [""])[0] or ""),
+                        "reliable": True,
+                        "source": "weatherstack_current",
+                        "observation_time": str(curr.get("observation_time", "") or ""),
+                        "uv_index": int(curr.get("uv_index", 0) or 0),
+                        "visibility": int(curr.get("visibility", 0) or 0),
+                        "local_time": str(loc_info.get("localtime", "") or ""),
+                    })
+                    live_days = 1
+                    # Fill remaining trip days with typical conditions
+                    for i in range(1, days):
+                        d = (start + _td(days=i)).isoformat()
+                        typical = _typical_day(trip.destination_name, d, i + 1)
+                        # Anchor temp near the real current reading with slight variation
+                        import math as _math
+                        typical["temp_c"] = round(temp + (_math.sin(i) * 1.5), 1)
+                        typical["source"] = "weatherstack_derived_typical"
+                        forecast.append(typical)
+        except Exception as ws_err:
+            logger.warning(f"WeatherStack call failed: {ws_err}")
+
+    # ── Fallback: OpenWeatherMap (5-day forecast) ────────────────────────
+    if not forecast and lat is not None and lng is not None and settings.OPENWEATHER_API_KEY and start:
         try:
             resp = requests.get(
                 "https://api.openweathermap.org/data/2.5/forecast",
@@ -415,6 +546,8 @@ def trip_weather(
                         forecast.append(_typical_day(trip.destination_name, d, i + 1))
         except Exception:
             forecast = []
+
+    # ── Final fallback: seasonal typical data ────────────────────────────
     if not forecast and start:
         from datetime import timedelta as _td
         forecast = [_typical_day(trip.destination_name, (start + _td(days=i)).isoformat(), i + 1)

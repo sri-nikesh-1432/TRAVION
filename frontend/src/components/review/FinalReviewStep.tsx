@@ -10,7 +10,7 @@ import { WeatherStrip } from '../weather/WeatherStrip';
 
 export type ReviewEditTarget =
   | 'basics' | 'travellers' | 'places' | 'plans' | 'itinerary'
-  | 'transport' | 'discovery_select' | 'mode_select' | 'local_transport' | 'budget_food';
+  | 'transport' | 'discovery_select' | 'stay' | 'mode_select' | 'local_transport' | 'budget_food';
 
 interface FinalReviewStepProps {
   trip: {
@@ -144,10 +144,22 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
       </section>
 
       {/* Places & stay */}
+      {/* Explore / Places */}
       <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-places">
         <div className="flex items-center justify-between mb-3">
-          <h3 id="review-places" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Places & stay</h3>
-          <EditBtn onEdit={onEdit} target="discovery_select" />
+          <h3 id="review-places" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Places & Attractions</h3>
+          <EditBtn onEdit={onEdit} target="discovery_select" label="Edit Places" />
+        </div>
+        <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
+          <MapPin className="w-4 h-4 text-travion-600" />Attractions & activities chosen in Explore.
+        </p>
+      </section>
+
+      {/* Accommodation / Stay */}
+      <section className="mt-5 bg-white rounded-3xl border border-charcoal-200/80 shadow-soft p-5 md:p-6" aria-labelledby="review-stay">
+        <div className="flex items-center justify-between mb-3">
+          <h3 id="review-stay" className="text-[11px] font-black uppercase tracking-wider text-charcoal-400">Accommodation</h3>
+          <EditBtn onEdit={onEdit} target="stay" label="Edit Stay" />
         </div>
         {stayLabel ? (
           <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-700">
@@ -155,7 +167,7 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
           </p>
         ) : (
           <p className="flex items-center gap-2 text-[13px] font-semibold text-charcoal-400">
-            <Plane className="w-4 h-4" />Places and your one stay, as selected in Explore.
+            <BedDouble className="w-4 h-4" />Accommodation chosen in the Stay step.
           </p>
         )}
       </section>

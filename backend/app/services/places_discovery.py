@@ -423,6 +423,9 @@ def _filter_by_destination(
         lat, lng = item.get("latitude"), item.get("longitude")
         if lat is None or lng is None:
             continue
+        # Strict destination boundary: never allow places outside 35 km of destination
+        if origin and _haversine_km(origin, (lat, lng)) > 35.0:
+            continue
         if has_bounds:
             if not (bounds["south"] - pad <= lat <= bounds["north"] + pad
                     and bounds["west"] - pad <= lng <= bounds["east"] + pad):
@@ -496,6 +499,7 @@ def _geocode_destination(
             "limit": 1,
             "accept-language": "en",
             "addressdetails": 0,
+            "countrycodes": "in",
         }
         if state:
             params["state"] = state

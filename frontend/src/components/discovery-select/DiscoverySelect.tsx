@@ -164,6 +164,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set());
   const [selectedStay, setSelectedStay] = useState<SelectedStay | null>(null);
+  const [saving, setSaving] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [mapFilter, setMapFilter] = useState('all');
   const [autoSelected, setAutoSelected] = useState(false);
@@ -338,7 +339,22 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       for (const it of catalog.food) push('food', it as unknown as MapPlace);
       for (const it of catalog.stays) push('stays', it as unknown as MapPlace);
     }
-    for (const vp of viewportPlaces) push(viewportBucket(vp), vpToMapPlace(vp));
+    const centerLat = Number(catalog?.must_visit?.[0]?.latitude ?? (mapData?.map_places as any)?.must_visit?.[0]?.latitude);
+    const centerLng = Number(catalog?.must_visit?.[0]?.longitude ?? (mapData?.map_places as any)?.must_visit?.[0]?.longitude);
+    const hasCenter = Boolean(centerLat && centerLng);
+
+    for (const vp of viewportPlaces) {
+      if (hasCenter && vp.lat && vp.lng) {
+        const dLat = (vp.lat - centerLat) * (Math.PI / 180);
+        const dLon = (vp.lng - centerLng) * (Math.PI / 180);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(centerLat * (Math.PI / 180)) * Math.cos(vp.lat * (Math.PI / 180)) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        if (distKm > 35) continue; // Strictly within destination boundary only
+      }
+      push(viewportBucket(vp), vpToMapPlace(vp));
+    }
     const all: Array<{ key: string; item: MapPlace }> = [];
     for (const [, item] of byName) {
       all.push({ key: item.category || 'other', item });
@@ -694,14 +710,21 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
   const selectedStayCost = selectedStay?.price_per_night ?? 0;
 
-  const handleConfirm = () => {
-    // EXACTLY ONE stay is required — block with a message otherwise.
-    if (!selectedStay) {
-      setStayRequiredNote('Please pick exactly one stay for your trip before continuing — every night uses the same stay.');
-      return;
+  const handleConfirm = async () => {
+    let currentSelected = new Set(selected);
+    const allItems = (catalog?.must_visit ?? []).concat((catalog?.tourist_spots ?? []) as CatalogPlace[]);
+
+    // If no place was manually checked, auto-select the top 3 verified places so traveller is never stuck
+    if (currentSelected.size === 0) {
+      const autoPicks = allItems.slice(0, 3).map((p) => p.name);
+      if (autoPicks.length > 0) {
+        currentSelected = new Set(autoPicks);
+        setSelected(currentSelected);
+      }
     }
     setStayRequiredNote(null);
-    const allItems = (catalog?.must_visit ?? []).concat((catalog?.tourist_spots ?? []) as CatalogPlace[]);
+    setSaving(true);
+
     // Map places can come from broader (non-recommended) categories too; look
     // them up across the full map dataset first, then the catalog cards.
     const allMap: Array<[string, MapPlace]> = [
@@ -740,40 +763,48 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       const hit = allItems.find((p) => p.name === name);
       return hit ? toPlaceItem(hit) : { name, source: 'selected' };
     };
-    const placeItems = Array.from(selected).map(itemBySelection);
+    const placeItems = Array.from(currentSelected).map(itemBySelection);
     const foodItems = Array.from(selectedFood).map((name) => {
       const hit = (catalog?.food ?? []).find((f) => f.name === name);
       return hit ? toFoodItem(hit) : { name, source: 'selected' };
     });
-    // Persist the final selection server-side (single source of truth) so the
-    // generated plans reproduce exactly what the traveller confirmed here.
-    api.syncTripSelections(tripId, [
-      ...placeItems.map((p) => ({
-        provider_place_id: p.id || `sel:${p.name}`,
-        name: p.name,
-        category: 'must_visit',
-        latitude: p.latitude ?? undefined,
-        longitude: p.longitude ?? undefined,
-        distance_km: p.distance_km ?? undefined,
-        rating: p.rating ?? undefined,
-        selection_source: 'user',
-      })),
-      ...foodItems.map((f) => ({
-        provider_place_id: f.id || `sel:${f.name}`,
-        name: f.name,
-        category: 'food',
-        latitude: f.latitude ?? undefined,
-        longitude: f.longitude ?? undefined,
-        distance_km: f.distance_km ?? undefined,
-        rating: f.rating ?? undefined,
-        selection_source: 'user',
-      })),
-    ], true).catch(() => { /* non-fatal — selections also ride the plan request */ });
+
+    try {
+      // Persist the final selection server-side (single source of truth) so the
+      // generated plans reproduce exactly what the traveller confirmed here.
+      await api.syncTripSelections(tripId, [
+        ...placeItems.map((p) => ({
+          provider_place_id: p.id || `sel:${p.name}`,
+          name: p.name,
+          category: 'must_visit',
+          latitude: p.latitude ?? undefined,
+          longitude: p.longitude ?? undefined,
+          distance_km: p.distance_km ?? undefined,
+          rating: p.rating ?? undefined,
+          selection_source: 'user',
+        })),
+        ...foodItems.map((f) => ({
+          provider_place_id: f.id || `sel:${f.name}`,
+          name: f.name,
+          category: 'food',
+          latitude: f.latitude ?? undefined,
+          longitude: f.longitude ?? undefined,
+          distance_km: f.distance_km ?? undefined,
+          rating: f.rating ?? undefined,
+          selection_source: 'user',
+        })),
+      ], true);
+    } catch (err) {
+      console.warn('syncTripSelections warning:', err);
+    } finally {
+      setSaving(false);
+    }
+
     // Activities are counted separately: they are THINGS TO DO (action cards),
     // not places — the experience-choice screen shows the honest split.
-    const activityCount = (catalog?.activities ?? []).filter((a: CatalogActivity) => selected.has(a.name)).length;
-    // A stay is always selected here (enforced above) — the whole trip uses it.
-    onConfirm(Array.from(selected), Array.from(selectedFood), placeItems, foodItems, selectedStay, true, activityCount);
+    const activityCount = (catalog?.activities ?? []).filter((a: CatalogActivity) => currentSelected.has(a.name)).length;
+    // A stay can be chosen here or in dedicated Step 5 Stay
+    onConfirm(Array.from(currentSelected), Array.from(selectedFood), placeItems, foodItems, selectedStay, selectedStay != null, activityCount);
   };
 
   return (
@@ -1530,103 +1561,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               </div>
               )}
 
-              {/* Stays — single-select, EXACTLY ONE required. The chosen stay is
-                  used EVERY night of the trip. There is no "continue without a
-                  stay" path: Continue is blocked until one stay is picked. */}
-              {catalog.stays.length > 0 && (
-              <div className="mb-6">
-                <h3 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-wider text-charcoal-500 mb-3">
-                  <BedDouble className="w-4 h-4 text-travion-600" /> Pick your stay
-                  <span className="text-charcoal-300">·</span>
-                  <span className="text-[11px] font-bold text-travion-700 normal-case">exactly one required</span>
-                </h3>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
-                  {orderByRank(insideFirst(catalog.stays as (CatalogStay & { placement?: string | null })[]), 'stays', (s: CatalogStay) => s.name).slice(0, MAX_CANDIDATES_PER_CATEGORY).map((stay: CatalogStay) => {
-                    const active = selectedStay?.name === stay.name;
-                    const focused = highlight?.name === stay.name;
-                    const displayName = stay.name;
-                    const onFly = () => {
-                      const hit = allMapPlaces.find(({ item }) => item.name === stay.name);
-                      if (hit) flyToPlace(hit.key, hit.item);
-                    };
-                    return (
-                      <div
-                        key={stay.id ?? stay.name}
-                        ref={setCardRef('stays', stay.name)}
-                        className={`p-4 rounded-2xl border transition-all ${
-                          active
-                            ? 'bg-travion-50 border-travion-400 ring-2 ring-travion-100'
-                            : focused
-                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100'
-                              : 'bg-white border-charcoal-200 hover:border-travion-200'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={onFly}
-                          className="w-full flex items-start justify-between gap-2 text-left"
-                          title={`Show ${stay.name} on the map`}
-                          aria-label={`Show ${stay.name} on the map`}
-                        >
-                          <div className="min-w-0">
-                            {stay.tier && <p className="text-[10px] font-black uppercase tracking-wide text-travion-700">{stay.tier}</p>}
-                            <p className="text-[13.5px] font-extrabold text-charcoal-900 leading-snug mt-0.5">{stay.name}</p>
-                            <AiPickNote cat="stays" name={stay.name} />
-                            <div className="mt-2 flex items-center gap-2 text-[10.5px] font-bold text-charcoal-400">
-                              {stay.price_per_night
-                                ? <span>₹{Number(stay.price_per_night).toLocaleString('en-IN')}/night</span>
-                                : <span>Price not available</span>}
-                              {stay.rating != null && <span>· ★ {Number(stay.rating).toFixed(1)}</span>}
-                              {stay.distance_km != null && <span className="text-travion-600">· {stay.distance_km} km</span>}
-                            </div>
-                            {stay.budget_category && (
-                              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-sand-100 px-2 py-0.5 text-[10px] font-bold text-charcoal-500">
-                                {stay.budget_category}
-                              </span>
-                            )}
-                          </div>
-                          <MapPin className={`w-4 h-4 shrink-0 ${focused ? 'text-amber-500' : 'text-charcoal-300'}`} />
-                        </button>
-                        <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={onFly}
-                            title={`Open ${displayName} on the map`}
-                            aria-label={`Open ${displayName} on the map`}
-                            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold text-travion-700 hover:text-travion-900 hover:underline"
-                          >
-                            <ArrowUpRight className="w-3.5 h-3.5" /> Open on map
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setStayRequiredNote(null); setSelectedStay({
-                              id: stay.id ?? null,
-                              name: stay.name,
-                              latitude: stay.latitude ?? null,
-                              longitude: stay.longitude ?? null,
-                              distance_km: stay.distance_km ?? null,
-                              budget_category: stay.budget_category ?? null,
-                              price_per_night: stay.price_per_night ?? null,
-                            }); }}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase tracking-wide transition-colors ${
-                              active ? 'bg-travion-600 text-white' : 'bg-travion-50 text-travion-700 hover:bg-travion-100'
-                            }`}
-                          >
-                            {active ? (
-                              <>
-                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path fill="currentColor" d="M4.6 8.4L2.3 6.1l.9-.9 1.4 1.4 3.2-3.2.9.9z" /></svg>
-                                My stay
-                              </>
-                            ) : 'Select stay'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              )}
-
               {/* Over-budget warning — selected entry fees exceed what the budget can hold */}
               {!budgetTier?.impossible && budgetPanel?.maximum_allowed_spend != null && selectedEntryFees > budgetPanel.maximum_allowed_spend && (
                 <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
@@ -1638,14 +1572,13 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
               )}
 
               {/* Live selection estimate — no hidden costs, updated as you pick */}
-              {(totalSelected > 0 || selectedStay) && (
+              {totalSelected > 0 && (
                 <div className="mb-3 rounded-2xl border border-charcoal-200 bg-ivory-50 px-4 py-2.5 flex items-center justify-between gap-3 text-[12px] font-bold text-charcoal-600">
                   <span className="text-charcoal-500">
-                    Estimated add-on spend so far
+                    Estimated entry fees so far
                   </span>
                   <span className="text-travion-700">
                     ₹{selectedEntryFees.toLocaleString('en-IN')} entry fees
-                    {selectedStayCost > 0 && <> · ₹{selectedStayCost.toLocaleString('en-IN')}/night stay</>}
                   </span>
                 </div>
               )}
@@ -1664,13 +1597,13 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                   {!hasNothing && (
                     <button
                       type="button"
-                      disabled={busy || !!budgetTier?.impossible}
+                      disabled={busy || saving || !!budgetTier?.impossible}
                       onClick={handleConfirm}
                       className="inline-flex items-center gap-2 h-12 px-7 rounded-2xl bg-travion-600 hover:bg-travion-700 disabled:bg-sand-200 disabled:text-charcoal-400 text-white text-sm font-extrabold transition-colors"
                     >
                       {budgetTier?.impossible ? 'Budget too low for plans'
-                        : busy ? 'Generating your plans…' : 'Continue to Trip Planning'}
-                      {!busy && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
+                        : (busy || saving) ? 'Saving selections…' : 'Continue to Choose Stay'}
+                      {!(busy || saving) && !budgetTier?.impossible && <ArrowRight className="w-4 h-4" />}
                     </button>
                   )}
                   {hasNothing && (

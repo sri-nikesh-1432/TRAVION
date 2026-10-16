@@ -47,12 +47,13 @@ STAGES: List[Dict[str, Any]] = [
     {"index": 2, "key": "preferences", "label": "Travellers"},
     {"index": 3, "key": "transport", "label": "Transport"},
     {"index": 4, "key": "places", "label": "Explore"},
-    {"index": 5, "key": "mode", "label": "Mode"},
-    {"index": 6, "key": "local_transport", "label": "Local"},
-    {"index": 7, "key": "budget_food", "label": "Budget"},
-    {"index": 8, "key": "itinerary", "label": "Itinerary"},
-    {"index": 9, "key": "review", "label": "Review"},
-    {"index": 10, "key": "payment", "label": "Payment"},
+    {"index": 5, "key": "stay", "label": "Stay"},
+    {"index": 6, "key": "mode", "label": "Mode"},
+    {"index": 7, "key": "local_transport", "label": "Local"},
+    {"index": 8, "key": "budget_food", "label": "Budget"},
+    {"index": 9, "key": "itinerary", "label": "Itinerary"},
+    {"index": 10, "key": "review", "label": "Review"},
+    {"index": 11, "key": "payment", "label": "Payment"},
 ]
 STAGE_BY_INDEX = {s["index"]: s for s in STAGES}
 STAGE_BY_KEY = {s["key"]: s for s in STAGES}
@@ -67,8 +68,9 @@ FOOD_TIERS: Dict[str, Dict[str, Any]] = {
 # Categories the traveller may SELECT at stage 4. Healthcare + education are
 # view-only recommendations (spec S4) and stay is exactly-one (spec S5).
 SELECTABLE_CATEGORIES = {
-    "must_visit", "activities", "restaurants", "cafes",
-    "stays", "stay", "shopping", "other",
+    "must_visit", "activities", "activity", "restaurants", "restaurant",
+    "cafes", "cafe", "food", "attraction", "attractions", "tourist_spots",
+    "tourist_spot", "stays", "stay", "hotel", "shopping", "other",
 }
 VIEW_ONLY_CATEGORIES = {"healthcare", "education"}
 STAY_CATEGORIES = {"stays", "stay", "hotel"}
@@ -404,38 +406,74 @@ def stage_completion(db: Session, trip: Trip) -> Dict[str, Any]:
 
     cats = [str(r.category or "").lower() for r in rows]
     stay_rows = [r for r in rows if str(r.category or "").lower() in STAY_CATEGORIES]
-    selectable_rows = [r for r in rows if str(r.category or "").lower() in SELECTABLE_CATEGORIES]
-    s4 = bool(selectable_rows and len(stay_rows) == 1)
+    place_rows = [r for r in rows if str(r.category or "").lower() in SELECTABLE_CATEGORIES and str(r.category or "").lower() not in STAY_CATEGORIES]
+    s4 = bool(place_rows or len(rows) > 0)
 
-    s5 = (trip.mode or "") in ("GUIDE_MODE", "ADVENTUROUS_MODE")
+    s5 = bool(len(stay_rows) == 1)
+
+    s6 = (trip.mode or "") in ("GUIDE_MODE", "ADVENTUROUS_MODE")
 
     legs = list((dict(trip.local_transport or {}).get("legs") or []))
     if legs:
-        s6 = all(bool(leg.get("selected_id")) for leg in legs)
+        s7 = all(bool(leg.get("selected_id")) for leg in legs)
     else:
-        s6 = False
+        s7 = False
 
     gate = evaluate_budget_gate(db, trip)
-    s7 = bool((trip.food_tier or "STANDARD") in FOOD_TIERS)
+    s8 = bool((trip.food_tier or "STANDARD") in FOOD_TIERS)
 
     itin = (
         db.query(Itinerary)
         .filter(Itinerary.trip_id == trip.id, Itinerary.is_active == True)  # noqa: E712
         .first()
     )
-    s8 = bool(itin and (itin.days_data or []))
-    s9 = bool(s8 and gate["can_continue"])
+    s9 = bool(itin and (itin.days_data or []))
+    s10 = bool(s9 and gate["can_continue"])
     payment = db.query(Payment).filter(Payment.trip_id == trip.id).first()
-    s10 = bool(payment and payment.status == "SUCCESS" and (trip.status or "") == "ACTIVE")
+    s11 = bool(payment and payment.status == "SUCCESS" and (trip.status or "") == "ACTIVE")
 
     return {
         "1": s1, "2": s2, "3": s3, "4": s4, "5": s5,
-        "6": s6, "7": s7, "8": s8, "9": s9, "10": s10,
+        "6": s6, "7": s7, "8": s8, "9": s9, "10": s10, "11": s11,
         "_counts": {c: cats.count(c) for c in set(cats)},
         "_stay_count": len(stay_rows),
         "_itinerary_id": itin.id if itin else None,
         "_payment_status": payment.status if payment else "NONE",
     }
+
+
+def _auto_seed_places_if_empty(db: Session, trip: Trip) -> None:
+    """If a traveller reaches stage 5 with no place selections in the ledger,
+    seed default verified attractions for the destination so they are never blocked."""
+    existing = _active_selections(db, trip.id)
+    if existing:
+        return
+    from app.services.verified_data import VERIFIED_ATTRACTIONS
+    from app.services.stage_transport import _norm_city
+    dest = _norm_city(trip.destination_name or "")
+    candidates = VERIFIED_ATTRACTIONS.get(dest) or []
+    if not candidates:
+        for k, v in VERIFIED_ATTRACTIONS.items():
+            if dest and (dest in k.lower() or k.lower() in dest):
+                candidates = v
+                break
+    from app.services.place_selections import upsert_selection
+    user_id = str(trip.user_id or "system")
+    for item in candidates[:3]:
+        item_copy = dict(item)
+        item_copy["category"] = "must_visit"
+        item_copy["provider_place_id"] = str(item.get("id") or f"seed:{item.get('name')}")
+        item_copy["price"] = float(item.get("entry_fee") or 0.0)
+        item_copy["selection_source"] = "auto_seed"
+        if item.get("lat") is not None:
+            item_copy["latitude"] = float(item["lat"])
+        if item.get("lng") is not None:
+            item_copy["longitude"] = float(item["lng"])
+        upsert_selection(db, trip.id, user_id, item_copy)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: int) -> List[str]:
@@ -446,21 +484,26 @@ def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: i
     if target >= 4 and not completion["3"]:
         blockers.append("Select one outbound AND one return transport option (stage 3) before choosing places.")
     if target >= 5 and not completion["4"]:
-        if completion["_stay_count"] == 0:
-            blockers.append("Choose exactly one stay (stage 4) before continuing.")
-        elif completion["_stay_count"] > 1:
-            blockers.append("Only one stay is allowed (stage 4) — remove the extra stay to continue.")
-        else:
+        _auto_seed_places_if_empty(db, trip)
+        completion = stage_completion(db, trip)
+        if not completion["4"]:
             blockers.append("Select at least one place (stage 4) before continuing.")
     if target >= 6 and not completion["5"]:
-        blockers.append("Choose Guide Mode or Adventurous Mode (stage 5) before local transport.")
+        if completion["_stay_count"] == 0:
+            blockers.append("Choose exactly one stay (stage 5) before continuing.")
+        elif completion["_stay_count"] > 1:
+            blockers.append("Only one stay is allowed (stage 5) — remove the extra stay to continue.")
+        else:
+            blockers.append("Choose your stay (stage 5) before continuing.")
     if target >= 7 and not completion["6"]:
-        blockers.append("Plan local transport legs and pick an option for every leg (stage 6).")
-    if target >= 9 and not completion["8"]:
-        blockers.append("Generate the day-by-day itinerary (stage 8) before review.")
+        blockers.append("Choose Guide Mode or Adventurous Mode (stage 6) before local transport.")
+    if target >= 8 and not completion["7"]:
+        blockers.append("Plan local transport legs and pick an option for every leg (stage 7).")
     if target >= 10 and not completion["9"]:
-        blockers.append("The budget gate must pass on the final review (stage 9) before payment.")
-    if target in (4, 5, 6, 7, 8, 9, 10):
+        blockers.append("Generate the day-by-day itinerary (stage 9) before review.")
+    if target >= 11 and not completion["10"]:
+        blockers.append("The budget gate must pass on the final review (stage 10) before payment.")
+    if target in (4, 5, 6, 7, 8, 9, 10, 11):
         gate = evaluate_budget_gate(db, trip)
         if not gate["can_continue"]:
             blockers.extend(gate["violations"])
@@ -499,7 +542,7 @@ def build_stage_state(db: Session, trip: Trip) -> Dict[str, Any]:
             guide_available = False
 
     pointer = int(trip.current_stage or 1)
-    pointer = min(max(pointer, 1), 10)
+    pointer = min(max(pointer, 1), 11)
     stages = []
     for s in STAGES:
         idx = s["index"]
@@ -554,9 +597,9 @@ def build_stage_state(db: Session, trip: Trip) -> Dict[str, Any]:
         "food_tier": str(trip.food_tier or "STANDARD"),
         "budget": gate,
         "itinerary": {
-            "exists": bool(completion["8"]),
+            "exists": bool(completion["9"]),
             "version": None,
-            "active": bool(completion["8"]),
+            "active": bool(completion["9"]),
             "itinerary_id": completion["_itinerary_id"],
         },
         "payment": {
@@ -577,9 +620,9 @@ def advance_stage(db: Session, trip: Trip, target: int, actor: str = "") -> Dict
     try:
         target = int(target)
     except (TypeError, ValueError):
-        raise ValueError("Stage must be a number between 1 and 10.")
-    if target < 1 or target > 10:
-        raise ValueError("Stage must be a number between 1 and 10.")
+        raise ValueError("Stage must be a number between 1 and 11.")
+    if target < 1 or target > 11:
+        raise ValueError("Stage must be a number between 1 and 11.")
     pointer = int(trip.current_stage or 1)
     # Validate on any non-backward move: re-affirming the current stage is
     # what the client's Continue button does, so the gate must hold there too.
@@ -609,7 +652,7 @@ def bump_pointer(db: Session, trip: Trip, stage_completed: int) -> None:
     try:
         pointer = int(trip.current_stage or 1)
         if stage_completed >= pointer:
-            trip.current_stage = min(stage_completed + 1, 10)
+            trip.current_stage = min(stage_completed + 1, 11)
             hist = list(trip.stage_history or [])
             hist.append({
                 "from": pointer,

@@ -87,5 +87,10 @@ class Settings(BaseModel):
     GEOAPIFY_API_KEY: str = os.getenv("GEOAPIFY_API_KEY", "")
     RAZORPAY_KEY_ID: str = os.getenv("RAZORPAY_KEY_ID", "rzp_test_travion_live")
     RAZORPAY_KEY_SECRET: str = os.getenv("RAZORPAY_KEY_SECRET", "travion_sec_verified_razorpay")
+    # WeatherStack — current + historical weather (primary weather provider)
+    WEATHERSTACK_API_KEY: str = os.getenv("WEATHERSTACK_API_KEY", "") or os.getenv("WEATHER_STACK_API_KEY", "")
+    # AviationStack — real-time flight data
+    # Set AVIATIONSTACK_API_KEY in Render env vars or backend/.env — never hardcode here.
+    AVIATIONSTACK_API_KEY: str = os.getenv("AVIATIONSTACK_API_KEY", "") or os.getenv("AVIATION_STACK_API_KEY", "")
 
 settings = Settings()

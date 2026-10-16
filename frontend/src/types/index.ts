@@ -658,6 +658,24 @@ export interface LocalLeg {
   selected_id?: string | null;
 }
 
+export interface StayOption {
+  id: string;
+  name: string;
+  tier: string;
+  rating: number;
+  price_per_night: number;
+  rooms_needed: number;
+  nights: number;
+  travellers: number;
+  total_price: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  amenities: string[];
+  hero_image: string;
+  source: string;
+  calculation_note: string;
+}
+
 export type FoodTier = 'BASIC' | 'STANDARD' | 'PREMIUM';
 
 export interface BudgetGateSpend {

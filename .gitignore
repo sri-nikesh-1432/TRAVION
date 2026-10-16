@@ -22,3 +22,7 @@ Thumbs.db
 
 # Landing-page QA screenshots (local only)
 frontend/qa-screenshots/
+
+# Certificates & scratch
+*.pem
+scratch/

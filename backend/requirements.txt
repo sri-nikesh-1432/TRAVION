@@ -31,6 +31,6 @@ httpx==0.28.1
 # Development / test dependencies
 pytest==9.1.1
 
-# AI Reasoning (Gemini)
-google-generativeai>=0.8.0
+# AI Reasoning (Gemini) — use google-genai (new SDK; google-generativeai is deprecated)
+google-genai>=1.5.0
 
