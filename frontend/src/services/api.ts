@@ -616,4 +616,49 @@ export const api = {
   // Contact / Support (public form — no account required)
   submitContactMessage: (data: { name: string; email: string; topic: string; priority: string; message: string }) =>
     request<{ id: string; name: string; email: string; topic: string; priority: string; message: string; status: string; created_at: string }>('/support/contact', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Google OAuth
+  googleAuth: (data: { credential?: string; code?: string; role?: string }) =>
+    request<AuthSession>('/auth/google', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Stay Reservation Email / Inquiry
+  reserveStay: (tripId: string, data: { stay_name: string; hotel_email?: string; travellers?: number; rooms_needed?: number; nights?: number }) =>
+    request<{ status: string; message: string; hotel_name: string; hotel_email: string; rooms: number; travellers: number }>(`/trips/${tripId}/stays/reserve`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Trip Cancellation & 8-Hour Refund Evaluation
+  checkTripCancellation: (tripId: string) =>
+    request<{
+      eligible: boolean;
+      trip_id: string;
+      trip_start_datetime: string;
+      now: string;
+      hours_remaining: number;
+      policy_threshold_hours: number;
+      refund_percentage: number;
+      refund_amount: number;
+      message: string;
+      trip_status: string;
+      payment_status: string;
+      payment_amount: number;
+    }>(`/trips/${tripId}/cancellation-check`),
+
+  cancelTrip: (tripId: string, reason?: string) =>
+    request<{
+      status: string;
+      cancellation_id: string;
+      refund_eligible: boolean;
+      refund_amount: number;
+      refund_status: string;
+      razorpay_refund_id: string | null;
+      message: string;
+    }>(`/trips/${tripId}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason || 'Customer requested cancellation' }) }),
+
+  getAdminCancellations: () =>
+    request<any[]>('/admin/cancellations'),
+
+  getManagerCancellations: () =>
+    request<any[]>('/managers/cancellations'),
+
+  retryAdminRefund: (cancellationId: string) =>
+    request<{ status: string; refund_id?: string; message?: string }>(`/admin/cancellations/${cancellationId}/retry-refund`, { method: 'POST' }),
 };

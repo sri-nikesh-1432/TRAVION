@@ -68,6 +68,14 @@ class ElevateRequest(BaseModel):
     password: str
     access_code: str  # SIH-MANAGER or SIH-ADMIN
 
+class GoogleAuthRequest(BaseModel):
+    credential: Optional[str] = None
+    code: Optional[str] = None
+    redirect_uri: Optional[str] = None
+
+class TripCancelRequest(BaseModel):
+    reason: Optional[str] = "Traveller Cancellation"
+
 # --- Profile Schemas ---
 def validate_phone(v: Optional[str]) -> Optional[str]:
     if v is None:

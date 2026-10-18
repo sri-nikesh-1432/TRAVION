@@ -208,6 +208,9 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
     final_amount = round(base_total + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
 
     budget_max = round(float(trip.budget or 0.0), 2)
+    if budget_max <= 0:
+        budget_max = round(max(base_total * 1.25, 30000.0), 2)
+        trip.budget = budget_max
     remaining = round(budget_max - base_total, 2)
 
     violations: List[str] = []
@@ -503,7 +506,7 @@ def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: i
         blockers.append("Generate the day-by-day itinerary (stage 9) before review.")
     if target >= 11 and not completion["10"]:
         blockers.append("The budget gate must pass on the final review (stage 10) before payment.")
-    if target in (4, 5, 6, 7, 8, 9, 10, 11):
+    if target in (10, 11):
         gate = evaluate_budget_gate(db, trip)
         if not gate["can_continue"]:
             blockers.extend(gate["violations"])

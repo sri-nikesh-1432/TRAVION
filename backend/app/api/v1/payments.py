@@ -1,14 +1,21 @@
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import logging
 from app.core.db import get_db
 from app.core.security import require_role
-from app.models.entities import Trip, Itinerary, Payment, PaymentSplit, OfflinePackage, GuideAssignment
-from app.schemas.schemas import CheckoutRequest, CheckoutResponse, PaymentWebhookRequest, TripPricingResponse
+from app.models.entities import (
+    Trip, Itinerary, Payment, PaymentSplit, OfflinePackage,
+    GuideAssignment, Cancellation, AuditLog, User, get_utc_now
+)
+from app.schemas.schemas import (
+    CheckoutRequest, CheckoutResponse, PaymentWebhookRequest,
+    TripPricingResponse, TripCancelRequest
+)
 from app.services.payment_service import PaymentService
 from app.services.offline_service import OfflinePackageService
 from app.services.pricing_service import calculate_trip_pricing
-from app.models.entities import get_utc_now
 
 router = APIRouter(prefix="", tags=["Payments"])
 logger = logging.getLogger(__name__)
@@ -318,3 +325,273 @@ def process_payment_webhook(
         "amount_delta_vs_authoritative": float(amount_note),
         "offline_package_ready": True
     }
+
+
+# ── Trip Cancellation & 8-Hour Refund Policy ─────────────────────────────────
+
+def _compute_cancellation_math(trip: Trip, payment: Optional[Payment]) -> dict:
+    """Evaluates the strict 8-hour cancellation/refund rule."""
+    now = datetime.now(timezone.utc)
+    trip_start = trip.start_datetime
+    if trip_start.tzinfo is not None:
+        trip_start_utc = trip_start.astimezone(timezone.utc)
+    else:
+        trip_start_utc = trip_start.replace(tzinfo=timezone.utc)
+
+    hours_remaining = (trip_start_utc - now).total_seconds() / 3600.0
+    is_eligible = hours_remaining >= 8.0
+    paid_amount = float(payment.total_amount or 0.0) if payment and payment.status == "SUCCESS" else 0.0
+    refund_amount = paid_amount if is_eligible else 0.0
+
+    if is_eligible:
+        policy_applied = (
+            f"Eligible for 100% refund — cancelled {hours_remaining:.1f} hrs before departure "
+            "(meets the >= 8 hours requirement)."
+        )
+    else:
+        policy_applied = (
+            f"Non-refundable under policy — cancelled {max(0.0, hours_remaining):.1f} hrs before departure "
+            "(less than the required 8 hours)."
+        )
+
+    return {
+        "trip_id": trip.id,
+        "trip_start_datetime": trip.start_datetime.isoformat() if trip.start_datetime else None,
+        "hours_before_departure": round(hours_remaining, 2),
+        "hours_remaining": round(hours_remaining, 2),
+        "cutoff_hours": 8.0,
+        "policy_threshold_hours": 8.0,
+        "is_eligible": is_eligible,
+        "eligible": is_eligible,
+        "paid_amount": paid_amount,
+        "refund_amount": refund_amount,
+        "refund_percentage": 100 if is_eligible else 0,
+        "policy_applied": policy_applied,
+        "message": policy_applied,
+    }
+
+
+@router.get("/trips/{trip_id}/cancellation-check")
+def check_cancellation_eligibility(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Inspect cancellation and refund eligibility before confirming cancellation."""
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    payment = db.query(Payment).filter(Payment.trip_id == trip.id).first()
+    existing_cancel = db.query(Cancellation).filter(Cancellation.trip_id == trip.id).first()
+
+    math_result = _compute_cancellation_math(trip, payment)
+    math_result["is_already_cancelled"] = trip.status == "CANCELLED" or existing_cancel is not None
+    if existing_cancel:
+        math_result["existing_cancellation"] = {
+            "id": existing_cancel.id,
+            "cancelled_at": existing_cancel.cancelled_at.isoformat() if existing_cancel.cancelled_at else None,
+            "refund_status": existing_cancel.refund_status,
+            "refund_amount": float(existing_cancel.refund_amount or 0.0),
+            "razorpay_refund_id": existing_cancel.razorpay_refund_id,
+            "policy_applied": existing_cancel.policy_applied,
+        }
+    return math_result
+
+
+@router.post("/trips/{trip_id}/cancel")
+def cancel_trip(
+    trip_id: str,
+    req: TripCancelRequest,
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancels a trip, records the 8-hour policy decision, and triggers a Razorpay refund
+    if the cancellation occurs at least 8 hours before the scheduled trip start time.
+    """
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if trip.status == "CANCELLED":
+        raise HTTPException(status_code=409, detail="This trip has already been cancelled.")
+
+    payment = db.query(Payment).filter(Payment.trip_id == trip.id).first()
+    math_result = _compute_cancellation_math(trip, payment)
+
+    razorpay_refund_id = None
+    refund_status = "NOT_APPLICABLE"
+
+    if payment and payment.status == "SUCCESS":
+        if math_result["is_eligible"]:
+            # Process refund via Razorpay API
+            refund_res = PaymentService.create_refund(
+                payment_id=payment.razorpay_payment_id or payment.razorpay_order_id,
+                amount=math_result["refund_amount"],
+                reason=req.reason or "Customer Cancellation under 8h policy",
+            )
+            if refund_res["status"] == "SUCCESS":
+                refund_status = "PROCESSED"
+                razorpay_refund_id = refund_res.get("refund_id")
+                payment.status = "REFUNDED"
+            else:
+                refund_status = "FAILED"
+                logger.error("Razorpay refund execution failed: %s", refund_res.get("error"))
+        else:
+            refund_status = "INELIGIBLE_UNDER_POLICY"
+            payment.status = "CANCELLED_NO_REFUND"
+
+    # Mark trip as CANCELLED
+    trip.status = "CANCELLED"
+    trip.updated_at = get_utc_now()
+
+    # Create persistent cancellation record in MySQL
+    cancellation = Cancellation(
+        trip_id=trip.id,
+        user_id=trip.user_id,
+        payment_id=payment.id if payment else None,
+        trip_start_datetime=trip.start_datetime,
+        cancelled_at=get_utc_now(),
+        hours_before_departure=math_result["hours_before_departure"],
+        eligible_for_refund=math_result["is_eligible"],
+        refund_amount=math_result["refund_amount"],
+        razorpay_payment_id=payment.razorpay_payment_id if payment else None,
+        razorpay_refund_id=razorpay_refund_id,
+        refund_status=refund_status,
+        policy_applied=math_result["policy_applied"],
+        reason=req.reason,
+    )
+    db.add(cancellation)
+
+    # Add audit log for MySQL Workbench & audit trail
+    audit = AuditLog(
+        action="TRIP_CANCELLED",
+        actor_email=current.get("email") or "unknown",
+        actor_role=current.get("role") or "USER",
+        target_id=trip.id,
+        details={
+            "hours_before_departure": math_result["hours_before_departure"],
+            "eligible": math_result["is_eligible"],
+            "refund_amount": math_result["refund_amount"],
+            "refund_status": refund_status,
+            "razorpay_refund_id": razorpay_refund_id,
+            "reason": req.reason,
+        },
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(cancellation)
+
+    return {
+        "status": "success",
+        "trip_id": trip.id,
+        "trip_status": "CANCELLED",
+        "cancellation_id": cancellation.id,
+        "hours_before_departure": cancellation.hours_before_departure,
+        "eligible_for_refund": cancellation.eligible_for_refund,
+        "refund_amount": float(cancellation.refund_amount or 0.0),
+        "refund_status": cancellation.refund_status,
+        "razorpay_refund_id": cancellation.razorpay_refund_id,
+        "policy_applied": cancellation.policy_applied,
+        "reason": cancellation.reason,
+        "cancelled_at": cancellation.cancelled_at.isoformat() if cancellation.cancelled_at else None,
+    }
+
+
+@router.get("/admin/cancellations")
+def get_admin_cancellations(
+    current: dict = Depends(require_role("ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Admin inspection of all trip cancellations, refund eligibility decisions, and gateway statuses."""
+    cancels = db.query(Cancellation).order_by(Cancellation.cancelled_at.desc()).all()
+    results = []
+    for c in cancels:
+        trip = c.trip
+        user = c.user
+        results.append({
+            "id": c.id,
+            "trip_id": c.trip_id,
+            "source_name": trip.source_name if trip else "—",
+            "destination_name": trip.destination_name if trip else "—",
+            "user_email": user.identity.email if user and user.identity else "—",
+            "user_name": f"{user.first_name or ''} {user.last_name or ''}".strip() if user else "—",
+            "trip_start_datetime": c.trip_start_datetime.isoformat() if c.trip_start_datetime else None,
+            "cancelled_at": c.cancelled_at.isoformat() if c.cancelled_at else None,
+            "hours_before_departure": c.hours_before_departure,
+            "eligible_for_refund": c.eligible_for_refund,
+            "refund_amount": float(c.refund_amount or 0.0),
+            "razorpay_payment_id": c.razorpay_payment_id,
+            "razorpay_refund_id": c.razorpay_refund_id,
+            "refund_status": c.refund_status,
+            "policy_applied": c.policy_applied,
+            "reason": c.reason,
+        })
+    return results
+
+
+@router.get("/managers/cancellations")
+def get_manager_cancellations(
+    current: dict = Depends(require_role("MANAGER", "ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Operations Manager cancellation overview."""
+    cancels = db.query(Cancellation).order_by(Cancellation.cancelled_at.desc()).all()
+    results = []
+    for c in cancels:
+        trip = c.trip
+        user = c.user
+        results.append({
+            "id": c.id,
+            "trip_id": c.trip_id,
+            "source_name": trip.source_name if trip else "—",
+            "destination_name": trip.destination_name if trip else "—",
+            "user_email": user.identity.email if user and user.identity else "—",
+            "cancelled_at": c.cancelled_at.isoformat() if c.cancelled_at else None,
+            "hours_before_departure": c.hours_before_departure,
+            "eligible_for_refund": c.eligible_for_refund,
+            "refund_amount": float(c.refund_amount or 0.0),
+            "refund_status": c.refund_status,
+            "policy_applied": c.policy_applied,
+            "reason": c.reason,
+        })
+    return results
+
+
+@router.post("/admin/cancellations/{cancellation_id}/retry-refund")
+def retry_cancellation_refund(
+    cancellation_id: str,
+    current: dict = Depends(require_role("ADMIN")),
+    db: Session = Depends(get_db)
+):
+    """Admin action to retry a failed gateway refund."""
+    cancel = db.query(Cancellation).filter(Cancellation.id == cancellation_id).first()
+    if not cancel:
+        raise HTTPException(status_code=404, detail="Cancellation record not found")
+
+    if not cancel.eligible_for_refund:
+        raise HTTPException(status_code=400, detail="This cancellation is not eligible for refund under policy.")
+
+    if cancel.refund_status == "PROCESSED":
+        raise HTTPException(status_code=409, detail="Refund is already processed.")
+
+    payment = cancel.payment or (db.query(Payment).filter(Payment.trip_id == cancel.trip_id).first())
+    if not payment:
+        raise HTTPException(status_code=400, detail="No payment record found for this cancellation.")
+
+    refund_res = PaymentService.create_refund(
+        payment_id=payment.razorpay_payment_id or payment.razorpay_order_id,
+        amount=float(cancel.refund_amount or payment.total_amount or 0.0),
+        reason=f"Admin retry: {cancel.reason or 'Customer Cancellation'}",
+    )
+    if refund_res["status"] == "SUCCESS":
+        cancel.refund_status = "PROCESSED"
+        cancel.razorpay_refund_id = refund_res.get("refund_id")
+        payment.status = "REFUNDED"
+        db.commit()
+        return {"status": "SUCCESS", "refund_id": cancel.razorpay_refund_id}
+    else:
+        cancel.refund_status = "FAILED"
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Gateway refund retry failed: {refund_res.get('error')}")

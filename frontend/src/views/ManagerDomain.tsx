@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard, ClipboardList, Workflow, Activity, Users, BadgeCheck,
   Wallet, CreditCard, TrendingUp, Star, MapPin, Calendar, UserCheck,
-  GripVertical, CheckCircle2, ArrowDownToLine, Eye,
+  GripVertical, CheckCircle2, ArrowDownToLine, Eye, Ban,
 } from 'lucide-react';
 import { AuthSession, GuideCandidate } from '../types';
 import { api } from '../services/api';
@@ -18,7 +18,7 @@ interface ManagerDomainProps {
   onLogout: () => void;
 }
 
-type PageKey = 'overview' | 'requests' | 'conversions' | 'active' | 'guides' | 'verification' | 'settlements' | 'payments' | 'revenue' | 'reviews';
+type PageKey = 'overview' | 'requests' | 'conversions' | 'active' | 'guides' | 'verification' | 'settlements' | 'payments' | 'cancellations' | 'revenue' | 'reviews';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#ec4899', '#8b5cf6', '#14b8a6'];
 
@@ -37,6 +37,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
   const [rateBusy, setRateBusy] = useState<Record<string, boolean>>({});
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [cancellations, setCancellations] = useState<any[]>([]);
   const [revenue, setRevenue] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
 
@@ -65,6 +66,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
     { key: 'verification', label: 'Guide Verification', icon: <BadgeCheck className="w-4 h-4" />, badge: pendingGuides.length || undefined },
     { key: 'settlements', label: 'Settlements', icon: <Wallet className="w-4 h-4" /> },
     { key: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
+    { key: 'cancellations', label: 'Cancellations', icon: <Ban className="w-4 h-4" />, badge: cancellations.length || undefined },
     { key: 'revenue', label: 'Revenue', icon: <TrendingUp className="w-4 h-4" /> },
     { key: 'reviews', label: 'Reviews', icon: <Star className="w-4 h-4" /> },
   ];
@@ -83,6 +85,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
     if (p === 'guides') { try { setGuides(await api.getManagerGuides()); } catch { } }
     if (p === 'active') { try { setActiveTrips(await api.getManagerActiveTrips()); } catch { } }
     if (p === 'payments') { try { setPayments(await api.getManagerPayments()); } catch { } }
+    if (p === 'cancellations') { try { setCancellations(await api.getManagerCancellations()); } catch { } }
     if (p === 'revenue') { try { setRevenue(await api.getManagerRevenue()); } catch { } }
     if (p === 'reviews') { try { setReviews(await api.getManagerReviews()); } catch { } }
     if (p === 'requests' || p === 'conversions' || p === 'overview') {
@@ -693,6 +696,75 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
     );
   };
 
+  const renderCancellations = () => {
+    const q = qFor('cancellations');
+    const filtered = filterRows(cancellations, ['destination_name', 'user_email', 'refund_status', 'reason'], q);
+    return (
+      <SectionCard
+        title="Trip cancellations"
+        subtitle={`Audit of traveller cancellations under 8-hour policy (${cancellations.length} total)`}
+        actions={<SearchBox value={q} onChange={setQFor('cancellations')} placeholder="Search cancellations…" />}
+      >
+        <ResponsiveTable
+          rows={filtered}
+          empty="No cancellations recorded"
+          columns={[
+            {
+              key: 'route',
+              label: 'Route',
+              render: (r) => (
+                <div>
+                  <span className="font-extrabold text-charcoal-900">{r.source_name} → {r.destination_name}</span>
+                  <div className="font-mono text-[10px] text-charcoal-400">{shortId(r.trip_id)}</div>
+                </div>
+              ),
+            },
+            {
+              key: 'user_email',
+              label: 'Traveller',
+              render: (r) => <span className="font-semibold text-charcoal-800">{r.user_email}</span>,
+            },
+            {
+              key: 'hours_before_departure',
+              label: 'Notice (Hrs)',
+              render: (r) => (
+                <span className={`font-black ${r.eligible_for_refund ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {r.hours_before_departure !== null ? `${r.hours_before_departure} hrs` : '—'}
+                </span>
+              ),
+            },
+            {
+              key: 'eligible_for_refund',
+              label: 'Policy Eligibility',
+              render: (r) => (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
+                  r.eligible_for_refund ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {r.eligible_for_refund ? '100% Refund (≥8 hrs)' : 'Non-Refundable (<8 hrs)'}
+                </span>
+              ),
+            },
+            {
+              key: 'refund_amount',
+              label: 'Refund Amount',
+              render: (r) => <span className="font-extrabold text-charcoal-900">{inr(r.refund_amount)}</span>,
+            },
+            {
+              key: 'refund_status',
+              label: 'Gateway Status',
+              render: (r) => <StatusPill status={r.refund_status} />,
+            },
+            {
+              key: 'cancelled_at',
+              label: 'Cancelled Date',
+              render: (r) => <span className="text-charcoal-400 whitespace-nowrap text-xs">{fmtDateTime(r.cancelled_at)}</span>,
+            },
+          ]}
+        />
+      </SectionCard>
+    );
+  };
+
   const tripDetailDrawer = (trip: any) => ({
     traveller: trip.traveller?.name || '—',
     route: `${trip.source} → ${trip.destination}`,
@@ -729,6 +801,7 @@ export const ManagerDomain: React.FC<ManagerDomainProps> = ({ session, onLogout 
       {page === 'verification' && renderVerification()}
       {page === 'settlements' && renderSettlements()}
       {page === 'payments' && renderPayments()}
+      {page === 'cancellations' && renderCancellations()}
       {page === 'revenue' && renderRevenue()}
       {page === 'reviews' && renderReviews()}
 

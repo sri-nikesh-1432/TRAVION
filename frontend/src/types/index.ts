@@ -629,6 +629,7 @@ export interface TransportOption {
   verified: boolean;
   source: string;
   note?: string | null;
+  booking_url?: string;
 }
 
 export interface LocalTransportOption {
@@ -665,6 +666,7 @@ export interface StayOption {
   rating: number;
   price_per_night: number;
   rooms_needed: number;
+  room_configuration?: string;
   nights: number;
   travellers: number;
   total_price: number;
@@ -674,6 +676,10 @@ export interface StayOption {
   hero_image: string;
   source: string;
   calculation_note: string;
+  booking_url?: string;
+  hotel_email?: string;
+  is_recommended?: boolean;
+  recommendation_reason?: string | null;
 }
 
 export type FoodTier = 'BASIC' | 'STANDARD' | 'PREMIUM';

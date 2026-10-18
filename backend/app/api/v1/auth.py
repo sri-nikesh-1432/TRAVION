@@ -1,3 +1,6 @@
+import secrets
+import logging
+import requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.db import get_db
@@ -7,7 +10,12 @@ from app.core.security import (
 )
 from app.core.config import settings
 from app.models.entities import Identity, User, Guide, Manager, Admin, AuditLog
-from app.schemas.schemas import SignupRequest, LoginRequest, TokenResponse, ElevateRequest, GuideRegistrationRequest
+from app.schemas.schemas import (
+    SignupRequest, LoginRequest, TokenResponse, ElevateRequest,
+    GuideRegistrationRequest, GoogleAuthRequest
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -260,6 +268,140 @@ def elevate_access(req: ElevateRequest, db: Session = Depends(get_db)):
         identity_id=identity.id,
         is_profile_complete=True
     )
+
+@router.post("/google", response_model=TokenResponse)
+def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticate via Google OAuth (ID token credential or authorization code).
+    Creates a new USER account if one doesn't exist, or logs in an existing one.
+    Guarantees persistence to MySQL with an AuditLog record.
+    """
+    google_data = None
+    if req.credential:
+        # Verify Google ID token via Google TokenInfo API
+        try:
+            resp = requests.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": req.credential},
+                timeout=8,
+            )
+            if resp.status_code == 200:
+                google_data = resp.json()
+            else:
+                logger.warning("Google tokeninfo returned status %s: %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.error("Error verifying Google ID token: %s", e)
+
+    elif req.code:
+        # Exchange authorization code
+        try:
+            token_resp = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": req.code,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": req.redirect_uri or "postmessage",
+                },
+                timeout=8,
+            )
+            if token_resp.status_code == 200:
+                tdata = token_resp.json()
+                id_token = tdata.get("id_token")
+                if id_token:
+                    vresp = requests.get(
+                        "https://oauth2.googleapis.com/tokeninfo",
+                        params={"id_token": id_token},
+                        timeout=8,
+                    )
+                    if vresp.status_code == 200:
+                        google_data = vresp.json()
+        except Exception as e:
+            logger.error("Error exchanging Google code: %s", e)
+
+    if not google_data or not google_data.get("email"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to authenticate with Google. Invalid or expired token."
+        )
+
+    # Validate audience prefix
+    aud = google_data.get("aud")
+    if aud != settings.GOOGLE_CLIENT_ID and not (str(aud).startswith("585915384409")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google token was not issued for this client."
+        )
+
+    email = normalize_email(google_data["email"])
+    first_name = google_data.get("given_name") or google_data.get("name", "").split(" ")[0] or "Traveller"
+    last_name = google_data.get("family_name") or ""
+    photo_url = google_data.get("picture")
+
+    identity = db.query(Identity).filter(Identity.email == email).first()
+    is_new = False
+    if not identity:
+        # Create Identity and User
+        is_new = True
+        dummy_hash = get_password_hash("GOOGLE_OAUTH_" + secrets.token_urlsafe(32))
+        identity = Identity(
+            email=email,
+            hashed_password=dummy_hash,
+            role="USER",
+            is_active=True,
+        )
+        db.add(identity)
+        db.flush()
+
+        user = User(
+            identity_id=identity.id,
+            first_name=first_name,
+            last_name=last_name,
+            preferred_name=first_name,
+            photo_url=photo_url,
+            is_profile_complete=False,
+        )
+        db.add(user)
+        db.flush()
+        user_id = user.id
+    else:
+        user_id = identity.user.id if identity.user else None
+        if identity.user:
+            if not identity.user.photo_url and photo_url:
+                identity.user.photo_url = photo_url
+            if not identity.user.first_name and first_name:
+                identity.user.first_name = first_name
+            if not identity.user.last_name and last_name:
+                identity.user.last_name = last_name
+
+    # Write audit log to MySQL
+    audit = AuditLog(
+        action="GOOGLE_OAUTH_SIGNUP" if is_new else "GOOGLE_OAUTH_LOGIN",
+        actor_email=email,
+        actor_role=identity.role,
+        target_id=identity.id,
+        details={"source": "google_identity_services", "email_verified": google_data.get("email_verified", True)},
+    )
+    db.add(audit)
+    db.commit()
+
+    token = create_access_token({
+        "sub": identity.email,
+        "role": identity.role,
+        "identity_id": identity.id,
+    })
+
+    return TokenResponse(
+        access_token=token,
+        role=identity.role,
+        email=identity.email,
+        identity_id=identity.id,
+        user_id=user_id,
+        guide_id=identity.guide.id if identity.guide else None,
+        is_profile_complete=identity.user.is_profile_complete if identity.user else False,
+    )
+
 
 @router.get("/me")
 def get_current_user_profile(

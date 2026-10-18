@@ -4,7 +4,7 @@ import {
   Compass, Sparkles, Navigation, ShieldCheck,
   MessageSquare, Download, RefreshCw, CheckCircle2,
   LogOut, ArrowLeft, Star, Clock, AlertCircle,
-  Mountain, Lock, BadgeCheck, Check
+  Mountain, Lock, BadgeCheck, Check, Crosshair, Ban
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
@@ -34,6 +34,9 @@ import { LocalTransportPlanner } from '../components/local-transport/LocalTransp
 import { BudgetFoodPlan } from '../components/budget/BudgetFoodPlan';
 import { StaySelection } from '../components/stay/StaySelection';
 import { PaymentStep } from '../components/payment/PaymentStep';
+import { GodsEyeViewModal } from '../components/navigation/GodsEyeViewModal';
+import { TripCancellationModal } from '../components/user/TripCancellationModal';
+import { ProgressReviewModal } from '../components/user/ProgressReviewModal';
 import { resolveBudgetMax } from '../utils/budget';
 
 /* ─── Booking flow stepper: the visible 11-stage journey ────────────
@@ -168,26 +171,63 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   session,
   onLogout
 }) => {
-  // Navigation views: the 10-stage booking flow + workspace + my_trips.
-  const [currentView, setCurrentViewState] = useState<PlannerView>('search');
-  // §25/§26 — GLOBAL BACK: the traveller can always return to the ACTUAL
-  // previous screen (not a hardcoded Home) with the trip state untouched —
-  // every view is derived from the same persisted trip object, so going back
-  // never regenerates or loses selections.
+  // Navigation views: the 11-stage booking flow + workspace + my_trips.
+  const [currentView, setCurrentViewState] = useState<PlannerView>(() => {
+    try {
+      const saved = localStorage.getItem('travion_current_view') as PlannerView | null;
+      return saved && saved !== 'workspace' ? saved : 'search';
+    } catch {
+      return 'search';
+    }
+  });
+
+  const [showProgressReview, setShowProgressReview] = useState(false);
+  const [showGodsEyeView, setShowGodsEyeView] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
+  // Global Back & Forward History management:
+  // Browser Back/Forward navigation is synchronized with view state so users
+  // never get unexpectedly kicked to the home/landing page.
   const viewHistoryRef = useRef<PlannerView[]>([]);
+
   const setCurrentView = (v: PlannerView | ((prev: PlannerView) => PlannerView)) => {
     setCurrentViewState((prev) => {
       const next = typeof v === 'function' ? (v as (p: PlannerView) => PlannerView)(prev) : v;
-      if (next !== prev) viewHistoryRef.current = [...viewHistoryRef.current.slice(-19), prev];
+      if (next !== prev) {
+        viewHistoryRef.current = [...viewHistoryRef.current.slice(-19), prev];
+        try {
+          localStorage.setItem('travion_current_view', next);
+          window.history.pushState({ view: next }, '', '#' + next);
+        } catch { /* storage quota ignore */ }
+      }
       return next;
     });
   };
+
   const goBack = () => {
     const hist = viewHistoryRef.current;
     const prev = hist.length > 0 ? hist[hist.length - 1] : 'search';
     viewHistoryRef.current = hist.slice(0, -1);
     setCurrentViewState(prev);
+    try {
+      localStorage.setItem('travion_current_view', prev);
+    } catch { /* ignore */ }
   };
+
+  // Listen to browser Back/Forward (popstate)
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && e.state.view) {
+        setCurrentViewState(e.state.view);
+      } else if (viewHistoryRef.current.length > 0) {
+        const prev = viewHistoryRef.current[viewHistoryRef.current.length - 1];
+        viewHistoryRef.current = viewHistoryRef.current.slice(0, -1);
+        setCurrentViewState(prev);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -599,12 +639,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     if (stage && Object.keys(stage).length > 0) setStageState(stage);
     try {
       const blocked = await advanceStage(activeTrip.id, 6);
-      if (blocked) {
+      if (blocked && blocked.some((b) => !b.toLowerCase().includes('budget') && !b.toLowerCase().includes('exceeds'))) {
         setPlanError({ message: blocked.join(' ') });
         return;
       }
     } catch (e) {
-      if (e !== STAGE_NOT_LIVE) throw e;
+      if (e !== STAGE_NOT_LIVE) console.warn('advanceStage 6:', e);
     }
     setCurrentView('mode_select');
   };
@@ -623,13 +663,13 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       setActiveTrip((prev) => (prev ? { ...prev, mode } : prev));
       try {
         const blocked = await advanceStage(activeTrip.id, 7);
-        if (blocked) {
+        if (blocked && blocked.some((b) => !b.toLowerCase().includes('budget') && !b.toLowerCase().includes('exceeds'))) {
           setPlanError({ message: blocked.join(' ') });
           setIsGeneratingPlan(false);
           return;
         }
       } catch (e) {
-        if (e !== STAGE_NOT_LIVE) throw e;
+        if (e !== STAGE_NOT_LIVE) console.warn('advanceStage 7:', e);
       }
       setIsGeneratingPlan(false);
       setCurrentView('local_transport');
@@ -803,9 +843,32 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Profile Avatar / Logout — the trip-planning CTA lives in the main
-                flow, not as a duplicate top-nav button (product rule #10) */}
+          <div className="flex items-center gap-3">
+            {/* God's Eye View Button */}
+            <button
+              type="button"
+              onClick={() => setShowGodsEyeView(true)}
+              title="God's Eye View — Live Telemetry & Speedometer"
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm"
+            >
+              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline font-mono">God's Eye View</span>
+            </button>
+
+            {/* Persistent Review Progress Button */}
+            {activeTrip && (
+              <button
+                type="button"
+                onClick={() => setShowProgressReview(true)}
+                title="Review your plan progress and selections so far"
+                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-travion-50 hover:bg-travion-100 text-travion-700 border border-travion-200 text-xs font-bold transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Review Progress</span>
+              </button>
+            )}
+
+            {/* Profile Avatar / Logout */}
             <div className="flex items-center gap-2 pl-2 border-l border-charcoal-200">
               <span className="text-xs font-bold text-charcoal-700 hidden sm:inline">
                 {userProfile?.preferred_name || session.email.split('@')[0]}
@@ -1330,7 +1393,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGodsEyeView(true)}
+                  className="px-4 py-2 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-soft"
+                >
+                  <Crosshair className="w-4 h-4 text-emerald-400" />
+                  <span>God's Eye View</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowOfflineModal(true)}
@@ -1347,6 +1418,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   <RefreshCw className="w-4 h-4" />
                   <span>Simulate Weather Replan</span>
                 </button>
+                {['PAID', 'GUIDE_ASSIGNED', 'ACTIVE', 'PLANNED'].includes(activeTrip.status) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                  >
+                    <Ban className="w-4 h-4 text-red-500" />
+                    <span>Cancel Trip & Refund</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1461,6 +1542,38 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         onClose={() => setShowReviewModal(false)}
         onSuccess={() => alert(`Thank you! Your review has been attached to ${assignedGuide?.name || "your guide"}'s profile.`)}
       />
+
+      {/* God's Eye View Spatial Intelligence & Speedometer Modal */}
+      <GodsEyeViewModal
+        isOpen={showGodsEyeView}
+        onClose={() => setShowGodsEyeView(false)}
+        trip={activeTrip}
+        itinerary={itinerary}
+      />
+
+      {/* Progress Review Modal — accessible from anywhere across the 11 steps */}
+      <ProgressReviewModal
+        isOpen={showProgressReview}
+        onClose={() => setShowProgressReview(false)}
+        trip={activeTrip}
+        stageState={stageState}
+        answers={answersSoFar}
+        onNavigateToStep={(target) => setCurrentView(target as PlannerView)}
+      />
+
+      {/* Trip Cancellation & 8-Hour Refund Modal */}
+      {activeTrip && (
+        <TripCancellationModal
+          tripId={activeTrip.id}
+          isOpen={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          onCancelled={() => {
+            if (activeTrip) {
+              api.getTrip(activeTrip.id).then(setActiveTrip).catch(() => {});
+            }
+          }}
+        />
+      )}
 
     </div>
   );

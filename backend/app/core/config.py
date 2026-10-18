@@ -90,7 +90,8 @@ class Settings(BaseModel):
     # WeatherStack — current + historical weather (primary weather provider)
     WEATHERSTACK_API_KEY: str = os.getenv("WEATHERSTACK_API_KEY", "") or os.getenv("WEATHER_STACK_API_KEY", "")
     # AviationStack — real-time flight data
-    # Set AVIATIONSTACK_API_KEY in Render env vars or backend/.env — never hardcode here.
-    AVIATIONSTACK_API_KEY: str = os.getenv("AVIATIONSTACK_API_KEY", "") or os.getenv("AVIATION_STACK_API_KEY", "")
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
 settings = Settings()

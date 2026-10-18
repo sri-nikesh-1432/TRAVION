@@ -160,3 +160,60 @@ class PaymentService:
             "platform_fee": cost_breakdown.get("platform_fee", 0.0),
             "total": cost_breakdown.get("total", 0.0)
         }
+
+    @classmethod
+    def create_refund(cls, payment_id: str, amount: float, reason: str = "Traveller Cancellation") -> Dict[str, Any]:
+        """
+        Initiates a refund via Razorpay Refund API for a verified payment.
+        If live credentials are present, calls https://api.razorpay.com/v1/payments/{payment_id}/refund.
+        Otherwise creates a verifiable simulated refund record.
+        """
+        key_id = settings.RAZORPAY_KEY_ID
+        key_secret = settings.RAZORPAY_KEY_SECRET
+        amount_paise = int(round(amount * 100))
+
+        if _has_live_razorpay_keys() and not payment_id.startswith("pay_sim_"):
+            try:
+                resp = requests.post(
+                    f"https://api.razorpay.com/v1/payments/{payment_id}/refund",
+                    auth=(key_id, key_secret),
+                    json={
+                        "amount": amount_paise,
+                        "notes": {"reason": reason[:100]}
+                    },
+                    timeout=10,
+                )
+                if resp.status_code in (200, 201):
+                    data = resp.json()
+                    return {
+                        "status": "SUCCESS",
+                        "refund_id": data.get("id"),
+                        "amount": float(data.get("amount", amount_paise) / 100),
+                        "currency": data.get("currency", "INR"),
+                        "live": True,
+                    }
+                else:
+                    logger.error("Razorpay refund error %s: %s", resp.status_code, resp.text[:300])
+                    try:
+                        err_data = resp.json().get("error", {})
+                        desc = err_data.get("description", resp.text[:200])
+                    except Exception:
+                        desc = resp.text[:200]
+                    return {
+                        "status": "FAILED",
+                        "error": desc,
+                        "live": True,
+                    }
+            except Exception as e:
+                logger.error("Failed to connect to Razorpay for refund: %s", e)
+                return {"status": "FAILED", "error": str(e), "live": True}
+
+        # Simulated fallback (test mode or simulated payment)
+        sim_refund_id = f"rfnd_sim_{uuid.uuid4().hex[:14]}"
+        return {
+            "status": "SUCCESS",
+            "refund_id": sim_refund_id,
+            "amount": amount,
+            "currency": "INR",
+            "live": False,
+        }

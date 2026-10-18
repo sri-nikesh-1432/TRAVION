@@ -458,3 +458,34 @@ class BudgetAdjustment(Base):
     stage = Column(String(32), nullable=False, default="plan")  # workflow point
     reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
+
+
+class Cancellation(Base):
+    """Tracks trip cancellations, 8-hour refund eligibility decisions, and Razorpay refund IDs.
+
+    Policy:
+    - Cancelled >= 8 hours before scheduled trip start time -> 100% refund.
+    - Cancelled < 8 hours before scheduled trip start time -> 0% refund (ineligible under policy).
+    """
+
+    __tablename__ = "cancellations"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    trip_id = Column(String(36), ForeignKey("trips.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    payment_id = Column(String(36), ForeignKey("payments.id"), nullable=True)
+    trip_start_datetime = Column(DateTime, nullable=False)
+    cancelled_at = Column(DateTime, default=get_utc_now)
+    hours_before_departure = Column(Float, nullable=False)
+    eligible_for_refund = Column(Boolean, default=False)
+    refund_amount = Column(Money(), default=0.0)
+    razorpay_payment_id = Column(String(100), nullable=True)
+    razorpay_refund_id = Column(String(100), nullable=True)
+    refund_status = Column(String(50), default="PENDING")  # PROCESSED | INELIGIBLE_UNDER_POLICY | FAILED | PENDING
+    policy_applied = Column(String(255), nullable=False)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)
+
+    trip = relationship("Trip")
+    user = relationship("User")
+    payment = relationship("Payment")

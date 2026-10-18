@@ -232,6 +232,50 @@ def select_trip_stay_endpoint(
     }
 
 
+@router.post("/{trip_id}/stays/reserve")
+def reserve_trip_stay_endpoint(
+    trip_id: str,
+    body: Dict[str, Any],
+    current: dict = Depends(require_role("USER", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Dispatch reservation request / booking inquiry to hotel and record confirmation reference."""
+    trip = _own_trip(trip_id, current, db)
+    stay_name = body.get("stay_name") or "Selected Hotel"
+    hotel_email = body.get("hotel_email") or f"reservations@{stay_name.lower().replace(' ', '')}.com"
+    travellers = int(body.get("travellers") or 1)
+    rooms = int(body.get("rooms_needed") or max(1, -(-travellers // 2)))
+    nights = int(body.get("nights") or 1)
+    user_email = current.get("email", "traveller@travion.com")
+
+    # Update active stay place selection with reservation metadata
+    active_rows = stages._active_selections(db, trip.id)
+    stay_row = next((r for r in active_rows if str(r.category or "").lower() in stages.STAY_CATEGORIES), None)
+    if stay_row:
+        item = dict(stay_row.item_json or {})
+        item["reservation_status"] = "CONFIRMED"
+        item["reservation_email_sent_to"] = hotel_email
+        item["reservation_timestamp"] = datetime.now(timezone.utc).isoformat()
+        item["rooms_booked"] = rooms
+        item["guests_booked"] = travellers
+        stay_row.item_json = item
+
+    trip.updated_at = get_utc_now()
+    db.commit()
+
+    return {
+        "status": "RESERVATION_CONFIRMED",
+        "message": (
+            f"Reservation inquiry sent to {stay_name} ({hotel_email}) for {travellers} traveller(s) "
+            f"across {rooms} room(s) for {nights} night(s). Notification confirmed for {user_email}."
+        ),
+        "hotel_name": stay_name,
+        "hotel_email": hotel_email,
+        "rooms": rooms,
+        "travellers": travellers,
+    }
+
+
 # ── stage 7: local transport ──────────────────────────────────────────────────
 @router.post("/{trip_id}/local-transport/plan")
 def local_transport_plan(

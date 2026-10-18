@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList, Workflow,
-  Activity, CreditCard, Wallet, TrendingUp, BarChart3, Star, ScrollText, Eye, Download,
+  Activity, CreditCard, Wallet, TrendingUp, BarChart3, Star, ScrollText, Eye, Download, Ban,
 } from 'lucide-react';
 import { AuthSession } from '../types';
 import { api } from '../services/api';
@@ -17,7 +17,7 @@ interface AdminDomainProps {
   onLogout: () => void;
 }
 
-type PageKey = 'overview' | 'users' | 'guides' | 'managers' | 'trips' | 'conversions' | 'active' | 'payments' | 'settlements' | 'revenue' | 'analytics' | 'reviews' | 'audit';
+type PageKey = 'overview' | 'users' | 'guides' | 'managers' | 'trips' | 'conversions' | 'active' | 'payments' | 'cancellations' | 'settlements' | 'revenue' | 'analytics' | 'reviews' | 'audit';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
 
@@ -30,6 +30,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
   const [managers, setManagers] = useState<any[]>([]);
   const [trips, setTrips] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [cancellations, setCancellations] = useState<any[]>([]);
   const [settlements, setSettlements] = useState<any[]>([]);
   const [conversions, setConversions] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
@@ -51,6 +52,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     { key: 'conversions', label: 'Conversions', icon: <Workflow className="w-4 h-4" /> },
     { key: 'active', label: 'Active Operations', icon: <Activity className="w-4 h-4" />, badge: activeOps.length || undefined },
     { key: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" />, badge: payments.length || undefined },
+    { key: 'cancellations', label: 'Cancellations & Refunds', icon: <Ban className="w-4 h-4" />, badge: cancellations.length || undefined },
     { key: 'settlements', label: 'Settlements', icon: <Wallet className="w-4 h-4" /> },
     { key: 'revenue', label: 'Revenue Analytics', icon: <TrendingUp className="w-4 h-4" /> },
     { key: 'analytics', label: 'Platform Analytics', icon: <BarChart3 className="w-4 h-4" /> },
@@ -71,6 +73,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     if (p === 'managers') { try { setManagers(await api.getAdminManagers()); } catch { } }
     if (p === 'trips') { try { setTrips(await api.getAdminTrips()); } catch { } }
     if (p === 'payments') { try { setPayments(await api.getAdminPayments()); } catch { } }
+    if (p === 'cancellations') { try { setCancellations(await api.getAdminCancellations()); } catch { } }
     if (p === 'settlements') { try { setSettlements(await api.getAdminSettlements()); } catch { } }
     if (p === 'conversions') { try { setConversions(await api.getAdminConversions()); } catch { } }
     if (p === 'analytics') { try { setAnalytics(await api.getAdminAnalytics()); } catch { } }
@@ -331,6 +334,123 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
     );
   };
 
+  const renderCancellations = () => {
+    const q = qFor('cancellations');
+    const filtered = filterRows(cancellations, ['destination_name', 'user_email', 'refund_status', 'reason'], q);
+
+    const onRetryRefund = async (cId: string) => {
+      try {
+        const res = await api.retryAdminRefund(cId);
+        setNotice(`Refund status: ${res.status} (${res.refund_id || 'Processed'})`);
+        setCancellations(await api.getAdminCancellations());
+      } catch (err: any) {
+        setNotice(`Refund retry failed: ${err.message || 'Error'}`);
+      }
+    };
+
+    return (
+      <SectionCard
+        title="Trip cancellations & refunds"
+        subtitle={`Strict 8-Hour Policy Audit — ${cancellations.length} cancellation record(s)`}
+        actions={
+          <div className="flex items-center gap-2">
+            <SearchBox value={q} onChange={setQFor('cancellations')} placeholder="Search cancellations…" />
+            <button
+              onClick={() => exportCsv(cancellations, 'travion-cancellations', (r: any) => ({
+                cancellation_id: r.id, trip_id: r.trip_id, route: `${r.source_name} -> ${r.destination_name}`,
+                user: r.user_email, hours_before: r.hours_before_departure, eligible: r.eligible_for_refund,
+                refund_amount: r.refund_amount, refund_status: r.refund_status, policy: r.policy_applied,
+                razorpay_refund_id: r.razorpay_refund_id, cancelled_at: r.cancelled_at, reason: r.reason,
+              }))}
+              className="p-2 rounded-xl bg-sand-100 text-charcoal-600 hover:bg-sand-200"
+              title="Export CSV"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <ResponsiveTable
+          rows={filtered}
+          empty="No trip cancellations recorded"
+          columns={[
+            {
+              key: 'trip_id',
+              label: 'Trip ID / Route',
+              render: (r) => (
+                <div>
+                  <div className="font-extrabold text-charcoal-900">{r.source_name} → {r.destination_name}</div>
+                  <div className="font-mono text-[10px] text-charcoal-400">{shortId(r.trip_id)}</div>
+                </div>
+              ),
+            },
+            {
+              key: 'user_email',
+              label: 'Traveller',
+              render: (r) => (
+                <div>
+                  <span className="font-semibold text-charcoal-800">{r.user_name || r.user_email}</span>
+                  <div className="text-[11px] text-charcoal-400">{r.user_email}</div>
+                </div>
+              ),
+            },
+            {
+              key: 'hours_before_departure',
+              label: 'Notice Time',
+              render: (r) => (
+                <span className={`font-black ${r.eligible_for_refund ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {r.hours_before_departure !== null ? `${r.hours_before_departure} hrs` : '—'}
+                </span>
+              ),
+            },
+            {
+              key: 'eligible_for_refund',
+              label: '8-Hr Policy',
+              render: (r) => (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  r.eligible_for_refund ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {r.eligible_for_refund ? 'Eligible (>=8 hrs)' : 'Non-Refundable (<8 hrs)'}
+                </span>
+              ),
+            },
+            {
+              key: 'refund_amount',
+              label: 'Refund Amount',
+              render: (r) => <span className="font-extrabold text-charcoal-900">{inr(r.refund_amount)}</span>,
+            },
+            {
+              key: 'refund_status',
+              label: 'Gateway Status',
+              render: (r) => <StatusPill status={r.refund_status} />,
+            },
+            {
+              key: 'cancelled_at',
+              label: 'Cancelled Date',
+              render: (r) => <span className="text-charcoal-400 whitespace-nowrap text-xs">{fmtDateTime(r.cancelled_at)}</span>,
+            },
+            {
+              key: 'actions',
+              label: 'Actions',
+              render: (r) => (
+                r.eligible_for_refund && r.refund_status !== 'PROCESSED' ? (
+                  <button
+                    onClick={() => onRetryRefund(r.id)}
+                    className="px-2.5 py-1 rounded-lg bg-sand-200 hover:bg-sand-300 text-charcoal-800 text-[11px] font-bold transition-all shadow-sm"
+                  >
+                    Retry Gateway Refund
+                  </button>
+                ) : (
+                  <span className="text-charcoal-400 text-xs">—</span>
+                )
+              ),
+            },
+          ]}
+        />
+      </SectionCard>
+    );
+  };
+
   const renderSettlements = () => (
     <SectionCard title="Guide settlements" subtitle="Money trail — every guide fee, its payment and settlement state">
       <ResponsiveTable
@@ -541,6 +661,7 @@ export const AdminDomain: React.FC<AdminDomainProps> = ({ session, onLogout }) =
       {page === 'conversions' && renderConversions()}
       {page === 'active' && renderActive()}
       {page === 'payments' && renderPayments()}
+      {page === 'cancellations' && renderCancellations()}
       {page === 'settlements' && renderSettlements()}
       {page === 'revenue' && renderRevenue()}
       {page === 'analytics' && renderAnalytics()}
