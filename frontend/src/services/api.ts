@@ -595,6 +595,17 @@ export const api = {
   getReviewSnapshot: (tripId: string) =>
     request<ReviewSnapshot>(`/trips/${tripId}/review`),
 
+  getTrackingEntitlement: (tripId: string) =>
+    request<{
+      entitled: boolean;
+      status: string;
+      trip_id: string;
+      reason?: string;
+      source?: string;
+      destination?: string;
+      mode?: string;
+    }>(`/trips/${tripId}/tracking/entitlement`),
+
   personalizeDiscovery: (tripId: string) =>
     request<DiscoveryRanking>(`/trips/${tripId}/discovery/personalize`, {
       method: 'POST', body: JSON.stringify({}),

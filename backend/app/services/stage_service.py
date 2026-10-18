@@ -493,11 +493,31 @@ def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: i
             blockers.append("Select at least one place (stage 4) before continuing.")
     if target >= 6 and not completion["5"]:
         if completion["_stay_count"] == 0:
-            blockers.append("Choose exactly one stay (stage 5) before continuing.")
-        elif completion["_stay_count"] > 1:
-            blockers.append("Only one stay is allowed (stage 5) — remove the extra stay to continue.")
-        else:
-            blockers.append("Choose your stay (stage 5) before continuing.")
+            # Auto-seed the recommended stay for party and budget so the user is never stranded
+            try:
+                dest = trip.destination_name or "Destination"
+                recs = stay_service.fetch_destination_stays(dest, party.get("total", 1), 1, float(trip.budget or 50000.0))
+                if recs:
+                    best = next((s for s in recs if s.get("is_recommended")), recs[0])
+                    stay_service.select_trip_stay(db, trip, best)
+                    completion = stage_completion(db, trip)
+            except Exception as exc:
+                logger.warning(f"Auto-seed stay fallback error: {exc}")
+
+        if completion["_stay_count"] > 1:
+            # Keep newest primary stay, soft-remove duplicates
+            try:
+                stay_rows = [r for r in _active_selections(db, trip.id) if str(r.category or "").lower() in STAY_CATEGORIES]
+                if len(stay_rows) > 1:
+                    for extra in stay_rows[1:]:
+                        extra.status = "removed"
+                    db.commit()
+                    completion = stage_completion(db, trip)
+            except Exception as exc:
+                logger.warning(f"Stay deduplication error: {exc}")
+
+        if not completion["5"]:
+            blockers.append("Choose your accommodation (stage 5) before continuing.")
     if target >= 7 and not completion["6"]:
         blockers.append("Choose Guide Mode or Adventurous Mode (stage 6) before local transport.")
     if target >= 8 and not completion["7"]:

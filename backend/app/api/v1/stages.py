@@ -683,3 +683,36 @@ def review_snapshot(
         "guide": state["guide"],
         "payment": state["payment"],
     }
+
+
+# ── tracking & God's Eye View entitlement ──────────────────────────────────────
+@router.get("/{trip_id}/tracking/entitlement")
+def get_tracking_entitlement(
+    trip_id: str,
+    current: dict = Depends(require_role("USER", "GUIDE", "MANAGER", "ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """Authoritative gate for God's Eye View / Live GPS Tracking.
+    Strictly payment-gated: only unlocked when trip is PAID, GUIDE_ASSIGNED, or ACTIVE."""
+    trip = _own_trip(trip_id, current, db)
+    payment = trip.payment
+    is_paid = (
+        (trip.status or "").upper() in ("PAID", "GUIDE_ASSIGNED", "ACTIVE")
+        or (payment and (payment.status or "").upper() == "SUCCESS")
+    )
+    if not is_paid:
+        return {
+            "entitled": False,
+            "status": trip.status,
+            "trip_id": trip.id,
+            "reason": "God's Eye View real-time GPS tracking is locked until payment is confirmed. Please complete Step 10 Review & Step 11 Payment to activate.",
+        }
+    return {
+        "entitled": True,
+        "status": trip.status,
+        "trip_id": trip.id,
+        "source": trip.source_name,
+        "destination": trip.destination_name,
+        "mode": trip.mode,
+    }
+

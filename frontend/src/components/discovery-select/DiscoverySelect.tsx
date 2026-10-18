@@ -74,7 +74,7 @@ const CATEGORY_IMAGES: Record<string, string[]> = {
 };
 
 function getPlaceImage(name: string, category: string, index: number): string {
-  const c = category.toLowerCase();
+  const c = String(category || '').toLowerCase();
   let list = CATEGORY_IMAGES.default;
   if (c.includes('food') || c.includes('rest') || c.includes('cafe')) list = CATEGORY_IMAGES.food;
   else if (c.includes('activ') || c.includes('trek') || c.includes('tour') || c.includes('walk')) list = CATEGORY_IMAGES.activities;
@@ -321,13 +321,13 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const match =
-          item.name.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q) ||
-          (item.description && item.description.toLowerCase().includes(q));
+          String(item.name || '').toLowerCase().includes(q) ||
+          String(item.category || '').toLowerCase().includes(q) ||
+          (item.description && String(item.description).toLowerCase().includes(q));
         if (!match) return false;
       }
       if (activeTab === 'all') return true;
-      if (activeTab === 'must_visit') return item.category.toLowerCase().includes('must') || item.recommended;
+      if (activeTab === 'must_visit') return String(item.category || '').toLowerCase().includes('must') || Boolean(item.recommended);
       if (activeTab === 'activities') return item.kind === 'activity';
       if (activeTab === 'tourist_spots') return item.kind === 'place';
       if (activeTab === 'food') return item.kind === 'food';
@@ -492,7 +492,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           {
             id: 'must_visit',
             label: 'Must Visit',
-            count: allItems.filter((i) => i.category.toLowerCase().includes('must') || i.recommended).length,
+            count: allItems.filter((i) => String(i.category || '').toLowerCase().includes('must') || Boolean(i.recommended)).length,
           },
           {
             id: 'tourist_spots',

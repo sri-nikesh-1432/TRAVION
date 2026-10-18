@@ -4,7 +4,7 @@ import {
   Compass, Sparkles, Navigation, ShieldCheck,
   MessageSquare, Download, RefreshCw, CheckCircle2,
   LogOut, ArrowLeft, Star, Clock, AlertCircle,
-  Mountain, Lock, BadgeCheck, Check, Crosshair, Ban
+  Mountain, Lock, BadgeCheck, Check, Crosshair, Ban, ArrowRight
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
@@ -186,9 +186,16 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Global Back & Forward History management:
-  // Browser Back/Forward navigation is synchronized with view state so users
-  // never get unexpectedly kicked to the home/landing page.
-  const viewHistoryRef = useRef<PlannerView[]>([]);
+  // Synchronized with browser history and sessionStorage so users are never
+  // kicked to the home/search view unexpectedly on back click or refresh.
+  const viewHistoryRef = useRef<PlannerView[]>((() => {
+    try {
+      const saved = sessionStorage.getItem('travion_view_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  })());
 
   const setCurrentView = (v: PlannerView | ((prev: PlannerView) => PlannerView)) => {
     setCurrentViewState((prev) => {
@@ -196,6 +203,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       if (next !== prev) {
         viewHistoryRef.current = [...viewHistoryRef.current.slice(-19), prev];
         try {
+          sessionStorage.setItem('travion_view_history', JSON.stringify(viewHistoryRef.current));
           localStorage.setItem('travion_current_view', next);
           window.history.pushState({ view: next }, '', '#' + next);
         } catch { /* storage quota ignore */ }
@@ -206,12 +214,30 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
   const goBack = () => {
     const hist = viewHistoryRef.current;
-    const prev = hist.length > 0 ? hist[hist.length - 1] : 'search';
-    viewHistoryRef.current = hist.slice(0, -1);
-    setCurrentViewState(prev);
-    try {
-      localStorage.setItem('travion_current_view', prev);
-    } catch { /* ignore */ }
+    if (hist.length > 0) {
+      const prev = hist[hist.length - 1];
+      viewHistoryRef.current = hist.slice(0, -1);
+      try {
+        sessionStorage.setItem('travion_view_history', JSON.stringify(viewHistoryRef.current));
+        localStorage.setItem('travion_current_view', prev);
+      } catch { /* ignore */ }
+      setCurrentViewState(prev);
+    } else {
+      // Step-aware backward fallback across the 11 booking stages
+      const viewOrder: PlannerView[] = [
+        'search', 'discovery', 'transport', 'discovery_select',
+        'stay_select', 'mode_select', 'local_transport', 'budget_food',
+        'planner', 'review', 'pay'
+      ];
+      const idx = viewOrder.indexOf(currentView);
+      if (idx > 0) {
+        const prev = viewOrder[idx - 1];
+        setCurrentViewState(prev);
+        try { localStorage.setItem('travion_current_view', prev); } catch {}
+      } else {
+        setCurrentViewState('search');
+      }
+    }
   };
 
   // Listen to browser Back/Forward (popstate)
@@ -222,6 +248,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
       } else if (viewHistoryRef.current.length > 0) {
         const prev = viewHistoryRef.current[viewHistoryRef.current.length - 1];
         viewHistoryRef.current = viewHistoryRef.current.slice(0, -1);
+        try { sessionStorage.setItem('travion_view_history', JSON.stringify(viewHistoryRef.current)); } catch {}
         setCurrentViewState(prev);
       }
     };
@@ -377,9 +404,19 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     api.getMyTrips().then((trips) => {
       setMyTrips(trips);
       // ── PERSISTENT TRIP (spec §1/§32) ──────────────────────────────
-      // The SAME trip_id survives refresh across the WHOLE flow — including
-      // the mid-planning stage (REQUESTED/PLANNED/DRAFT) that used to be
-      // lost on refresh and later surfaced as "Trip not found" at checkout.
+      // The SAME trip_id survives refresh across the WHOLE flow.
+      const storedTripId = localStorage.getItem('travion_active_trip_id');
+      const targetStoredTrip = storedTripId ? trips.find((t) => t.id === storedTripId) : null;
+
+      if (targetStoredTrip) {
+        if (['ACTIVE', 'GUIDE_ASSIGNED', 'PAID'].includes(targetStoredTrip.status)) {
+          loadTripWorkspace(targetStoredTrip.id, true);
+          return;
+        }
+        void resumeFromStageState(targetStoredTrip);
+        return;
+      }
+
       const ongoing = trips.find(t => t.status === 'ACTIVE' || t.status === 'GUIDE_ASSIGNED' || t.status === 'PAID');
       if (ongoing) {
         loadTripWorkspace(ongoing.id, true);
@@ -393,6 +430,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync active trip ID to localStorage
+  useEffect(() => {
+    if (activeTrip?.id) {
+      try {
+        localStorage.setItem('travion_active_trip_id', activeTrip.id);
+      } catch { /* storage quota */ }
+    }
+  }, [activeTrip?.id]);
 
   // STAGE-AWARE resume: with an active trip, GET the stage state and jump to
   // its current_stage view (stage_key → view, numeric index as fallback).
@@ -855,15 +901,21 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               <span className="hidden sm:inline font-mono">God's Eye View</span>
             </button>
 
-            {/* Persistent Review Progress Button */}
-            {activeTrip && (
+            {/* Persistent Review Progress Button — always accessible */}
+            {(activeTrip || myTrips.length > 0) && (
               <button
                 type="button"
-                onClick={() => setShowProgressReview(true)}
+                onClick={() => {
+                  if (!activeTrip && myTrips.length > 0) {
+                    const latest = myTrips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT', 'ACTIVE'].includes(t.status)) || myTrips[0];
+                    setActiveTrip(latest);
+                  }
+                  setShowProgressReview(true);
+                }}
                 title="Review your plan progress and selections so far"
-                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-travion-50 hover:bg-travion-100 text-travion-700 border border-travion-200 text-xs font-bold transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-travion-50 hover:bg-travion-100 text-travion-700 border border-travion-200 text-xs font-bold transition-colors shadow-sm"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 text-travion-600" />
                 <span className="hidden sm:inline">Review Progress</span>
               </button>
             )}
@@ -918,6 +970,51 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 Where would you like to go? Tell us where you're coming from, where you're going, and when — Travion plans, adapts and supports the whole journey.
               </p>
             </div>
+
+            {/* Quick Resume Card for In-Progress Trip */}
+            {(() => {
+              const pendingTrip = activeTrip || myTrips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
+              if (!pendingTrip) return null;
+              return (
+                <div className="max-w-2xl mx-auto mb-6 p-4 rounded-3xl bg-white border border-travion-200 shadow-card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-2xl bg-travion-50 text-travion-600 flex items-center justify-center shrink-0 border border-travion-100">
+                      <Sparkles className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-travion-100 text-travion-700">
+                          Plan In Progress
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-extrabold text-charcoal-900 mt-0.5">
+                        {pendingTrip.source_name} → {pendingTrip.destination_name}
+                      </h4>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTrip(pendingTrip);
+                        setShowProgressReview(true);
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 h-10 rounded-xl border border-charcoal-200 bg-sand-50 hover:bg-sand-100 text-charcoal-700 text-xs font-bold transition-colors"
+                    >
+                      Review Plan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void resumeFromStageState(pendingTrip)}
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 h-10 rounded-xl bg-travion-600 hover:bg-travion-700 text-white text-xs font-black shadow-sm transition-colors"
+                    >
+                      <span>Resume Trip</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Server-side validation notice (e.g. same source/destination, past dates) */}
             <AnimatePresence>
@@ -1549,6 +1646,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         onClose={() => setShowGodsEyeView(false)}
         trip={activeTrip}
         itinerary={itinerary}
+        onProceedToPayment={() => setCurrentView('pay')}
       />
 
       {/* Progress Review Modal — accessible from anywhere across the 11 steps */}

@@ -291,6 +291,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpen
       try {
         google.accounts.id.initialize({
           client_id: clientId,
+          auto_select: false,
+          cancel_on_tap_outside: true,
           callback: async (response: any) => {
             if (response.credential) {
               try {
@@ -341,15 +343,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpen
               setIsGoogleLoading(false);
             }
           },
+          error_callback: (err: any) => {
+            setIsGoogleLoading(false);
+            if (err?.type === 'popup_closed') return;
+            setAuthError(
+              'Google Sign-In is awaiting origin registration for https://travions.netlify.app in Google Cloud Console. Please sign in with email and password below.'
+            );
+          },
         });
         client.requestCode();
       } else {
-        const redirectUri = window.location.origin;
-        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
+        setIsGoogleLoading(false);
+        setAuthError('Google Sign-In is temporarily unavailable. Please sign in with your email and password below.');
       }
     } catch {
       setIsGoogleLoading(false);
-      setAuthError('Google sign-in is not accessible right now. Please sign in with email.');
+      setAuthError('Google sign-in is not accessible right now. Please sign in with email and password.');
     }
   };
 
