@@ -53,6 +53,7 @@ from app.services.budget_engine import (
     check_budget_feasibility, validate_itinerary_budget,
 )
 from app.services.itinerary_validator import validate_itinerary, merge_warnings
+import app.services.stage_service as _stages
 
 router = APIRouter(prefix="/trips", tags=["Trip Editing"])
 

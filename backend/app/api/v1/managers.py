@@ -128,6 +128,14 @@ def get_trip_requests(
     current: dict = Depends(require_role("MANAGER", "ADMIN")),
     db: Session = Depends(get_db)
 ):
+    # Ensure all GUIDE_MODE trips have a GuideAssignment record so managers can assign guides
+    guide_trips = db.query(Trip).filter(Trip.mode == "GUIDE_MODE", Trip.status != "CANCELLED").all()
+    for gt in guide_trips:
+        existing = db.query(GuideAssignment).filter(GuideAssignment.trip_id == gt.id).first()
+        if not existing:
+            db.add(GuideAssignment(trip_id=gt.id, status="REQUESTED"))
+    db.commit()
+
     assignments = db.query(GuideAssignment).filter(
         GuideAssignment.status.in_(["REQUESTED", "ACCEPTED", "CONFIRMED"])
     ).all()
@@ -135,6 +143,8 @@ def get_trip_requests(
     res = []
     for a in assignments:
         trip = a.trip
+        if not trip:
+            continue
         user = trip.user
         res.append({
             "assignment_id": a.id,
@@ -231,6 +241,17 @@ def assign_guide_to_trip(
 
     assignment.guide_id = guide.id
     assignment.status = "CONFIRMED"
+    assignment.confirmed_at = datetime.now(timezone.utc)
+
+    user = trip.user
+    score_res = GuideMatchingEngine.calculate_match(
+        guide=guide,
+        destination_name=trip.destination_name,
+        preferred_language=user.preferred_language if user else "English",
+        additional_languages=user.additional_languages if user else []
+    )
+    assignment.match_score = score_res["match_score"]
+    assignment.match_breakdown = score_res["breakdown"]
 
     # Flip guide status
     guide.status = "BUSY"

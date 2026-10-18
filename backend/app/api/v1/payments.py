@@ -446,6 +446,15 @@ def cancel_trip(
     trip.status = "CANCELLED"
     trip.updated_at = get_utc_now()
 
+    # Free assigned guide if any
+    if trip.guide_assignment:
+        trip.guide_assignment.status = "CANCELLED"
+        if trip.guide_assignment.guide:
+            g = trip.guide_assignment.guide
+            if g.current_trip_id == trip.id:
+                g.status = "ACTIVE"
+                g.current_trip_id = None
+
     # Create persistent cancellation record in MySQL
     cancellation = Cancellation(
         trip_id=trip.id,
