@@ -386,8 +386,12 @@ def stage_completion(db: Session, trip: Trip) -> Dict[str, Any]:
     party = _party(trip)
     rows = _active_selections(db, trip.id)
 
-    s1 = bool(trip.source_name and trip.destination_name and trip.start_datetime and trip.end_datetime
-              and trip.end_datetime > trip.start_datetime)
+    s1 = bool(
+        trip.source_name and trip.destination_name and trip.start_datetime and trip.end_datetime
+        and trip.end_datetime > trip.start_datetime
+        and trip.source_location_id != trip.destination_location_id
+        and str(trip.source_name or "").strip().lower() != str(trip.destination_name or "").strip().lower()
+    )
 
     budget_val = answers.get("budget")
     if isinstance(budget_val, dict):
@@ -482,6 +486,8 @@ def _auto_seed_places_if_empty(db: Session, trip: Trip) -> None:
 def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: int) -> List[str]:
     blockers: List[str] = []
     party = _party(trip)
+    if target >= 2 and not completion["1"]:
+        blockers.append("Invalid route: departure place and destination cannot be the same location.")
     if target >= 3 and not completion["2"]:
         blockers.append("Finish Travellers (stage 2): budget, travelling type, party counts and experience are all required.")
     if target >= 4 and not completion["3"]:

@@ -82,6 +82,21 @@ def generate_base_plan(trip: Trip, mode: str, db: Session) -> dict:
     dest_coords = {"lat": dst_loc.lat, "lng": dst_loc.lng} if dst_loc and dst_loc.lat is not None else None
 
     destination_name = trip.destination_name
+    source_name = trip.source_name
+
+    # Reject identical source & destination before building plans
+    if (
+        trip.source_location_id == trip.destination_location_id
+        or (source_name and destination_name and source_name.strip().lower() == destination_name.strip().lower())
+        or (src_loc and dst_loc and src_loc.place_id and dst_loc.place_id and src_loc.place_id == dst_loc.place_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "SAME_LOCATIONS",
+                "message": "Source and destination cannot be the same place. Please choose a different destination.",
+            }
+        )
 
     # India-wide coverage: ANY India -> India pair must produce a plan instantly.
     # Destinations with published verified packages use the verified engine; every

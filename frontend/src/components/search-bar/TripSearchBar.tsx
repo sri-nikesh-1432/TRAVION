@@ -118,6 +118,22 @@ const LOADING_COPY = [
   'Preparing your journey…',
 ];
 
+/** Strict equality and geographic proximity check between two locations */
+export function isSameLocation(a: LocationItem | null, b: LocationItem | null): boolean {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  if (a.place_id && b.place_id && a.place_id === b.place_id) return true;
+  const nameA = (a.name || '').trim().toLowerCase();
+  const nameB = (b.name || '').trim().toLowerCase();
+  if (nameA && nameB && nameA === nameB) return true;
+  if (typeof a.lat === 'number' && typeof a.lng === 'number' && typeof b.lat === 'number' && typeof b.lng === 'number') {
+    const dLat = Math.abs(a.lat - b.lat);
+    const dLng = Math.abs(a.lng - b.lng);
+    if (dLat < 0.12 && dLng < 0.12) return true; // ~13km proximity box
+  }
+  return false;
+}
+
 export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoading = false }) => {
   const [sourceQuery, setSourceQuery] = useState('');
   const [destQuery, setDestQuery] = useState('');
@@ -216,7 +232,20 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     setter(value);
     opener();
     clearSel();
-    setErrorMessage(null);
+
+    const otherVal = (field === 'source' ? (selectedDest?.name || destQuery) : (selectedSource?.name || sourceQuery)).trim().toLowerCase();
+    if (value.trim() && otherVal && value.trim().toLowerCase() === otherVal) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+    } else {
+      setErrorMessage(null);
+      setErrorField(null);
+    }
+
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { queryWorld(value, field); }, 250);
   };
@@ -282,6 +311,21 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       setErrorField(field);
       return;
     }
+    const other = field === 'source' ? selectedDest : selectedSource;
+    const otherQuery = field === 'source' ? destQuery : sourceQuery;
+    if (
+      isSameLocation(item, other) ||
+      (item.name && other?.name && item.name.trim().toLowerCase() === other.name.trim().toLowerCase()) ||
+      (item.name && otherQuery && item.name.trim().toLowerCase() === otherQuery.trim().toLowerCase())
+    ) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+      return;
+    }
     remember(item);
     if (field === 'source') {
       setSelectedSource(item);
@@ -298,6 +342,21 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
 
   /** Pick a bundled India/world place — register it server-side when signed in. */
   const selectLocal = async (p: IndexedPlace, field: FieldKind) => {
+    const other = field === 'source' ? selectedDest : selectedSource;
+    const otherQuery = field === 'source' ? destQuery : sourceQuery;
+    if (
+      (other && p.name && other.name && p.name.trim().toLowerCase() === other.name.trim().toLowerCase()) ||
+      (otherQuery && p.name && p.name.trim().toLowerCase() === otherQuery.trim().toLowerCase())
+    ) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+      return;
+    }
+
     const address = p.country === 'India'
       ? [p.name, p.state, 'India'].filter(Boolean).join(', ')
       : p.country;
@@ -311,6 +370,16 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       formatted_address: address,
       description: address,
     };
+    if (isSameLocation(item, other)) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+      return;
+    }
+
     if (isLoggedIn) {
       try {
         const reg = await api.registerLocation({
@@ -335,12 +404,37 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
   };
 
   const selectRecent = async (p: RecentPlace, field: FieldKind) => {
+    const other = field === 'source' ? selectedDest : selectedSource;
+    const otherQuery = field === 'source' ? destQuery : sourceQuery;
+    if (
+      (other && p.name && other.name && p.name.trim().toLowerCase() === other.name.trim().toLowerCase()) ||
+      (otherQuery && p.name && p.name.trim().toLowerCase() === otherQuery.trim().toLowerCase())
+    ) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+      return;
+    }
+
     const item: LocationItem = {
       id: `gmap:${p.place_id || p.name}`,
       name: p.name, state: p.state, country: p.country,
       lat: p.lat, lng: p.lng, place_id: p.place_id,
       formatted_address: p.formatted_address, description: p.formatted_address,
     };
+    if (isSameLocation(item, other)) {
+      setErrorMessage(
+        field === 'source'
+          ? 'Starting place cannot be the same as your destination. Please choose a different starting location.'
+          : 'Destination cannot be the same as your starting place. Please choose a different destination.'
+      );
+      setErrorField(field);
+      return;
+    }
+
     if (isLoggedIn) {
       try {
         const reg = await api.registerLocation({
@@ -361,6 +455,7 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       setShowDestDropdown(false);
     }
     setErrorMessage(null);
+    setErrorField(null);
   };
 
   /** Source only — the traveller's real position, reverse geocoded live. */
@@ -401,6 +496,13 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
               place_id: placeId,
               formatted_address: formatted, description: formatted,
             };
+            if (
+              selectedDest &&
+              (isSameLocation(item, selectedDest) || name.trim().toLowerCase() === selectedDest.name.trim().toLowerCase())
+            ) {
+              finish(null, 'Your detected location is the same as your selected destination. Please pick a different destination.');
+              return;
+            }
             if (isLoggedIn) {
               try {
                 const reg = await api.registerLocation({
@@ -442,7 +544,13 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     setSourceQuery(destQuery);
     setSelectedDest(tempLoc);
     setDestQuery(tempQuery);
-    setErrorMessage(null);
+    if (tempLoc && selectedDest && isSameLocation(tempLoc, selectedDest)) {
+      setErrorMessage('Source and destination cannot be the same place. Please choose a different destination.');
+      setErrorField('destination');
+    } else {
+      setErrorMessage(null);
+      setErrorField(null);
+    }
   };
 
   const getDurationHint = () => {
@@ -468,8 +576,15 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       setErrorField('destination');
       return;
     }
-    if (selectedSource.id === selectedDest.id) {
-      setErrorMessage('Your destination is the same as your starting point.');
+    const isSame =
+      isSameLocation(selectedSource, selectedDest) ||
+      selectedSource.id === selectedDest.id ||
+      (selectedSource.place_id && selectedDest.place_id && selectedSource.place_id === selectedDest.place_id) ||
+      selectedSource.name.trim().toLowerCase() === selectedDest.name.trim().toLowerCase() ||
+      sourceQuery.trim().toLowerCase() === destQuery.trim().toLowerCase();
+
+    if (isSame) {
+      setErrorMessage('Source and destination cannot be the same place. Please choose a different destination.');
       setErrorField('destination');
       return;
     }
@@ -516,20 +631,41 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       {recent.length > 0 && (
         <div className="border-t border-charcoal-50 pt-1">
           <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-400">Recent searches</div>
-          {recent.map((r, i) => (
-            <button
-              key={`${r.place_id || r.name}-${i}`}
-              type="button"
-              onClick={() => selectRecent(r, 'source')}
-              className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
-            >
-              <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
-              <span>
-                <span className="font-semibold text-charcoal-800 block">{r.name}</span>
-                <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
-              </span>
-            </button>
-          ))}
+          {recent.map((r, i) => {
+            const other = (selectedDest?.name || destQuery).trim().toLowerCase();
+            const isSame = Boolean(other && r.name && r.name.trim().toLowerCase() === other);
+            if (isSame) {
+              return (
+                <div
+                  key={`${r.place_id || r.name}-${i}`}
+                  className="w-full text-left px-4 py-2 bg-amber-50/50 flex items-center justify-between text-sm opacity-60 cursor-not-allowed select-none"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>
+                      <span className="font-semibold text-charcoal-700 block">{r.name}</span>
+                      <span className="text-[11px] text-amber-800">Already chosen as destination</span>
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Selected</span>
+                </div>
+              );
+            }
+            return (
+              <button
+                key={`${r.place_id || r.name}-${i}`}
+                type="button"
+                onClick={() => selectRecent(r, 'source')}
+                className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
+                <span>
+                  <span className="font-semibold text-charcoal-800 block">{r.name}</span>
+                  <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -545,20 +681,41 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
       {recent.length > 0 && (
         <div className="pt-1">
           <div className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-charcoal-400">Recent searches</div>
-          {recent.map((r, i) => (
-            <button
-              key={`${r.place_id || r.name}-${i}`}
-              type="button"
-              onClick={() => selectRecent(r, 'destination')}
-              className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
-            >
-              <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
-              <span>
-                <span className="font-semibold text-charcoal-800 block">{r.name}</span>
-                <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
-              </span>
-            </button>
-          ))}
+          {recent.map((r, i) => {
+            const other = (selectedSource?.name || sourceQuery).trim().toLowerCase();
+            const isSame = Boolean(other && r.name && r.name.trim().toLowerCase() === other);
+            if (isSame) {
+              return (
+                <div
+                  key={`${r.place_id || r.name}-${i}`}
+                  className="w-full text-left px-4 py-2 bg-amber-50/50 flex items-center justify-between text-sm opacity-60 cursor-not-allowed select-none"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>
+                      <span className="font-semibold text-charcoal-700 block">{r.name}</span>
+                      <span className="text-[11px] text-amber-800">Already chosen as starting point</span>
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Selected</span>
+                </div>
+              );
+            }
+            return (
+              <button
+                key={`${r.place_id || r.name}-${i}`}
+                type="button"
+                onClick={() => selectRecent(r, 'destination')}
+                className="w-full text-left px-4 py-2 hover:bg-travion-50 flex items-center gap-2.5 text-sm transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5 text-charcoal-300 shrink-0" />
+                <span>
+                  <span className="font-semibold text-charcoal-800 block">{r.name}</span>
+                  <span className="text-[11px] text-charcoal-400">{r.formatted_address || [r.state, r.country].filter(Boolean).join(', ')}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="px-4 py-3 flex items-center gap-2 text-[11px] font-semibold text-charcoal-400">
@@ -587,6 +744,9 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     const hasLocal = local.length > 0;
     const hasWorld = results.length > 0;
     const any = hasLocal || hasWorld;
+    const otherLoc = field === 'source' ? selectedDest : selectedSource;
+    const otherQuery = (field === 'source' ? destQuery : sourceQuery).trim().toLowerCase();
+
     return (
       <>
         <div className="px-4 pt-2 pb-1.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-charcoal-400 border-b border-charcoal-100 sticky top-0 bg-white rounded-t-2xl">
@@ -618,6 +778,28 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
             </div>
             {local.map(p => {
               const { icon: Icon, sub, tag } = localMeta(p);
+              const isSame = Boolean(
+                (otherLoc && (p.name.trim().toLowerCase() === otherLoc.name.trim().toLowerCase())) ||
+                (otherQuery && p.name.trim().toLowerCase() === otherQuery)
+              );
+              if (isSame) {
+                return (
+                  <div
+                    key={p.id}
+                    className="w-full text-left px-4 py-2.5 bg-amber-50/60 border-l-4 border-amber-400 flex items-start gap-3 text-sm opacity-60 cursor-not-allowed select-none"
+                    title={`Already chosen as ${field === 'destination' ? 'starting place' : 'destination'}`}
+                  >
+                    <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon className="w-4 h-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-bold text-charcoal-700 block truncate">{p.name}</span>
+                      <span className="text-[11px] text-amber-800 font-semibold block truncate">Already chosen as {field === 'destination' ? 'starting point' : 'destination'}</span>
+                    </span>
+                    <span className="ml-auto shrink-0 self-center text-[9px] font-black uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Selected</span>
+                  </div>
+                );
+              }
               return (
                 <button
                   key={p.id}
@@ -647,6 +829,28 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
             </div>
             {results.map(s => {
               const Icon = iconForPlace(s.types);
+              const isSame = Boolean(
+                (otherLoc && s.name.trim().toLowerCase() === otherLoc.name.trim().toLowerCase()) ||
+                (otherQuery && s.name.trim().toLowerCase() === otherQuery)
+              );
+              if (isSame) {
+                return (
+                  <div
+                    key={s.place_id}
+                    className="w-full text-left px-4 py-2.5 bg-amber-50/60 border-l-4 border-amber-400 flex items-start gap-3 text-sm opacity-60 cursor-not-allowed select-none"
+                    title={`Already chosen as ${field === 'destination' ? 'starting place' : 'destination'}`}
+                  >
+                    <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon className="w-4 h-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-bold text-charcoal-700 block truncate">{s.name}</span>
+                      <span className="text-[11px] text-amber-800 font-semibold block truncate">Already chosen as {field === 'destination' ? 'starting point' : 'destination'}</span>
+                    </span>
+                    <span className="ml-auto shrink-0 self-center text-[9px] font-black uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Selected</span>
+                  </div>
+                );
+              }
               return (
                 <button
                   key={s.place_id}
@@ -865,6 +1069,19 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
             </div>
           </div>
 
+          {/* Explicit alert if source and destination match */}
+          {((selectedSource && selectedDest && isSameLocation(selectedSource, selectedDest)) ||
+            (Boolean(sourceQuery.trim()) && Boolean(destQuery.trim()) && sourceQuery.trim().toLowerCase() === destQuery.trim().toLowerCase())) && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-3 flex items-center gap-2 p-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold"
+            >
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+              <span>Starting point and destination cannot be the same place. Please choose a different destination.</span>
+            </motion.div>
+          )}
+
           <div className="mt-4 flex flex-col lg:flex-row lg:items-stretch gap-3">
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-stretch gap-3">
               {dateField('start')}
@@ -877,10 +1094,16 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
             <div className="lg:w-[240px]">
               <button
                 type="button"
-                disabled={isLoading}
+                disabled={
+                  isLoading ||
+                  Boolean(
+                    (selectedSource && selectedDest && isSameLocation(selectedSource, selectedDest)) ||
+                    (sourceQuery.trim() && destQuery.trim() && sourceQuery.trim().toLowerCase() === destQuery.trim().toLowerCase())
+                  )
+                }
                 onClick={handleValidateAndSearch}
                 aria-label="Explore trip"
-                className="w-full h-full min-h-[58px] rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-extrabold text-[15px] shadow-soft hover:shadow-floating flex items-center justify-center gap-2.5 transition-all disabled:opacity-70 disabled:cursor-wait active:scale-[0.99] px-5"
+                className="w-full h-full min-h-[58px] rounded-2xl bg-travion-600 hover:bg-travion-700 text-white font-extrabold text-[15px] shadow-soft hover:shadow-floating flex items-center justify-center gap-2.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] px-5"
               >
                 {isLoading ? (
                   <>

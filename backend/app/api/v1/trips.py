@@ -39,11 +39,37 @@ def search_and_create_trip(
             detail={"error_code": "INVALID_DESTINATION", "message": "Please select a recognized destination city.", "field": "destination_location_id"}
         )
 
-    # 3. Source != Destination
+    # 3. Source != Destination (Strict validation: ID, Place ID, Normalized Name, and Geo Proximity)
+    is_same_location = False
     if req.source_location_id == req.destination_location_id:
+        is_same_location = True
+    elif source.place_id and destination.place_id and source.place_id == destination.place_id:
+        is_same_location = True
+    elif source.name and destination.name and source.name.strip().lower() == destination.name.strip().lower():
+        is_same_location = True
+    elif (
+        source.lat is not None and source.lng is not None
+        and destination.lat is not None and destination.lng is not None
+    ):
+        from math import radians, cos, sin, asin, sqrt
+        def _haversine_km(lat1, lon1, lat2, lon2):
+            R = 6371.0
+            dlat = radians(lat2 - lat1)
+            dlon = radians(lon2 - lon1)
+            a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
+            c = 2 * asin(sqrt(max(0.0, a)))
+            return R * c
+        if _haversine_km(source.lat, source.lng, destination.lat, destination.lng) < 15.0:
+            is_same_location = True
+
+    if is_same_location:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "SAME_LOCATIONS", "message": "Your destination is the same as your source.", "field": "destination_location_id"}
+            detail={
+                "error_code": "SAME_LOCATIONS",
+                "message": "Source and destination cannot be the same city or location. Please select a different destination.",
+                "field": "destination_location_id"
+            }
         )
 
     # Server now with UTC comparison

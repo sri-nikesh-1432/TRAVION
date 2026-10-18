@@ -372,6 +372,10 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   // Re-route an unplannable trip to a journey-ready destination, keeping source & dates
   const reRouteTripToDestination = async (destName: string) => {
     if (!activeTrip || reroutingDest) return;
+    if (activeTrip.source_name && activeTrip.source_name.trim().toLowerCase() === destName.trim().toLowerCase()) {
+      setPlanError({ message: 'Destination cannot be the same as your starting place.' });
+      return;
+    }
     const dest = locationsCache.find((l) => l.name === destName);
     if (!dest) return;
     setReroutingDest(destName);
@@ -605,8 +609,40 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     setPlanError(null);
     setIsSearching(true);
     try {
+      const srcName = (searchData.source.name || '').trim().toLowerCase();
+      const dstName = (searchData.destination.name || '').trim().toLowerCase();
+      const srcId = searchData.source.id || '';
+      const dstId = searchData.destination.id || '';
+      const srcPlace = searchData.source.place_id || '';
+      const dstPlace = searchData.destination.place_id || '';
+
+      if (
+        (srcId && dstId && srcId === dstId) ||
+        (srcPlace && dstPlace && srcPlace === dstPlace) ||
+        (srcName && dstName && srcName === dstName)
+      ) {
+        setPlanError({
+          message: 'Source and destination cannot be the same place. Please choose a different destination.'
+        });
+        setIsSearching(false);
+        return;
+      }
+
       const source = await ensureRegistered(searchData.source);
       const destination = await ensureRegistered(searchData.destination);
+
+      if (
+        source.id === destination.id ||
+        (source.place_id && destination.place_id && source.place_id === destination.place_id) ||
+        source.name.trim().toLowerCase() === destination.name.trim().toLowerCase()
+      ) {
+        setPlanError({
+          message: 'Source and destination cannot be the same place. Please choose a different destination.'
+        });
+        setIsSearching(false);
+        return;
+      }
+
       const trip = await api.searchTrip({
         source_location_id: source.id,
         destination_location_id: destination.id,
