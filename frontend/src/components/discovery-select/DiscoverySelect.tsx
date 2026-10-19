@@ -49,11 +49,44 @@ interface DiscoverySelectProps {
 
 type TabCategory = 'all' | 'must_visit' | 'activities' | 'tourist_spots' | 'food';
 
+const KNOWN_LANDMARK_IMAGES: Record<string, string> = {
+  // Hyderabad
+  'charminar': 'https://images.unsplash.com/photo-1572445271230-a78b5944a659?auto=format&fit=crop&w=800&q=80',
+  'golconda': 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?auto=format&fit=crop&w=800&q=80',
+  'salar jung': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=800&q=80',
+  'chowmahalla': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=800&q=80',
+  'qutb shahi': 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=800&q=80',
+  'birla mandir': 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
+  'ramoji': 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=800&q=80',
+  'hussain sagar': 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
+  'lumbini': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+  'nehru zoological': 'https://images.unsplash.com/photo-1534567153574-2b12153a87f0?auto=format&fit=crop&w=800&q=80',
+  'laad bazaar': 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
+  'taramati': 'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&w=800&q=80',
+  'durgam cheruvu': 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80',
+  'paradise biryani': 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=800&q=80',
+  'bawarchi': 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=800&q=80',
+  'shadab': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
+  'chutneys': 'https://images.unsplash.com/photo-1610192244261-3f33de3f55e4?auto=format&fit=crop&w=800&q=80',
+  // Bangalore
+  'lalbagh': 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=800&q=80',
+  'cubbon': 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80',
+  'bangalore palace': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=800&q=80',
+  'vidhana soudha': 'https://images.unsplash.com/photo-1599661046827-dacff0c0f09a?auto=format&fit=crop&w=800&q=80',
+  // Chennai
+  'marina beach': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+  'kapaleeshwarar': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=800&q=80',
+  // Agra
+  'taj mahal': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=800&q=80',
+  'agra fort': 'https://images.unsplash.com/photo-1585135497273-1a86b09fe70e?auto=format&fit=crop&w=800&q=80',
+  'fatehpur sikri': 'https://images.unsplash.com/photo-1590050752117-238cb0fb12b1?auto=format&fit=crop&w=800&q=80',
+};
+
 const CATEGORY_IMAGES: Record<string, string[]> = {
   heritage: [
     'https://images.unsplash.com/photo-1599661046827-dacff0c0f09a?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=800&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1590050752117-238cb0fb12b1?auto=format&fit=crop&w=800&q=80',
   ],
   nature: [
     'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
@@ -66,6 +99,7 @@ const CATEGORY_IMAGES: Record<string, string[]> = {
   food: [
     'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
     'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=800&q=80',
   ],
   default: [
     'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=800&q=80',
@@ -73,13 +107,31 @@ const CATEGORY_IMAGES: Record<string, string[]> = {
   ],
 };
 
-function getPlaceImage(name: string, category: string, index: number): string {
-  const c = String(category || '').toLowerCase();
+function getPlaceImage(
+  item: { name: string; category?: string; image_url?: string | null },
+  _destinationName: string,
+  index: number
+): string {
+  if (item.image_url && item.image_url.startsWith('http')) {
+    return item.image_url;
+  }
+  const nameLower = (item.name || '').toLowerCase();
+  for (const [key, url] of Object.entries(KNOWN_LANDMARK_IMAGES)) {
+    if (nameLower.includes(key)) {
+      return url;
+    }
+  }
+  const c = String(item.category || '').toLowerCase();
   let list = CATEGORY_IMAGES.default;
-  if (c.includes('food') || c.includes('rest') || c.includes('cafe')) list = CATEGORY_IMAGES.food;
-  else if (c.includes('activ') || c.includes('trek') || c.includes('tour') || c.includes('walk')) list = CATEGORY_IMAGES.activities;
-  else if (c.includes('natur') || c.includes('park') || c.includes('lake') || c.includes('beach') || c.includes('hill')) list = CATEGORY_IMAGES.nature;
-  else if (c.includes('temple') || c.includes('fort') || c.includes('palace') || c.includes('herit') || c.includes('monum')) list = CATEGORY_IMAGES.heritage;
+  if (c.includes('food') || c.includes('rest') || c.includes('cafe') || c.includes('biryani') || c.includes('dining')) {
+    list = CATEGORY_IMAGES.food;
+  } else if (c.includes('activ') || c.includes('trek') || c.includes('tour') || c.includes('walk')) {
+    list = CATEGORY_IMAGES.activities;
+  } else if (c.includes('natur') || c.includes('park') || c.includes('lake') || c.includes('beach') || c.includes('hill')) {
+    list = CATEGORY_IMAGES.nature;
+  } else if (c.includes('temple') || c.includes('fort') || c.includes('palace') || c.includes('herit') || c.includes('monum')) {
+    list = CATEGORY_IMAGES.heritage;
+  }
   return list[index % list.length];
 }
 
@@ -241,6 +293,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       recommended?: boolean;
       latitude?: number | null;
       longitude?: number | null;
+      image_url?: string | null;
     }> = [];
 
     (catalog.must_visit || []).forEach((p, idx) => {
@@ -257,6 +310,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         recommended: p.recommended,
         latitude: p.latitude,
         longitude: p.longitude,
+        image_url: p.image_url,
       });
     });
 
@@ -274,6 +328,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           verified: true,
           latitude: p.latitude,
           longitude: p.longitude,
+          image_url: p.image_url,
         });
       }
     });
@@ -293,6 +348,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           recommended: a.recommended,
           latitude: a.latitude,
           longitude: a.longitude,
+          image_url: a.image_url,
         });
       }
     });
@@ -310,6 +366,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         verified: true,
         latitude: f.latitude,
         longitude: f.longitude,
+        image_url: f.image_url,
       });
     });
 
@@ -569,7 +626,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-28">
           {filteredItems.map((item, idx) => {
             const isSelected = item.kind === 'food' ? selectedFoods.has(item.name) : selectedPlaces.has(item.name);
-            const img = getPlaceImage(item.name, item.category, idx);
+            const img = getPlaceImage(item, destinationName, idx);
 
             return (
               <motion.div

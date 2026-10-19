@@ -26,7 +26,8 @@ from app.services.budget_service import (
 from app.services.pricing_service import compute_guide_fee, party_headcount, party_pax, GUIDE_FEE_RATE
 from app.services.verified_data import (
     VERIFIED_LOCATIONS, VERIFIED_TRANSPORT, VERIFIED_STAYS,
-    VERIFIED_FOOD, VERIFIED_ATTRACTIONS, VERIFIED_SAFETY_INFO
+    VERIFIED_FOOD, VERIFIED_ATTRACTIONS, VERIFIED_SAFETY_INFO,
+    get_verified_safety_info
 )
 
 logger = logging.getLogger(__name__)
@@ -340,7 +341,7 @@ class AIOrchestrator:
         attractions_all = VERIFIED_ATTRACTIONS.get(destination_name, [])
         sightseeing = [a for a in attractions_all if a.get("category") == "attraction"]
         gems = [a for a in attractions_all if a.get("category") == "hidden_gem"]
-        safety = VERIFIED_SAFETY_INFO.get(destination_name, VERIFIED_SAFETY_INFO["Ooty"])
+        safety = get_verified_safety_info(destination_name)
 
         priority = str(profile.get("priority") or "").lower()
         experience = str(profile.get("experience") or "").lower()
@@ -372,13 +373,17 @@ class AIOrchestrator:
         # hotel check-in) belongs to Day 2 after the morning arrival.
         dep_label = str(transport.get("departure", "06:15 AM"))
         arr_label = str(transport.get("arrival", ""))
+        dep_min = _clock_minutes(dep_label)
+        arr_min = _clock_minutes(arr_label)
         overnight_out = (
             "+1" in arr_label
             or "next day" in arr_label.lower()
-            or _clock_minutes(dep_label) >= 17 * 60
+            or dep_min >= 17 * 60
+            or (arr_min > 0 and arr_min <= dep_min)
         )
-        defer_dest_to_day2 = overnight_out and days >= 3
+        defer_dest_to_day2 = overnight_out and days >= 2
         day2_extra: List[Dict[str, Any]] = []
+        global_meal_index = 0
 
         for day_num in range(1, days + 1):
             day_stops: List[Dict[str, Any]] = []
@@ -407,13 +412,14 @@ class AIOrchestrator:
                     source=transport.get("source", "verified_api"),
                     transport_details=transport,
                 ))
-                # Grounded safety / emergency briefing. On overnight journeys the
-                # traveller boards in the evening and arrives the next morning, so
-                # the briefing is scheduled for Day 2 after arrival instead.
-                briefing_time = "08:00 AM"
+                # Grounded safety / emergency briefing: strictly scheduled AFTER
+                # arrival at the destination — never before departure!
                 if defer_dest_to_day2:
-                    arr_min = _clock_minutes(arr_label)
-                    briefing_time = _minutes_to_clock(arr_min + 45) if arr_label and arr_min else "09:00 AM"
+                    briefing_time = _minutes_to_clock(arr_min + 45) if arr_label and arr_min > 0 else "01:00 PM"
+                else:
+                    arr_estimate = arr_min if arr_min > dep_min else dep_min + _duration_minutes(transport)
+                    briefing_time = _minutes_to_clock(max(arr_estimate + 30, dep_min + 30))
+
                 briefing_stop = _stop(
                     id=f"stop-d{day_num}-s",
                     day=day_num,
@@ -428,7 +434,7 @@ class AIOrchestrator:
                     lat=round(dest_coords["lat"] + 0.004, 6),
                     lng=round(dest_coords["lng"] + 0.004, 6),
                     estimated_cost=0.0,
-                    duration_minutes=10,
+                    duration_minutes=15,
                     rating=5.0,
                     emergency_contact=safety.get("tourist_helpline"),
                     source="verified_api",
@@ -441,12 +447,18 @@ class AIOrchestrator:
                     day_stops.append(briefing_stop)
 
             # Stay check-in / check-out. On an overnight journey the traveller
-            # sleeps on the road and checks in the following afternoon.
+            # sleeps on the road and checks in the following day upon arrival.
             if is_first and stay:
+                checkin_time = "02:00 PM"
+                if not defer_dest_to_day2:
+                    checkin_time = _minutes_to_clock(max(_clock_minutes(briefing_time) + 30, 13 * 60))
+                else:
+                    checkin_time = _minutes_to_clock(max(_clock_minutes(briefing_time) + 45, 14 * 60))
+
                 checkin_stop = _stop(
                     id=f"stop-d{day_num}-h",
                     day=day_num,
-                    time="02:00 PM",
+                    time=checkin_time,
                     title=f"Check-in at {stay['name']}",
                     description=(
                         f"{stay['tier']} stay, {_fmt_inr(stay['price_per_night'])} per night. "
@@ -561,12 +573,20 @@ class AIOrchestrator:
             else:
                 meal_slots = _MEAL_TIMES
             meal_count = 0
+            day_used_food: set = set()
             for mslot in meal_slots:
                 if not food_options:
                     break
-                rest = food_options[meal_count % len(food_options)] if food_options else None
+                rest = None
+                for _ in range(len(food_options)):
+                    candidate = food_options[global_meal_index % len(food_options)]
+                    global_meal_index += 1
+                    if candidate.get("name") not in day_used_food or len(food_options) <= len(meal_slots):
+                        rest = candidate
+                        break
                 if rest is None:
                     continue
+                day_used_food.add(rest.get("name"))
                 meal_count += 1
                 meal_cost = round(float(rest.get("avg_cost_for_two", 800)) * pax / 2, 0)
                 food_total += meal_cost

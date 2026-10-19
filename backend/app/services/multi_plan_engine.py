@@ -551,9 +551,19 @@ def _inject_selected_places(
         if not match or _plan_contains(days, match.get("name", "")):
             food_index += 1
             continue
-        day_idx = food_index % day_count
+        # Find a day that doesn't already have this restaurant
+        found_day = None
+        for shift in range(day_count):
+            candidate_day = days[(food_index + shift) % day_count]
+            if not _day_contains_food(candidate_day, match.get("name", name)):
+                found_day = candidate_day
+                break
+        if not found_day:
+            food_index += 1
+            continue
+
         meal_round = food_index // day_count  # 0 → lunch, 1 → dinner
-        meal_day = days[day_idx]
+        meal_day = found_day
         meal_time = "12:30 PM" if meal_round == 0 else "07:30 PM"
         meal_label = "Lunch" if meal_round == 0 else "Dinner"
         cuisine = str(match.get("cuisine") or match.get("types") or "").strip()
@@ -582,9 +592,35 @@ def _inject_selected_places(
     return added_cost
 
 
+def _clean_food_name(name: str) -> str:
+    """Normalize restaurant name by stripping parenthesized branch info (e.g. '(Secunderabad)')."""
+    import re
+    cleaned = re.sub(r"\(.*?\)", "", str(name or "")).strip().lower()
+    return cleaned or str(name or "").lower()
+
+
+def _day_contains_food(day: Dict[str, Any], name: str) -> bool:
+    target = _clean_food_name(name)
+    if not target or len(target) < 3:
+        return False
+    for s in day.get("stops", []):
+        if str(s.get("category", "")).lower() == "food":
+            s_name = _clean_food_name(s.get("title", "") or s.get("location_name", ""))
+            if target in s_name or s_name in target:
+                return True
+    return False
+
+
 def _plan_contains(days: List[Dict[str, Any]], name: str) -> bool:
-    n = str(name or "").lower()
-    return any(n and n in str(s.get("title", "")).lower() for d in days for s in d.get("stops", []))
+    target = _clean_food_name(name)
+    if not target or len(target) < 3:
+        return False
+    for d in days:
+        for s in d.get("stops", []):
+            s_name = _clean_food_name(s.get("title", "") or s.get("location_name", ""))
+            if target in s_name or s_name in target:
+                return True
+    return False
 
 
 # ── Plan construction ────────────────────────────────────────────────────────

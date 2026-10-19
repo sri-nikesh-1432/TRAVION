@@ -250,6 +250,7 @@ export interface CatalogPlace {
   duration_is_estimate?: boolean;
   rating?: number | null;
   review_count?: number | null;
+  image_url?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
@@ -283,6 +284,7 @@ export interface CatalogActivity {
   experience_tags?: string[];
   placement?: 'inside' | 'nearby' | 'outside' | string;
   inside_destination?: boolean;
+  image_url?: string | null;
   /** True → experience-matched activity the UI auto-selects (server-decided). */
   recommended?: boolean;
   source: string;
@@ -303,6 +305,7 @@ export interface CatalogStay {
   longitude?: number | null;
   distance_km?: number | null;
   budget_category?: string | null;
+  image_url?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;
@@ -334,6 +337,7 @@ export interface CatalogFood {
   price_level?: string | null;
   budget_class?: string | null;
   must_try?: string | null;
+  image_url?: string | null;
   source: string;
   verified: boolean;
   already_in_plan: boolean;

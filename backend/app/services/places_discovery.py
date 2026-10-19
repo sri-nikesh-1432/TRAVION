@@ -1527,6 +1527,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
     """Travion's curated verified data (real names, ratings, fees)."""
     out: Dict[str, List[Dict[str, Any]]] = {"must_visit": [], "food": [], "activities": [], "stays": []}
     for a in VERIFIED_ATTRACTIONS.get(destination) or []:
+        img = a.get("image_url") or a.get("hero_image") or None
         out["must_visit"].append({
             "id": f"cat_{_norm(a.get('name', ''))[:40]}",
             "place_id": None,
@@ -1538,7 +1539,8 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "review_count": None,
             "opening_hours": None,
             "website": None,
-            "photos": [],
+            "image_url": img,
+            "photos": [img] if img else [],
             "source": a.get("source", "verified_api"),
             "verified": True,
             "entry_fee": a.get("entry_fee"),
@@ -1557,6 +1559,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
     # destination (they are genuinely things a traveller does there).
     activity_pool = activity_like or list(attractions)
     for a in activity_pool[: TARGET_COUNTS["activities"] * 2]:
+        img = a.get("image_url") or a.get("hero_image") or None
         out["activities"].append({
             "id": f"cata_{_norm(a.get('name', ''))[:40]}",
             "place_id": None,
@@ -1568,7 +1571,8 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "review_count": None,
             "opening_hours": None,
             "website": None,
-            "photos": [],
+            "image_url": img,
+            "photos": [img] if img else [],
             "source": a.get("source", "verified_api"),
             "verified": True,
             "entry_fee": a.get("entry_fee"),
@@ -1577,6 +1581,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "duration_is_estimate": False,
         })
     for f in VERIFIED_FOOD.get(destination) or []:
+        img = f.get("image_url") or f.get("hero_image") or None
         out["food"].append({
             "id": f"catf_{_norm(f.get('name', ''))[:40]}",
             "place_id": None,
@@ -1588,7 +1593,8 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "review_count": None,
             "opening_hours": None,
             "website": None,
-            "photos": [],
+            "image_url": img,
+            "photos": [img] if img else [],
             "source": f.get("source", "verified_api"),
             "verified": True,
             "entry_fee": None,
@@ -1600,6 +1606,7 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "duration_is_estimate": True,
         })
     for s in VERIFIED_STAYS.get(destination) or []:
+        img = s.get("image_url") or s.get("hero_image") or None
         out["stays"].append({
             "id": f"cats_{_norm(s.get('name', ''))[:40]}",
             "place_id": None,
@@ -1611,7 +1618,8 @@ def _catalog_items(destination: str) -> Dict[str, List[Dict[str, Any]]]:
             "review_count": None,
             "opening_hours": None,
             "website": None,
-            "photos": [],
+            "image_url": img,
+            "photos": [img] if img else [],
             "source": s.get("source", "verified_api"),
             "verified": True,
             "tier": s.get("tier"),
@@ -2178,12 +2186,36 @@ _GENERIC_PLACE_NAMES = {
 }
 
 
+_RESIDENTIAL_NOISE_TERMS = (
+    "colony park", "gandhi nagar park", "nagar park", "community garden", "public park",
+    "children park", "children's park", "layout park", "sector park", "ward park",
+    "phase park", "block park", "enclave park", "colony garden", "walking track",
+    "association park", "residents park", "housing board", "graveyard", "cremation",
+    "burial ground", "kabristan", "shamshan", "water tank", "drainage",
+    "jawan nagar", "karthikeya nagar", "east gandhi nagar", "communtiy garden"
+)
+
+_GENERIC_SHRINES = {
+    "shiva temple", "hanuman temple", "sai baba temple", "shirdi sai baba",
+    "santhoshi mata", "santhoshi mata temple", "ganesh temple", "abu bakr masjid",
+    "eidgah masjid", "adoration chapel", "divine mercy adoration chapel",
+    "church", "temple", "masjid", "shirdi sai baba temple"
+}
+
+
 def _is_generic_place_name(name: str) -> bool:
     """True for provider noise that cannot anchor an activity: single-token
-    generic names ("temple", "parking", "gate") or tiny abbreviations. Real
-    specific places always pass."""
-    tokens = _norm(name).split()
-    return len(tokens) == 1 and (tokens[0] in _GENERIC_PLACE_NAMES or len(tokens[0]) <= 3)
+    generic names ("temple", "parking", "gate"), residential colony parks,
+    or bare neighborhood shrines. Real specific landmarks always pass."""
+    norm_n = _norm(name)
+    tokens = norm_n.split()
+    if len(tokens) == 1 and (tokens[0] in _GENERIC_PLACE_NAMES or len(tokens[0]) <= 3):
+        return True
+    if any(noise in norm_n for noise in _RESIDENTIAL_NOISE_TERMS):
+        return True
+    if norm_n in _GENERIC_SHRINES:
+        return True
+    return False
 
 
 def _experience_label(value: Any) -> str:
@@ -2250,6 +2282,19 @@ def _rank(
 
     def score(item: Dict[str, Any]) -> float:
         s = 0.0
+        # Curated destination highlights always take pride of place over generic POIs
+        if item.get("source") in ("verified_api", "curated_destination", "verified_catalog"):
+            s += 50.0
+        elif item.get("source") == "guide_submitted":
+            s += 20.0
+
+        # Severely penalize residential colony noise and bare neighborhood shrines
+        norm_n = _norm(item.get("name", ""))
+        if any(noise in norm_n for noise in _RESIDENTIAL_NOISE_TERMS):
+            s -= 100.0
+        if norm_n in _GENERIC_SHRINES and item.get("source") not in ("verified_api", "curated_destination", "verified_catalog"):
+            s -= 100.0
+
         rating = item.get("rating")
         if rating is not None:
             s += float(rating) * 2
@@ -2258,8 +2303,6 @@ def _rank(
             s += 1.0
         if item.get("source") == "google_places":
             s += 1.0
-        if item.get("source") in ("verified_api", "guide_submitted"):
-            s += 0.5
         if item.get("category") == "activities":
             s += 0.5
         haystack = _haystack(item)

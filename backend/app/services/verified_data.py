@@ -4,6 +4,7 @@ Contains verified locations, real transport schedules (train numbers, departure/
 verified hotels/stays, local cuisine and dining spots, authentic attractions,
 guide-submitted hidden gems, and verified emergency services.
 """
+from typing import Dict, Any, List, Optional
 
 VERIFIED_LOCATIONS = [
     {
@@ -2235,8 +2236,101 @@ VERIFIED_SAFETY_INFO = {
             "Use government-approved boat operators; agree the fare before booking.",
             "Mind steep, slippery ghat steps after rain and during monsoon."
         ]
+    },
+    "Hyderabad": {
+        "police_phone": "100 / 040-27852435 (Hyderabad City Police)",
+        "hospital_name": "Osmania General Hospital / NIMS Hospital, Hyderabad",
+        "hospital_phone": "040-24600121 / 040-23489000",
+        "tourist_helpline": "1800-425-46464 / 1363 (Telangana Tourism)",
+        "advisories": [
+            "Traffic around Charminar and Old City is pedestrian-heavy; use autorickshaws or metro up to MGBS.",
+            "Carry water and sun protection when exploring Golconda Fort ramparts during midday.",
+            "Keep valuables secured in crowded bazaar areas like Laad Bazaar and General Bazaar."
+        ]
+    },
+    "Bangalore": {
+        "police_phone": "100 / 080-22942222 (Bengaluru City Police)",
+        "hospital_name": "Victoria Hospital / Bowring and Lady Curzon Hospital, Bangalore",
+        "hospital_phone": "080-26701150 / 080-25591325",
+        "tourist_helpline": "1800-425-1663 (Karnataka Tourism)",
+        "advisories": [
+            "Account for peak-hour transit delays between tech corridors and central heritage zones.",
+            "Use Namma Metro purple and green lines to bypass city road congestion."
+        ]
+    },
+    "Chennai": {
+        "police_phone": "100 / 044-23452320 (Greater Chennai Police)",
+        "hospital_name": "Rajiv Gandhi Government General Hospital (RGGGH), Chennai",
+        "hospital_phone": "044-25305000",
+        "tourist_helpline": "1800-425-31111 (Tamil Nadu Tourism)",
+        "advisories": [
+            "Stay hydrated during coastal midday walks along Marina Beach.",
+            "Respect dress codes when visiting traditional Dravidian temples in Mylapore."
+        ]
+    },
+    "Delhi": {
+        "police_phone": "100 / 011-23319334 (Delhi Police)",
+        "hospital_name": "AIIMS (All India Institute of Medical Sciences), New Delhi",
+        "hospital_phone": "011-26588500 / 011-26593666",
+        "tourist_helpline": "1800-11-1363 (Delhi Tourism)",
+        "advisories": [
+            "Use the Delhi Metro system for fast, air-conditioned inter-monument transit.",
+            "Keep belongings secure in high-footfall markets like Chandni Chowk and Sarojini Nagar."
+        ]
+    },
+    "Mumbai": {
+        "police_phone": "100 / 022-22620111 (Mumbai Police)",
+        "hospital_name": "KEM Hospital / Lilavati Hospital, Mumbai",
+        "hospital_phone": "022-24107000 / 022-26751000",
+        "tourist_helpline": "1800-22-9930 (Maharashtra Tourism)",
+        "advisories": [
+            "Avoid swimming at Marine Drive or Bandra promenades due to strong coastal currents.",
+            "Use local suburban trains outside peak rush hours (8-11 AM & 5-8 PM)."
+        ]
+    },
+    "Kolkata": {
+        "police_phone": "100 / 033-22143024 (Kolkata Police)",
+        "hospital_name": "SSKM Hospital (IPGMER), Kolkata",
+        "hospital_phone": "033-22231589",
+        "tourist_helpline": "1800-212-1655 (West Bengal Tourism)",
+        "advisories": [
+            "Take the iconic tram or Kolkata Metro for exploring the colonial heritage core.",
+            "Carry cash for small vendors in New Market and College Street book district."
+        ]
+    },
+    "Coimbatore": {
+        "police_phone": "100 / 0422-2300970 (Coimbatore City Police)",
+        "hospital_name": "Coimbatore Medical College Hospital (CMCH)",
+        "hospital_phone": "0422-2301393",
+        "tourist_helpline": "1800-425-4648",
+        "advisories": [
+            "Transit point for Nilgiris: verify ghat-road advisory before driving up to Ooty."
+        ]
     }
 }
+
+
+def get_verified_safety_info(destination: str) -> Dict[str, Any]:
+    """Return verified emergency contacts and advisories for a destination.
+    NEVER silently falls back to another city (e.g. Ooty for Hyderabad).
+    For uncatalogued destinations, constructs a clean destination-specific
+    emergency block using verified national emergency numbers (112, 108, 1363)."""
+    norm = (destination or "").strip()
+    for key, info in VERIFIED_SAFETY_INFO.items():
+        if key.lower() == norm.lower():
+            return info
+    # Safe, authentic destination-grounded fallback
+    return {
+        "police_phone": f"112 / 100 ({destination} Police)",
+        "hospital_name": f"Government District Headquarters Hospital, {destination}",
+        "hospital_phone": "108 / 112 (Ambulance / Emergency)",
+        "tourist_helpline": "1363 (National Tourist Helpline) / 112",
+        "advisories": [
+            f"Dial 112 for all police, fire, and medical emergency assistance in {destination}.",
+            "Keep emergency contacts and booking vouchers saved offline in your Travion app."
+        ]
+    }
+
 
 
 def _merge_curated_places():

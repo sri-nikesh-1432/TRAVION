@@ -566,6 +566,7 @@ def destination_catalog(
             "duration_is_estimate": a.get("duration_is_estimate", True),
             "source": a.get("source", "verified_api"),
             "verified": a.get("verified", True),
+            "image_url": a.get("hero_image") or a.get("image_url") or a.get("photo") or (a.get("photos") and a["photos"][0]) or None,
             "already_in_plan": _in_plan(days, a.get("name", "")),
             # True → the client auto-selects this place (experience preference).
             "recommended": str(a.get("name", "")) in recommended_names,
@@ -591,6 +592,7 @@ def destination_catalog(
             "budget_category": _budget_category(s.get("price_per_night"), profile),
             "source": s.get("source", "verified_api"),
             "verified": s.get("verified", True),
+            "image_url": s.get("hero_image") or s.get("image_url") or s.get("photo") or (s.get("photos") and s["photos"][0]) or None,
             "already_in_plan": _in_plan(days, s.get("name", "")),
         }
 
@@ -615,6 +617,7 @@ def destination_catalog(
             "budget_class": _food_budget_class(f.get("avg_cost_for_two"), env["max"]),
             "source": f.get("source", "verified_api"),
             "verified": f.get("verified", True),
+            "image_url": f.get("hero_image") or f.get("image_url") or f.get("photo") or (f.get("photos") and f["photos"][0]) or None,
             "already_in_plan": _in_plan(days, f.get("name", "")),
         }
 

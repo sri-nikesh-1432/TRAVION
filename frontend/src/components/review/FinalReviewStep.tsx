@@ -73,11 +73,24 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
   onEdit, onConfirm, busy,
 }) => {
   const days = itinerary.days || [];
+  const bd = (itinerary.cost_breakdown as any) || {};
 
   const pricing = useMemo(() => {
+    if (bd && (bd.final_total || bd.payable || bd.total_cost || bd.guide_fee !== undefined)) {
+      const base = Number(bd.base_plan_cost ?? bd.travel_spend ?? trip.budget ?? 0);
+      const isGuideMode = trip.mode === 'GUIDE_MODE' || Number(bd.guide_fee || 0) > 0;
+      return {
+        baseBudget: base,
+        guideFee: Number(bd.guide_fee ?? (isGuideMode ? Math.round(base * 0.125) : 0)),
+        platformFee: Number(bd.platform_fee ?? Math.round(base * 0.03)),
+        safetyReserve: Number(bd.safety_reserve ?? Math.round(base * 0.15)),
+        insuranceFee: Number(bd.insurance_fee ?? 50),
+        finalPlannedAmount: Number(bd.final_total ?? bd.payable ?? bd.total_cost ?? (base + (isGuideMode ? Math.round(base * 0.125) : 0) + Math.round(base * 0.03) + Math.round(base * 0.15) + 50)),
+      };
+    }
     const base = Number((itinerary.cost_breakdown as any)?.base_plan_cost ?? trip.budget ?? 0);
     return calculateTripBudget(base, trip.mode);
-  }, [(itinerary.cost_breakdown as any)?.base_plan_cost, trip.budget, trip.mode]);
+  }, [itinerary.cost_breakdown, trip.budget, trip.mode]);
 
   const { days: dayCount, nights } = useMemo(() => {
     const s = new Date(trip.start_datetime).getTime();
@@ -87,7 +100,7 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
     return { days: d, nights: Math.max(0, d - 1) };
   }, [trip.start_datetime, trip.end_datetime, days.length]);
 
-  const isGuide = trip.mode === 'GUIDE_MODE';
+  const isGuide = trip.mode === 'GUIDE_MODE' || pricing.guideFee > 0;
   const totalTravellers = travellers?.total;
 
   return (
@@ -262,7 +275,41 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
           <EditBtn onEdit={onEdit} target="budget_food" label="Edit budget" />
         </div>
         <div className="space-y-1.5 text-[13px] font-semibold text-charcoal-600 max-w-md">
-          <div className="flex justify-between"><span>Base trip budget</span><span className="font-bold text-charcoal-800">{formatINR(pricing.baseBudget)}</span></div>
+          {Boolean(bd.transport || bd.stay || bd.food || bd.activities || bd.local_transport) && (
+            <div className="mb-3 pb-3 border-b border-charcoal-100 space-y-1 text-xs text-charcoal-500">
+              {Boolean(bd.transport) && (
+                <div className="flex justify-between">
+                  <span>Round-trip Transport</span>
+                  <span className="font-semibold text-charcoal-700">{formatINR(Number(bd.transport))}</span>
+                </div>
+              )}
+              {Boolean(bd.stay) && (
+                <div className="flex justify-between">
+                  <span>Accommodation</span>
+                  <span className="font-semibold text-charcoal-700">{formatINR(Number(bd.stay))}</span>
+                </div>
+              )}
+              {Boolean(bd.food) && (
+                <div className="flex justify-between">
+                  <span>Daily Food Allowance</span>
+                  <span className="font-semibold text-charcoal-700">{formatINR(Number(bd.food))}</span>
+                </div>
+              )}
+              {Boolean(bd.activities) && (
+                <div className="flex justify-between">
+                  <span>Activities & Sightseeing</span>
+                  <span className="font-semibold text-charcoal-700">{formatINR(Number(bd.activities))}</span>
+                </div>
+              )}
+              {Boolean(bd.local_transport) && (
+                <div className="flex justify-between">
+                  <span>Local Transport Legs</span>
+                  <span className="font-semibold text-charcoal-700">{formatINR(Number(bd.local_transport))}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex justify-between"><span>Base travel spend</span><span className="font-bold text-charcoal-800">{formatINR(pricing.baseBudget)}</span></div>
           {isGuide ? (
             <div className="flex justify-between rounded-lg bg-cognac-50 px-2 py-1 text-cognac-600 font-bold">
               <span>Guide fee <span className="font-semibold opacity-70">12.5%</span></span><span>{formatINR(pricing.guideFee)}</span>

@@ -926,15 +926,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* God's Eye View Button */}
+            {/* Live Journey Companion Button */}
             <button
               type="button"
               onClick={() => setShowGodsEyeView(true)}
-              title="God's Eye View — Live Telemetry & Speedometer"
+              title="Live Journey Companion — Real-time Tour Navigator & GPS"
               className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm"
             >
-              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline font-mono">God's Eye View</span>
+              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline font-mono">Live Companion</span>
             </button>
 
             {/* Persistent Review Progress Button — always accessible */}
@@ -1439,7 +1439,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 start_datetime: activeTrip.start_datetime,
                 end_datetime: activeTrip.end_datetime,
                 budget: activeTrip.budget,
-                mode: activeTrip.mode,
+                mode: activeTrip.mode || (itinerary?.cost_breakdown as any)?.mode,
               }}
               planLabel={null}
               travellers={
@@ -1532,8 +1532,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                   onClick={() => setShowGodsEyeView(true)}
                   className="px-4 py-2 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-soft"
                 >
-                  <Crosshair className="w-4 h-4 text-emerald-400" />
-                  <span>God's Eye View</span>
+                  <Navigation className="w-4 h-4 text-emerald-400" />
+                  <span>Live Companion</span>
                 </button>
                 <button
                   type="button"

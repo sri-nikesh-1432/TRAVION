@@ -255,19 +255,26 @@ def generate_trip_plan(
         itinerary_plan = generate_base_plan(trip, req.mode, db)
         breakdown = itinerary_plan["cost_breakdown"]
 
-    # ── STAGE-3 BRIDGE (10-stage flow): when the traveller already chose the
-    # outbound + return options, the itinerary MUST price those exact fares —
-    # the stage-3 selection, the review and the checkout can never disagree on
-    # transport money. Fees are recomputed with the authoritative rules; the
-    # day stops themselves are untouched (schedule validation stays valid).
+    # ── STAGE-3+ BRIDGE (10-stage flow): when the traveller has selected
+    # transport, stay, places, and food, the itinerary MUST price those exact
+    # ledger numbers — stages 4-11 can never disagree on travel spend or fees.
     try:
+        from app.services.stage_service import evaluate_budget_gate
+        from app.services.pricing_service import reprice_breakdown as _reprice
+        gate = evaluate_budget_gate(db, trip)
+        spend = gate.get("spend") or {}
+        if spend.get("base_total") and float(spend["base_total"]) > 0:
+            breakdown["transport"] = round(float(spend.get("transport") or 0), 0)
+            breakdown["stay"] = round(float(spend.get("stay") or 0), 0)
+            breakdown["food"] = round(float(spend.get("food") or 0), 0)
+            breakdown["activities"] = round(float(spend.get("activities") or 0), 0)
+            breakdown["local_transport"] = round(float(spend.get("local_transport") or 0), 0)
+            breakdown["travel_spend"] = round(float(spend.get("base_total") or 0), 0)
+            breakdown["base_plan_cost"] = round(float(spend.get("base_total") or 0), 0)
+
         _sel = dict(trip.selected_transport or {})
         _out, _ret = _sel.get("outbound"), _sel.get("return")
         if isinstance(_out, dict) and isinstance(_ret, dict) and _out.get("party_total") is not None:
-            from app.services.pricing_service import reprice_breakdown as _reprice
-            _prof = trip.profile.questions_answers if trip.profile else {}
-            _party = _prof.get("party") or (trip.profile.party_type if trip.profile else None)
-            breakdown["transport"] = round(float(_out.get("party_total") or 0) + float(_ret.get("party_total") or 0), 0)
             breakdown["selected_transport"] = {
                 "outbound": {k: _out.get(k) for k in (
                     "id", "operator", "service", "date", "depart_time",
@@ -278,14 +285,17 @@ def generate_trip_plan(
                     "arrive_time", "duration_label", "price_per_person",
                     "party_total", "verified", "source")},
             }
-            breakdown = _reprice(
-                breakdown, mode=req.mode,
-                days=max(1, len(itinerary_plan.get("days") or [])),
-                destination=trip.destination_name or "",
-                party_type=_party, guide=None,
-            )
-            itinerary_plan["cost_breakdown"] = breakdown
-            itinerary_plan["total_cost"] = float(breakdown.get("final_total") or breakdown.get("total") or 0)
+
+        _prof = trip.profile.questions_answers if trip.profile else {}
+        _party = _prof.get("party") or (trip.profile.party_type if trip.profile else None)
+        breakdown = _reprice(
+            breakdown, mode=req.mode,
+            days=max(1, len(itinerary_plan.get("days") or [])),
+            destination=trip.destination_name or "",
+            party_type=_party, guide=None,
+        )
+        itinerary_plan["cost_breakdown"] = breakdown
+        itinerary_plan["total_cost"] = float(breakdown.get("final_total") or breakdown.get("total") or gate.get("final_amount") or 0)
     except Exception:
         pass  # engine numbers stand when no usable selection exists
 

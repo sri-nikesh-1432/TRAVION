@@ -305,7 +305,8 @@ def reprice_breakdown(
     stay = float(bd.get("stay", 0) or 0)
     food = float(bd.get("food", 0) or 0)
     activities = float(bd.get("activities", 0) or 0)
-    travel_spend = round(transport + stay + food + activities, 0)
+    local_transport = float(bd.get("local_transport", 0) or 0)
+    travel_spend = round(transport + stay + food + activities + local_transport, 0)
 
     # BUDGET-FITTED PLANS STAY FITTED (single source of truth): a plan card may
     # clamp the base cost to the traveller's budget envelope (base_plan_cost).
@@ -323,9 +324,10 @@ def reprice_breakdown(
             stay = round(stay * scale, 0)
             food = round(food * scale, 0)
             activities = round(activities * scale, 0)
-            drift = round(fitted - (transport + stay + food + activities), 0)
+            local_transport = round(local_transport * scale, 0)
+            drift = round(fitted - (transport + stay + food + activities + local_transport), 0)
             activities = round(activities + drift, 0)  # absorb rounding on the flexible line
-            travel_spend = round(transport + stay + food + activities, 0)
+            travel_spend = round(transport + stay + food + activities + local_transport, 0)
 
     guide_fee = guide_fee_for(mode, days, destination, party_type, guide, base_cost=travel_spend)
     # base_cost in every mode = travel spend; ALL fees are %s over it (spec
