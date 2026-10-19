@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  BadgeCheck, BedDouble, Compass, CreditCard, Loader2, Lock,
+  BadgeCheck, BedDouble, Car, Compass, CreditCard, Loader2, Lock,
   Mountain, ShieldCheck, TrainFront, Utensils, Wallet,
 } from 'lucide-react';
 import { api } from '../../services/api';
@@ -176,6 +176,7 @@ export const PaymentStep: React.FC<PaymentStepProps> = ({
     { icon: BedDouble, color: '#6366f1', label: 'Stay (per your stay preference)', value: Number(b.stay || 0) },
     { icon: Utensils, color: '#f59e0b', label: 'Curated dining allowance', value: Number(b.food || 0) },
     { icon: Mountain, color: '#10b981', label: 'Activities & heritage entries', value: Number(b.activities || 0) },
+    ...(Number(b.local_transport || 0) > 0 ? [{ icon: Car, color: '#0ea5e9', label: 'Local transport & cabs', value: Number(b.local_transport || 0) }] : []),
   ];
 
   return (

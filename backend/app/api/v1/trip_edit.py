@@ -710,6 +710,10 @@ def add_trip_selection(
     trip = _own_trip(trip_id, current, db)
     user = _current_user(db, current)
     row = upsert_selection(db, trip.id, user.id, req.model_dump(exclude_none=True))
+    try:
+        _stages.evaluate_budget_gate(db, trip)
+    except Exception:
+        pass
     db.commit()
     return TripSelectionResponse(**selection_payload(row))
 
@@ -767,6 +771,10 @@ def sync_trip_selections(
             trip.profile.questions_answers = prof
     except Exception:
         pass  # the ledger is authoritative; a mirror failure must not block sync
+    try:
+        _stages.evaluate_budget_gate(db, trip)
+    except Exception:
+        pass
     db.commit()
     _stages.bump_pointer(db, trip, 4)
     data = selections_payload(db, trip.id)
@@ -789,6 +797,10 @@ def delete_trip_selection(
     row = remove_selection(db, trip.id, provider_place_id)
     if row is None:
         raise HTTPException(status_code=404, detail="No active selection for that place.")
+    try:
+        _stages.evaluate_budget_gate(db, trip)
+    except Exception:
+        pass
     db.commit()
     return {"removed": True, "provider_place_id": provider_place_id}
 

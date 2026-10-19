@@ -197,6 +197,13 @@ def adaptive_discovery(
     db.commit()
     db.refresh(trip_profile)
 
+    try:
+        from app.services.stage_service import evaluate_budget_gate
+        evaluate_budget_gate(db, trip)
+        db.commit()
+    except Exception:
+        pass
+
     # Budget feasibility verdict for this party (single financial authority)
     feasibility = check_budget_feasibility(
         budget=budget_val,

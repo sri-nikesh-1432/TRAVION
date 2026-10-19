@@ -357,6 +357,13 @@ def get_trip_itinerary(
     if not itinerary:
         raise HTTPException(status_code=404, detail="Itinerary not generated yet")
 
+    try:
+        from app.services.stage_service import evaluate_budget_gate
+        evaluate_budget_gate(db, trip)
+        db.refresh(itinerary)
+    except Exception:
+        pass
+
     breakdown = effective_breakdown(itinerary)
     days = itinerary.days_data
 

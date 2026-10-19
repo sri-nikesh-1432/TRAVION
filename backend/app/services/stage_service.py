@@ -207,6 +207,44 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
     insurance_fee = float(INSURANCE_FEE)
     final_amount = round(base_total + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
 
+    # ── Single Source of Truth: sync trip.total_cost and active itinerary in MySQL ──
+    trip.total_cost = final_amount
+    itin = (
+        db.query(Itinerary)
+        .filter(Itinerary.trip_id == trip.id, Itinerary.is_active == True)
+        .first()
+    )
+    if itin:
+        itin.total_cost = final_amount
+        bd = dict(itin.cost_breakdown or {})
+        bd.update({
+            "transport": round(float(transport["total"]), 0),
+            "transport_outbound": round(float(transport["outbound"]), 0),
+            "transport_return": round(float(transport["return"]), 0),
+            "stay": round(float(stay), 0),
+            "food": round(float(food_info["allowance"]), 0),
+            "activities": round(float(activities), 0),
+            "local_transport": round(float(local), 0),
+            "travel_spend": round(float(base_total), 0),
+            "base_plan_cost": round(float(base_total), 0),
+            "guide_fee": round(float(guide_fee), 0),
+            "platform_fee": round(float(platform_fee), 0),
+            "safety_reserve": round(float(safety_reserve), 0),
+            "insurance_fee": round(float(insurance_fee), 0),
+            "final_total": round(float(final_amount), 0),
+            "payable": round(float(final_amount), 0),
+            "total": round(float(final_amount), 0),
+            "total_cost": round(float(final_amount), 0),
+            "mode": trip.mode or "ADVENTUROUS_MODE",
+            "days": dn["days"],
+            "nights": dn["nights"],
+        })
+        itin.cost_breakdown = bd
+    try:
+        db.flush()
+    except Exception:
+        pass
+
     budget_max = round(float(trip.budget or 0.0), 2)
     if budget_max <= 0:
         budget_max = round(max(base_total * 1.25, 30000.0), 2)

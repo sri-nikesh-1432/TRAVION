@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 def _pricing_context(trip: Trip, itinerary: Itinerary, db: Session) -> dict:
     """Build the authoritative pricing inputs from ONE place so checkout, the
     pricing endpoint, the webhook and every dashboard show identical numbers."""
+    from app.services.stage_service import evaluate_budget_gate
+    evaluate_budget_gate(db, trip)
+    if itinerary:
+        db.refresh(itinerary)
     profile = trip.profile.questions_answers if trip.profile else {}
     days = len(itinerary.days_data or []) if itinerary else 1
     # GUIDE_*: only an accepted/confirmed real guide is load-bearing for the
