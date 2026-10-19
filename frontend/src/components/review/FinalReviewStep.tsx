@@ -126,7 +126,15 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
           {totalTravellers ? (
             <p className="flex items-center gap-2"><Users className="w-4 h-4 text-travion-600" />{totalTravellers} traveller{totalTravellers === 1 ? '' : 's'} <EditBtn onEdit={onEdit} target="travellers" label="Edit travellers" /></p>
           ) : null}
-          <p className="flex items-center gap-2"><Wallet className="w-4 h-4 text-travion-600" />{formatINR(pricing.baseBudget)} travel budget</p>
+          <p className="flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-travion-600" />
+            <span>Travel budget: <strong className="text-charcoal-900">{formatINR(trip.budget || bd.budget_max || pricing.baseBudget)}</strong></span>
+            {(trip.budget || bd.budget_max) && Number(trip.budget || bd.budget_max) > pricing.baseBudget && (
+              <span className="text-[11px] font-semibold text-emerald-700">
+                ({formatINR(Number(trip.budget || bd.budget_max) - pricing.baseBudget)} remaining)
+              </span>
+            )}
+          </p>
           {experienceLabel ? (
             <p className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-travion-600" />{experienceLabel}</p>
           ) : null}
@@ -335,8 +343,22 @@ export const FinalReviewStep: React.FC<FinalReviewStepProps> = ({
             ₹50 fixed — TRAVION Refund Protection: refunded with the platform fee if TRAVION cancels your trip.
           </p>
           <div className="flex justify-between border-t border-charcoal-100 pt-2 text-[15px] font-black text-charcoal-900">
-            <span>Final planned amount</span><span>{formatINR(pricing.finalPlannedAmount)}</span>
+            <span>Final planned amount</span><span className="text-travion-700">{formatINR(pricing.finalPlannedAmount)}</span>
           </div>
+          {Boolean(trip.budget || bd.budget_max) && (
+            <div className="mt-2.5 pt-2.5 border-t border-charcoal-100 space-y-1">
+              <div className="flex justify-between text-[11.5px] text-charcoal-500 font-bold">
+                <span>Travel budget ceiling</span>
+                <span>{formatINR(Number(trip.budget || bd.budget_max))}</span>
+              </div>
+              <div className="flex justify-between text-[12px] font-black">
+                <span className="text-charcoal-600">Remaining travel budget</span>
+                <span className={Number(trip.budget || bd.budget_max) >= pricing.baseBudget ? "text-emerald-700" : "text-red-600"}>
+                  {formatINR(Math.round(Number(trip.budget || bd.budget_max) - pricing.baseBudget))}
+                </span>
+              </div>
+            </div>
+          )}
           <p className="text-[11px] font-semibold text-charcoal-500 pt-1">
             {isGuide
               ? 'Guide Mode — 12.5% guide fee applied.'

@@ -199,7 +199,34 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
     activities = _activities_cost_from_ledger(rows)
     local = _local_transport_cost(trip)
 
-    base_total = round(transport["total"] + stay + food_info["allowance"] + activities + local, 2)
+    itin = (
+        db.query(Itinerary)
+        .filter(Itinerary.trip_id == trip.id, Itinerary.is_active == True)
+        .first()
+    )
+    itin_bd = dict(itin.cost_breakdown or {}) if itin else {}
+
+    transport_val = float(transport["total"])
+    if transport_val <= 0 and itin_bd.get("transport"):
+        transport_val = float(itin_bd["transport"])
+
+    stay_val = float(stay)
+    if stay_val <= 0 and itin_bd.get("stay"):
+        stay_val = float(itin_bd["stay"])
+
+    food_val = float(food_info["allowance"])
+    if food_val <= 0 and itin_bd.get("food"):
+        food_val = float(itin_bd["food"])
+
+    activities_val = float(activities)
+    if itin_bd.get("activities") and float(itin_bd["activities"]) > activities_val:
+        activities_val = float(itin_bd["activities"])
+
+    local_val = float(local)
+    if local_val <= 0 and itin_bd.get("local_transport"):
+        local_val = float(itin_bd["local_transport"])
+
+    base_total = round(transport_val + stay_val + food_val + activities_val + local_val, 2)
     guide_mode = (trip.mode or "") == "GUIDE_MODE"
     guide_fee = round(base_total * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
     platform_fee = round(base_total * PLATFORM_FEE_RATE, 0)
@@ -207,24 +234,29 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
     insurance_fee = float(INSURANCE_FEE)
     final_amount = round(base_total + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
 
+    budget_max = round(float(trip.budget or 0.0), 2)
+    if budget_max <= 0:
+        budget_max = round(max(base_total * 1.25, 30000.0), 2)
+        trip.budget = budget_max
+    remaining = round(budget_max - base_total, 2)
+
     # ── Single Source of Truth: sync trip.total_cost and active itinerary in MySQL ──
     trip.total_cost = final_amount
-    itin = (
-        db.query(Itinerary)
-        .filter(Itinerary.trip_id == trip.id, Itinerary.is_active == True)
-        .first()
-    )
     if itin:
         itin.total_cost = final_amount
         bd = dict(itin.cost_breakdown or {})
         bd.update({
-            "transport": round(float(transport["total"]), 0),
-            "transport_outbound": round(float(transport["outbound"]), 0),
-            "transport_return": round(float(transport["return"]), 0),
-            "stay": round(float(stay), 0),
-            "food": round(float(food_info["allowance"]), 0),
-            "activities": round(float(activities), 0),
-            "local_transport": round(float(local), 0),
+            "budget": budget_max,
+            "budget_max": budget_max,
+            "remaining_budget": remaining,
+            "within_budget": bool(base_total <= budget_max + 0.01),
+            "transport": round(float(transport_val), 0),
+            "transport_outbound": round(float(transport.get("outbound") or (transport_val / 2 if transport_val > 0 else 0)), 0),
+            "transport_return": round(float(transport.get("return") or (transport_val / 2 if transport_val > 0 else 0)), 0),
+            "stay": round(float(stay_val), 0),
+            "food": round(float(food_val), 0),
+            "activities": round(float(activities_val), 0),
+            "local_transport": round(float(local_val), 0),
             "travel_spend": round(float(base_total), 0),
             "base_plan_cost": round(float(base_total), 0),
             "guide_fee": round(float(guide_fee), 0),
@@ -244,12 +276,6 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
         db.flush()
     except Exception:
         pass
-
-    budget_max = round(float(trip.budget or 0.0), 2)
-    if budget_max <= 0:
-        budget_max = round(max(base_total * 1.25, 30000.0), 2)
-        trip.budget = budget_max
-    remaining = round(budget_max - base_total, 2)
 
     violations: List[str] = []
     if base_total - budget_max > 0.01:
@@ -288,13 +314,13 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
         "days": dn["days"],
         "nights": dn["nights"],
         "spend": {
-            "transport": transport["total"],
-            "transport_outbound": transport["outbound"],
-            "transport_return": transport["return"],
-            "stay": stay,
-            "food": food_info["allowance"],
-            "activities": activities,
-            "local_transport": local,
+            "transport": transport_val,
+            "transport_outbound": transport.get("outbound") or (transport_val / 2 if transport_val > 0 else 0),
+            "transport_return": transport.get("return") or (transport_val / 2 if transport_val > 0 else 0),
+            "stay": stay_val,
+            "food": food_val,
+            "activities": activities_val,
+            "local_transport": local_val,
             "base_total": base_total,
         },
         "fees": {

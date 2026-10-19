@@ -125,13 +125,13 @@ export const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       <div className="text-center mb-4">
-        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Step 5 · Travel mode</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-travion-600">Stage 6 · Travel mode</span>
         <h2 className="mt-2 text-3xl font-extrabold text-charcoal-900 tracking-tight">
           How would you like to experience your trip?
         </h2>
         <p className="mt-2 text-[14px] font-medium text-charcoal-500 max-w-2xl mx-auto">
           Your transport and places are saved
-          {typeof totalCost === 'number' && totalCost > 0 ? <span className="font-bold text-charcoal-700"> (trip budget ₹{Math.round(totalCost).toLocaleString('en-IN')})</span> : null}
+          {typeof totalCost === 'number' && totalCost > 0 ? <span className="font-bold text-charcoal-700"> (travel budget ₹{Math.round(totalCost).toLocaleString('en-IN')})</span> : null}
           {destinationName ? <> in <span className="font-bold text-charcoal-700">{destinationName}</span></> : null}. Pick your experience — local transport, food and the itinerary price it exactly.
         </p>
         {(placeCount > 0 || foodCount > 0 || hasStay) && (

@@ -21,8 +21,8 @@ export function resolveBudgetMax(
   totalCost?: number | null,
 ): number {
   return (
-    saneBudget(breakdownBudget) ??
     saneBudget(tripBudget) ??
+    saneBudget(breakdownBudget) ??
     saneBudget(totalCost) ??
     15000
   );

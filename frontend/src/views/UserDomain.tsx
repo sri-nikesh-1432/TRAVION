@@ -1521,7 +1521,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                             ? 'Guide Mode · waiting for guide assignment'
                             : 'Guide Mode · guide assignment pending payment')
                       : 'Adventurous Mode · independent AI-assisted travel'}
-                    {' '}· Total Budget: ₹{activeTrip.total_cost}
+                    {' '}· Total Cost: ₹{Number(activeTrip.total_cost || 0).toLocaleString('en-IN')}{activeTrip.budget ? ` · Travel Budget: ₹${Number(activeTrip.budget).toLocaleString('en-IN')}` : ''}
                   </div>
                 </div>
               </div>
@@ -1657,7 +1657,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         tripStart={activeTrip?.start_datetime}
         tripEnd={activeTrip?.end_datetime}
         itinerary={itinerary}
-        budgetLabel={itinerary?.cost_breakdown ? `Trip budget ₹${Math.round(itinerary.cost_breakdown.total || 0).toLocaleString('en-IN')}` : undefined}
+        budgetLabel={itinerary?.cost_breakdown ? `Trip cost ₹${Math.round(itinerary.cost_breakdown.total || 0).toLocaleString('en-IN')}` : undefined}
       />
 
       {/* Offline Package Modal */}

@@ -308,27 +308,6 @@ def reprice_breakdown(
     local_transport = float(bd.get("local_transport", 0) or 0)
     travel_spend = round(transport + stay + food + activities + local_transport, 0)
 
-    # BUDGET-FITTED PLANS STAY FITTED (single source of truth): a plan card may
-    # clamp the base cost to the traveller's budget envelope (base_plan_cost).
-    # Reconcile the component lines to that clamp so EVERY surface that
-    # recomputes from components (checkout, pricing, ledgers, dashboards)
-    # arrives at the SAME payable the plan card promised — the unclamped
-    # components must never resurrect a higher total. Proportional, honest
-    # scaling of the real lines; no invented values.
-    fitted = bd.get("base_plan_cost")
-    if fitted is not None:
-        fitted = float(fitted or 0)
-        if 0 < fitted < travel_spend:
-            scale = fitted / travel_spend
-            transport = round(transport * scale, 0)
-            stay = round(stay * scale, 0)
-            food = round(food * scale, 0)
-            activities = round(activities * scale, 0)
-            local_transport = round(local_transport * scale, 0)
-            drift = round(fitted - (transport + stay + food + activities + local_transport), 0)
-            activities = round(activities + drift, 0)  # absorb rounding on the flexible line
-            travel_spend = round(transport + stay + food + activities + local_transport, 0)
-
     guide_fee = guide_fee_for(mode, days, destination, party_type, guide, base_cost=travel_spend)
     # base_cost in every mode = travel spend; ALL fees are %s over it (spec
     # §23-26) plus the fixed ₹50 insurance (TRAVION Refund Protection).
@@ -337,7 +316,14 @@ def reprice_breakdown(
     safety_reserve = round(fee_base * SAFETY_RESERVE_RATE, 0)
     insurance_fee = INSURANCE_FEE
     final_total = round(fee_base + guide_fee + platform_fee + safety_reserve + insurance_fee, 0)
+
+    b_max = float(bd.get("budget_max") or bd.get("budget") or 0.0)
+    remaining = round(b_max - travel_spend, 0) if b_max > 0 else 0.0
     bd.update({
+        "budget": b_max,
+        "budget_max": b_max,
+        "remaining_budget": remaining,
+        "within_budget": bool(travel_spend <= b_max + 0.01) if b_max > 0 else True,
         "guide_fee": round(guide_fee, 0),
         "platform_fee": platform_fee,
         "safety_reserve": safety_reserve,

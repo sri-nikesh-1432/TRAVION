@@ -298,7 +298,7 @@ export const ProgressReviewModal: React.FC<ProgressReviewModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-charcoal-500 mt-0.5">
-                    Remaining Budget: ₹{budgetGate.remaining_budget?.toLocaleString('en-IN')}
+                    Budget Ceiling: ₹{budgetGate.budget_max?.toLocaleString('en-IN')} · Remaining: ₹{budgetGate.remaining_budget?.toLocaleString('en-IN')}
                   </p>
                 </div>
               </div>

@@ -85,8 +85,12 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
     [itinerary.days],
   );
 
-  const total = Number(itinerary.total_cost) || 0;
-  const overBudget = budgetMax > 0 && total > budgetMax;
+  const bd = (itinerary.cost_breakdown || {}) as Record<string, any>;
+  const baseSpend = Number(bd.base_plan_cost ?? bd.travel_spend ?? (
+    Number(bd.transport || 0) + Number(bd.stay || 0) + Number(bd.food || 0) + Number(bd.activities || 0) + Number(bd.local_transport || 0)
+  ));
+  const total = Number(itinerary.total_cost || bd.final_total || 0);
+  const overBudget = budgetMax > 0 && baseSpend > budgetMax;
 
   const applyOptimized = async (apply: boolean) => {
     if (!proposal || busy) return;
@@ -281,7 +285,7 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
             {overBudget && (
               <div className="flex items-start gap-2 rounded-2xl bg-red-50 border border-red-200 px-4 py-3 text-[12.5px] font-bold text-red-700">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                This plan is {inr(total - budgetMax)} over your {inr(budgetMax)} budget — adjust it before payment.
+                This plan is {inr(baseSpend - budgetMax)} over your {inr(budgetMax)} travel budget — adjust it before payment.
               </div>
             )}
             {localWarnings.map((w, i) => (
@@ -636,14 +640,18 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                         ['Stay', Number(bd.stay || 0)],
                         ['Activities', Number(bd.activities || 0)],
                         ['Food', Number(bd.food || 0)],
+                        ['Local transport', Number(bd.local_transport || 0)],
                       ];
                       // Spec §23-26: the base is the travel-spend sum (never the
                       // fee-inclusive total); fees stack ON TOP in every mode.
-                      const base = rows.reduce((s, r) => s + r[1], 0) || Number(bd.base_plan_cost || 0);
-                      const guideFee = Number(bd.guide_fee ?? feePreview?.guide_fee ?? 0);
-                      const platformFee = Number(bd.platform_fee ?? feePreview?.platform_fee ?? 0);
+                      const base = Number(bd.base_plan_cost ?? bd.travel_spend ?? rows.reduce((s, r) => s + r[1], 0));
+                      const isGuide = tripInfo?.mode === 'GUIDE_MODE' || Number(bd.guide_fee || 0) > 0;
+                      const guideFee = Number(bd.guide_fee ?? (isGuide ? Math.round(base * 0.125) : 0));
+                      const platformFee = Number(bd.platform_fee ?? Math.round(base * 0.03));
                       const safetyReserve = Number(bd.safety_reserve ?? Math.round(base * 0.15));
                       const insuranceFee = Number(bd.insurance_fee ?? 50);
+                      const finalTotal = Number(bd.final_total ?? bd.payable ?? bd.total_cost ?? (base + guideFee + platformFee + safetyReserve + insuranceFee));
+                      const remaining = budgetMax > 0 ? Math.round(budgetMax - base) : null;
                       return (
                         <>
                           {rows.filter(r => r[1] > 0).map(([label, value]) => (
@@ -652,9 +660,9 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                             </div>
                           ))}
                           <div className="flex justify-between border-t border-charcoal-100 pt-1.5 font-extrabold text-charcoal-900">
-                            <span>Base trip cost</span><span>{inr(base)}</span>
+                            <span>Base travel spend</span><span>{inr(base)}</span>
                           </div>
-                          {tripInfo?.mode === 'GUIDE_MODE' && (
+                          {isGuide && (
                             <div className="flex justify-between rounded-lg bg-cognac-50 px-2 py-1 text-cognac-700 font-bold">
                               <span>Guide fee (12.5%)</span><span>{inr(guideFee)}</span>
                             </div>
@@ -676,8 +684,22 @@ export const PlannerWorkspace: React.FC<PlannerWorkspaceProps> = ({
                           </p>
                           <div className="flex justify-between border-t border-charcoal-100 pt-1.5 text-[14px] font-black text-charcoal-900">
                             <span>Final planned amount</span>
-                            <span>{inr(feePreview?.amount_payable ?? (base + guideFee + platformFee + safetyReserve + insuranceFee))}</span>
+                            <span className="text-travion-700">{inr(finalTotal)}</span>
                           </div>
+                          {budgetMax > 0 && remaining !== null && (
+                            <div className="mt-2.5 pt-2.5 border-t border-charcoal-100 space-y-1">
+                              <div className="flex justify-between text-[11.5px] text-charcoal-500 font-bold">
+                                <span>Travel budget ceiling</span>
+                                <span>{inr(budgetMax)}</span>
+                              </div>
+                              <div className="flex justify-between text-[12px] font-black">
+                                <span className="text-charcoal-600">Remaining travel budget</span>
+                                <span className={remaining >= 0 ? "text-emerald-700" : "text-red-600"}>
+                                  {inr(remaining)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </>
                       );
                     })()}

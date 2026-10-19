@@ -213,13 +213,17 @@ def generate_trip_plan(
     selected_stay_tiers = profile_dict.get("selected_stay_tiers") or {}
 
     if selected_places or selected_food or selected_stay_tiers:
-        env_min, env_max = sanitize_envelope(
-            float(profile_dict.get("budget", {}).get("min", 0) or 0),
-            float(profile_dict.get("budget", {}).get("max", 0) or 0),
-        )
-        if env_max <= 0:
-            env_max = float(trip.budget or 15000.0)
+        if trip.budget and float(trip.budget) > 0:
+            env_max = float(trip.budget)
             env_min = max(1000.0, env_max * 0.8)
+        else:
+            env_min, env_max = sanitize_envelope(
+                float(profile_dict.get("budget", {}).get("min", 0) or 0),
+                float(profile_dict.get("budget", {}).get("max", 0) or 0),
+            )
+            if env_max <= 0:
+                env_max = 50000.0
+                env_min = max(1000.0, env_max * 0.8)
 
         base = generate_base_plan(trip, req.mode, db)
         base.setdefault("destination", trip.destination_name)
@@ -294,6 +298,11 @@ def generate_trip_plan(
             destination=trip.destination_name or "",
             party_type=_party, guide=None,
         )
+        b_max = float(trip.budget or gate.get("budget_max") or env_max)
+        breakdown["budget"] = b_max
+        breakdown["budget_max"] = b_max
+        breakdown["remaining_budget"] = float(gate.get("remaining_budget") or round(b_max - float(breakdown.get("travel_spend") or 0), 2))
+        breakdown["within_budget"] = bool(float(breakdown.get("travel_spend") or 0) <= b_max + 0.01)
         itinerary_plan["cost_breakdown"] = breakdown
         itinerary_plan["total_cost"] = float(breakdown.get("final_total") or breakdown.get("total") or gate.get("final_amount") or 0)
     except Exception:

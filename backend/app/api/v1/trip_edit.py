@@ -63,10 +63,11 @@ def _budget_envelope(profile: dict | None, trip_budget: float) -> Dict[str, floa
     BudgetService so currency-symbol strings like '₹10,000 - ₹25,000' can
     never explode into a billion-rupee budget, then clamped to a sane band
     so no malformed value can ever reach the planner."""
-    override = None
     if trip_budget and float(trip_budget) > 0:
-        override = (float(trip_budget) * 0.8, float(trip_budget))
-    bmin, bmax = parse_budget((profile or {}).get("budget"), fallback=override)
+        bmax = float(trip_budget)
+        bmin = max(1000.0, bmax * 0.8)
+        return {"min": bmin, "max": bmax}
+    bmin, bmax = parse_budget((profile or {}).get("budget"), fallback=(10000.0, 50000.0))
     bmin, bmax = sanitize_envelope(bmin, bmax)
     if bmin >= bmax:
         bmin = max(1000.0, bmax * 0.8)
