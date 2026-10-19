@@ -21,6 +21,23 @@ const fmtDuration = (min: number | null | undefined) => {
   return h > 0 ? `${h}h ${r > 0 ? `${r}m` : ''}`.trim() : `${r}m`;
 };
 
+const fmtTime = (t: string | null | undefined): string => {
+  if (!t) return '—';
+  const str = String(t).trim();
+  if (str.toUpperCase().includes('AM') || str.toUpperCase().includes('PM')) {
+    return str;
+  }
+  const match = str.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return str;
+  const h = parseInt(match[1], 10);
+  const m = match[2];
+  const ap = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 || 12;
+  const plusOne = str.includes('+1') ? ' (+1)' : '';
+  return `${String(h12).padStart(2, '0')}:${m} ${ap}${plusOne}`;
+};
+
+
 interface TransportSelectionProps {
   tripId: string;
   initial?: StageState['transport'] | null;
@@ -204,13 +221,13 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
         </div>
 
         <div className="mt-3 flex items-center gap-2 text-[13px] font-bold text-charcoal-800">
-          <span className="font-mono text-sm">{opt.depart_time}</span>
+          <span className="font-mono text-xs sm:text-sm font-black text-charcoal-900 tracking-tight">{fmtTime(opt.depart_time)}</span>
           <span className="flex-1 h-px bg-charcoal-200 relative">
-            <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-black text-charcoal-500 bg-white px-1.5 rounded">
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-black text-charcoal-500 bg-white px-1.5 rounded border border-charcoal-200/50 shadow-2xs">
               {fmtDuration(opt.duration_min)}
             </span>
           </span>
-          <span className="font-mono text-sm">{opt.arrive_time}</span>
+          <span className="font-mono text-xs sm:text-sm font-black text-charcoal-900 tracking-tight">{fmtTime(opt.arrive_time)}</span>
         </div>
 
         {opt.date && <p className="mt-1 text-[11px] font-semibold text-charcoal-400">{opt.date}</p>}

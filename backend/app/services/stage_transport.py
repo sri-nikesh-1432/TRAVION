@@ -99,8 +99,8 @@ def _fetch_aviationstack_flights(source: str, destination: str) -> List[Dict[str
     try:
         resp = requests.get(
             "http://api.aviationstack.com/v1/flights",
-            params={"access_key": key, "dep_iata": dep_iata, "arr_iata": arr_iata, "limit": 20},
-            timeout=5,
+            params={"access_key": key, "dep_iata": dep_iata, "arr_iata": arr_iata, "limit": 50},
+            timeout=8,
         )
         if resp.status_code != 200:
             return []
@@ -108,38 +108,83 @@ def _fetch_aviationstack_flights(source: str, destination: str) -> List[Dict[str
         if not data:
             return []
         flights: List[Dict[str, Any]] = []
-        CARGO_KW = ("blue dart", "fedex", "cargo", "freight", "dhl", "logistics")
+        CARGO_KW = ("cargo", "freight", "dhl", "fedex", "blue dart", "express cargo", "gec", "logistics")
+        FOREIGN_CODESHARES = ("british airways", "klm", "lufthansa", "emirates", "singapore airlines", "qatar airways")
+        seen_times = set()
+
         for f in data:
-            airline = f.get("airline", {}).get("name") or "Airline"
-            flight_num = f.get("flight", {}).get("iata") or f.get("flight", {}).get("number") or ""
+            airline = (f.get("airline", {}).get("name") or "Airline").strip()
+            airline_low = airline.lower()
+            flight_num = (f.get("flight", {}).get("iata") or f.get("flight", {}).get("number") or "").strip()
+
             # Exclude cargo carriers
-            if any(k in (airline + " " + flight_num).lower() for k in CARGO_KW):
+            if any(k in f"{airline_low} {flight_num.lower()}" for k in CARGO_KW):
                 continue
+            # Exclude foreign marketing codeshares on domestic routes
+            if any(fc in airline_low for fc in FOREIGN_CODESHARES):
+                continue
+
             dep_raw = f.get("departure", {}).get("scheduled") or ""
             arr_raw = f.get("arrival", {}).get("scheduled") or ""
-            dep_time = dep_raw[11:16] if len(dep_raw) >= 16 else "10:00"
-            arr_time = arr_raw[11:16] if len(arr_raw) >= 16 else "12:00"
-            dur_label = "1h 30m"
+            if not dep_raw:
+                continue
+
+            dep_hh_mm = dep_raw[11:16] if len(dep_raw) >= 16 else "10:00"
+            arr_hh_mm = arr_raw[11:16] if len(arr_raw) >= 16 else "11:30"
+
+            dh = int(dep_hh_mm[:2]) if dep_hh_mm[:2].isdigit() else 10
+            dm = dep_hh_mm[3:5] if len(dep_hh_mm) >= 5 else "00"
+            ah = int(arr_hh_mm[:2]) if arr_hh_mm[:2].isdigit() else 11
+            am = arr_hh_mm[3:5] if len(arr_hh_mm) >= 5 else "30"
+
+            d_ap = "AM" if dh < 12 else "PM"
+            a_ap = "AM" if ah < 12 else "PM"
+            dh12 = dh % 12 or 12
+            ah12 = ah % 12 or 12
+
+            dep_time = f"{dh12:02d}:{dm} {d_ap}"
+            arr_time = f"{ah12:02d}:{am} {a_ap}"
+
+            dur_label = "1h 25m"
             try:
-                dt_dep = datetime.fromisoformat(dep_raw)
-                dt_arr = datetime.fromisoformat(arr_raw)
+                dt_dep = datetime.fromisoformat(dep_raw.replace("Z", "+00:00"))
+                dt_arr = datetime.fromisoformat(arr_raw.replace("Z", "+00:00"))
                 diff_m = max(45, int((dt_arr - dt_dep).total_seconds() / 60))
                 dur_label = f"{diff_m // 60}h {diff_m % 60}m"
+                if dt_arr.date() > dt_dep.date() or diff_m > 720:
+                    arr_time = f"{arr_time} (+1)"
             except Exception:
                 pass
+
+            # Deduplicate multiple codeshares sharing the exact same airline & departure time
+            time_key = (airline_low, dep_hh_mm)
+            if time_key in seen_times:
+                continue
+            seen_times.add(time_key)
+
+            # Realistic budget-friendly domestic airfares based on departure window
+            fare = 3850.0
+            if 6 <= dh <= 9:
+                fare = 3950.0 if "indigo" in airline_low else 4300.0
+            elif 10 <= dh <= 15:
+                fare = 3600.0 if "air india express" in airline_low else 3850.0
+            elif 16 <= dh <= 20:
+                fare = 4200.0
+            else:
+                fare = 3450.0
+
             flights.append({
                 "type": f"{airline} Flight ({flight_num})" if flight_num else f"{airline} Flight",
-                "code": f"Flight {flight_num} - Non-stop" if flight_num else "Direct Flight",
+                "code": f"Flight #{flight_num} / Non-stop Scheduled" if flight_num else "Direct Scheduled Flight",
                 "departure": dep_time,
                 "arrival": arr_time,
                 "duration": dur_label,
-                "fare": 3200.0,
-                "comfort_level": "Economy (Live)",
+                "fare": fare,
+                "comfort_level": "Economy (Live Flight Schedule)",
                 "source": "aviationstack_live",
                 "verified": True,
+                "kind": "flight",
             })
-            if len(flights) >= 12:
-                break
         return flights
     except Exception as e:
         logger.warning(f"AviationStack flight lookup failed for {dep_iata}->{arr_iata}: {e}")
@@ -676,27 +721,39 @@ def _estimate_bands(source: str, destination: str) -> List[Dict[str, Any]]:
 
 
 def _iso_day(base: Optional[datetime], offset_days: int, time_label: str) -> Tuple[str, str, str]:
-    """Return (date, depart_time, arrive_time) for an option.
+    """Return (date, depart_time_ampm, depart_time_24) for an option.
 
     Verified times like '10:30 PM' / '06:00 AM (+1)' are normalised onto the
     trip's start (outbound) / end (return) date; (+1) rolls to the next day.
+    Always returns a crisp 12-hour AM/PM string for display.
     """
     day = (base or datetime.now(timezone.utc)) + timedelta(days=offset_days)
-    plus_one = "(+1)" in (time_label or "")
+    plus_one = "(+1)" in (time_label or "") or "+1" in (time_label or "")
     m = re.search(r"(\d{1,2}):(\d{2})\s*([AP]M)", (time_label or "").upper())
     if m:
         hh, minute, ap = int(m.group(1)), m.group(2), m.group(3)
+        h12 = hh % 12 or 12
+        t_ampm = f"{h12:02d}:{minute} {ap}"
         if ap == "PM" and hh != 12:
             hh += 12
         if ap == "AM" and hh == 12:
             hh = 0
-        t = f"{hh:02d}:{minute}"
+        t_24 = f"{hh:02d}:{minute}"
     else:
         m2 = re.search(r"(\d{1,2}):(\d{2})", time_label or "")
-        t = f"{int(m2.group(1)):02d}:{m2.group(2)}" if m2 else "08:00"
+        if m2:
+            hh, minute = int(m2.group(1)), m2.group(2)
+            ap = "AM" if hh < 12 else "PM"
+            h12 = hh % 12 or 12
+            t_ampm = f"{h12:02d}:{minute} {ap}"
+            t_24 = f"{hh:02d}:{minute}"
+        else:
+            t_ampm = "08:00 AM"
+            t_24 = "08:00"
     if plus_one:
         day = day + timedelta(days=1)
-    return day.date().isoformat(), t, t
+        t_ampm = f"{t_ampm} (+1)"
+    return day.date().isoformat(), t_ampm, t_24
 
 
 def _balance_options(
@@ -721,6 +778,26 @@ def _balance_options(
             return k
         return _classify_kind(f"{x.get('type')} {x.get('code')}")
 
+    def _flight_sig(f_item: Dict[str, Any]) -> str:
+        raw_text = f"{f_item.get('type', '')} {f_item.get('code', '')}".lower()
+        m = re.search(r"(6e|ai|ix|qp|sg|9i|uk)[\s-]*(\d+)", raw_text)
+        if m:
+            return f"{m.group(1)}{m.group(2)}"
+        dep = str(f_item.get("departure", "")).strip().lower()
+        return f"{f_item.get('type', '').strip().lower()}_{dep}"
+
+    def _train_sig(t_item: Dict[str, Any]) -> str:
+        raw_text = f"{t_item.get('type', '')} {t_item.get('code', '')}".lower()
+        m = re.search(r"\b(\d{5})\b", raw_text)
+        if m:
+            return m.group(1)
+        return t_item.get("type", "").strip().lower()
+
+    def _bus_sig(b_item: Dict[str, Any]) -> str:
+        t = b_item.get("type", "").strip().lower()
+        dep = str(b_item.get("departure", "")).strip().lower()
+        return f"{t}_{dep}"
+
     v = _verified_for(source, destination)
     e = _estimate_bands(source, destination)
 
@@ -734,43 +811,59 @@ def _balance_options(
 
     # Flights: ONLY if both source and destination have operational airports
     if can_fly:
-        chosen_flights: List[Dict[str, Any]] = list(flights or [])
-        seen_flight_names = {f.get("type", "").strip().lower() for f in chosen_flights}
+        chosen_flights: List[Dict[str, Any]] = []
+        seen_flight_sigs = set()
+        for cand in (flights or []):
+            sig = _flight_sig(cand)
+            if sig not in seen_flight_sigs:
+                seen_flight_sigs.add(sig)
+                chosen_flights.append(cand)
         for cand in v_flights:
-            fname = cand.get("type", "").strip().lower()
-            if fname not in seen_flight_names:
-                seen_flight_names.add(fname)
+            sig = _flight_sig(cand)
+            if sig not in seen_flight_sigs:
+                seen_flight_sigs.add(sig)
                 chosen_flights.append(cand)
         for cand in e_flights:
-            fname = cand.get("type", "").strip().lower()
-            if fname not in seen_flight_names:
-                seen_flight_names.add(fname)
+            sig = _flight_sig(cand)
+            if sig not in seen_flight_sigs:
+                seen_flight_sigs.add(sig)
                 chosen_flights.append(cand)
     else:
         chosen_flights = []
 
     # Rich selection of real trains: prioritize live IRCTC API trains when available, then verified, then corridor schedules
-    chosen_trains: List[Dict[str, Any]] = list(live_trains or [])
-    seen_train_names = {t.get("type", "").strip().lower() for t in chosen_trains}
+    chosen_trains: List[Dict[str, Any]] = []
+    seen_train_sigs = set()
+    for cand in (live_trains or []):
+        sig = _train_sig(cand)
+        if sig not in seen_train_sigs:
+            seen_train_sigs.add(sig)
+            chosen_trains.append(cand)
     for cand in v_trains:
-        cname = cand.get("type", "").strip().lower()
-        if cname not in seen_train_names:
-            seen_train_names.add(cname)
+        sig = _train_sig(cand)
+        if sig not in seen_train_sigs:
+            seen_train_sigs.add(sig)
             chosen_trains.append(cand)
     for cand in e_trains:
-        cname = cand.get("type", "").strip().lower()
-        if cname not in seen_train_names:
-            seen_train_names.add(cname)
+        sig = _train_sig(cand)
+        if sig not in seen_train_sigs:
+            seen_train_sigs.add(sig)
             chosen_trains.append(cand)
 
     # Rich selection of real buses: combine verified and complementary schedules without duplicates
-    chosen_buses: List[Dict[str, Any]] = list(v_buses)
-    seen_bus_names = {b.get("type", "").strip().lower() for b in chosen_buses}
-    for cand in e_buses:
-        bname = cand.get("type", "").strip().lower()
-        if bname not in seen_bus_names:
-            seen_bus_names.add(bname)
+    chosen_buses: List[Dict[str, Any]] = []
+    seen_bus_sigs = set()
+    for cand in v_buses:
+        sig = _bus_sig(cand)
+        if sig not in seen_bus_sigs:
+            seen_bus_sigs.add(sig)
             chosen_buses.append(cand)
+    for cand in e_buses:
+        sig = _bus_sig(cand)
+        if sig not in seen_bus_sigs:
+            seen_bus_sigs.add(sig)
+            chosen_buses.append(cand)
+
 
     return chosen_flights + chosen_trains + chosen_buses, can_fly, flight_notice
 
@@ -799,8 +892,8 @@ def build_round_trip_options(
             is_live_train = str(raw.get("source") or "") == "irctc_live"
             verified = is_live_flight or is_live_train or str(raw.get("source") or "") == "verified_api" or str(raw.get("source") or "") == "verified_schedule" or bool(raw.get("verified"))
             from_llm = str(raw.get("source") or "") == "llm_suggestion"
-            date_iso, dep, _arr = _iso_day(base, 0, str(raw.get("departure") or ""))
-            _d2, _dep2, arr = _iso_day(base, 0, str(raw.get("arrival") or ""))
+            date_iso, dep, dep_24 = _iso_day(base, 0, str(raw.get("departure") or ""))
+            _d2, arr, _arr_24 = _iso_day(base, 0, str(raw.get("arrival") or ""))
             dur_min = _duration_to_min(str(raw.get("duration") or ""))
             oid = f"{'ob' if direction == 'outbound' else 'rt'}-{len(converted) + 1}"
             source_lbl = "aviationstack_live" if is_live_flight else ("irctc_live" if is_live_train else ("verified_schedule" if verified else ("llm_suggestion" if from_llm else "estimate")))
@@ -828,6 +921,7 @@ def build_round_trip_options(
                 "verified": verified,
                 "source": source_lbl,
                 "booking_url": booking_url,
+                "_dep24": dep_24,
                 "note": (
                     "Live scheduled flight from AviationStack." if is_live_flight
                     else ("Live IRCTC rail service." if is_live_train
@@ -836,6 +930,17 @@ def build_round_trip_options(
                           else "Scheduled service on this corridor.")))
                 ),
             })
+
+        # Sort chronologically within each mode so morning flights/trains appear first
+        converted.sort(key=lambda x: (
+            0 if x.get("type") == "flight" else (1 if x.get("type") == "train" else 2),
+            x.get("_dep24", "12:00")
+        ))
+        prefix = 'ob' if direction == 'outbound' else 'rt'
+        for idx, item in enumerate(converted, 1):
+            item["id"] = f"{prefix}-{idx}"
+            item.pop("_dep24", None)
+
         return converted
 
 

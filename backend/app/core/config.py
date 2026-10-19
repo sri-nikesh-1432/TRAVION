@@ -90,6 +90,11 @@ class Settings(BaseModel):
     # WeatherStack — current + historical weather (primary weather provider)
     WEATHERSTACK_API_KEY: str = os.getenv("WEATHERSTACK_API_KEY", "") or os.getenv("WEATHER_STACK_API_KEY", "")
     # AviationStack — real-time flight data
+    AVIATIONSTACK_API_KEY: str = (
+        os.getenv("AVIATION_STACK_API_KEY", "") or os.getenv("AVIATIONSTACK_API_KEY", "")
+    )
+    RAPIDAPI_KEY: str = os.getenv("RAPIDAPI_KEY", "")
+    RAPIDAPI_HOST_IRCTC: str = os.getenv("RAPIDAPI_HOST_IRCTC", "irctc1.p.rapidapi.com")
     # Google OAuth
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
