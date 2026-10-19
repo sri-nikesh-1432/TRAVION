@@ -619,6 +619,7 @@ export interface TransportOption {
   direction: 'outbound' | 'return';
   type: 'flight' | 'train' | 'bus';
   operator: string;
+  service?: string;
   date: string;
   depart_time: string;
   arrive_time: string;

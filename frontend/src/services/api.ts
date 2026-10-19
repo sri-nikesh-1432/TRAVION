@@ -629,7 +629,7 @@ export const api = {
     request<{ id: string; name: string; email: string; topic: string; priority: string; message: string; status: string; created_at: string }>('/support/contact', { method: 'POST', body: JSON.stringify(data) }),
 
   // Google OAuth
-  googleAuth: (data: { credential?: string; code?: string; role?: string }) =>
+  googleAuth: (data: { credential?: string; code?: string; role?: string; redirect_uri?: string }) =>
     request<AuthSession>('/auth/google', { method: 'POST', body: JSON.stringify(data) }),
 
   // Stay Reservation Email / Inquiry

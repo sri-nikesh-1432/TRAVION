@@ -309,6 +309,7 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
             if token_resp.status_code == 200:
                 tdata = token_resp.json()
                 id_token = tdata.get("id_token")
+                access_token = tdata.get("access_token")
                 if id_token:
                     vresp = requests.get(
                         "https://oauth2.googleapis.com/tokeninfo",
@@ -317,6 +318,16 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
                     )
                     if vresp.status_code == 200:
                         google_data = vresp.json()
+                if not google_data and access_token:
+                    uresp = requests.get(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=8,
+                    )
+                    if uresp.status_code == 200:
+                        google_data = uresp.json()
+            else:
+                logger.warning("Google code exchange returned %s: %s", token_resp.status_code, token_resp.text[:300])
         except Exception as e:
             logger.error("Error exchanging Google code: %s", e)
 
@@ -326,9 +337,9 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
             detail="Failed to authenticate with Google. Invalid or expired token."
         )
 
-    # Validate audience prefix
+    # Validate audience prefix if aud is present
     aud = google_data.get("aud")
-    if aud != settings.GOOGLE_CLIENT_ID and not (str(aud).startswith("585915384409")):
+    if aud and aud != settings.GOOGLE_CLIENT_ID and not (str(aud).startswith("585915384409")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Google token was not issued for this client."

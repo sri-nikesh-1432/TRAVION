@@ -284,7 +284,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpen
   const handleGoogleSignIn = () => {
     setIsGoogleLoading(true);
     setAuthError(null);
-    const clientId = '585915384409-lb4mprfhli7m5nbpddndrubr9eaf0p22.apps.googleusercontent.com';
+    const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '585915384409-lb4mprfhli7m5nbpddndrubr9eaf0p22.apps.googleusercontent.com';
 
     if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
       const google = (window as any).google;
@@ -331,7 +331,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpen
           callback: async (res: any) => {
             if (res.code) {
               try {
-                const session = await api.googleAuth({ code: res.code, role: 'USER' });
+                const session = await api.googleAuth({ code: res.code, role: 'USER', redirect_uri: 'postmessage' });
                 authStorage.save(session, true);
                 onLoginSuccess(session);
               } catch (err: any) {
@@ -346,15 +346,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onOpen
           error_callback: (err: any) => {
             setIsGoogleLoading(false);
             if (err?.type === 'popup_closed') return;
-            setAuthError(
-              'Google Sign-In is awaiting origin registration for https://travions.netlify.app in Google Cloud Console. Please sign in with email and password below.'
-            );
+            setAuthError(err?.message || 'Google authorization could not be completed. Please try again or sign in with your email and password below.');
           },
         });
         client.requestCode();
       } else {
         setIsGoogleLoading(false);
-        setAuthError('Google Sign-In is temporarily unavailable. Please sign in with your email and password below.');
+        setAuthError('Google Sign-In is initializing. Please try again in a moment or sign in with email and password below.');
       }
     } catch {
       setIsGoogleLoading(false);

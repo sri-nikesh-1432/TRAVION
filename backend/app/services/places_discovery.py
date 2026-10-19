@@ -423,17 +423,33 @@ def _filter_by_destination(
         lat, lng = item.get("latitude"), item.get("longitude")
         if lat is None or lng is None:
             continue
-        # Strict destination boundary: never allow places outside 35 km of destination
-        if origin and _haversine_km(origin, (lat, lng)) > 35.0:
+        try:
+            lat_f, lng_f = float(lat), float(lng)
+        except (ValueError, TypeError):
             continue
-        if has_bounds:
-            if not (bounds["south"] - pad <= lat <= bounds["north"] + pad
-                    and bounds["west"] - pad <= lng <= bounds["east"] + pad):
-                continue
-        elif origin and _haversine_km(origin, (lat, lng)) > dest_radius_km:
+
+        # Strictly enforce Indian geographic boundaries
+        if not (6.0 <= lat_f <= 38.0 and 68.0 <= lng_f <= 98.0):
             continue
+
+        # Prevent foreign location leaks
+        addr = str(item.get("address") or item.get("location") or "").lower()
+        if any(c in addr for c in ("bangladesh", "pakistan", "nepal", "bhutan", "sri lanka", "china", "myanmar")):
+            continue
+
+        # Strict destination boundary: ALWAYS enforce distance cap if origin is known
         if origin:
-            item["distance_km"] = round(_haversine_km(origin, (lat, lng)), 1)
+            dist = _haversine_km(origin, (lat_f, lng_f))
+            max_allowed = min(float(dest_radius_km or 35.0), 35.0)
+            if dist > max_allowed:
+                continue
+            item["distance_km"] = round(dist, 1)
+
+        if has_bounds:
+            if not (bounds["south"] - pad <= lat_f <= bounds["north"] + pad
+                    and bounds["west"] - pad <= lng_f <= bounds["east"] + pad):
+                continue
+
         out.append(item)
     return out
 
@@ -2034,7 +2050,7 @@ def generate_activities(
         activity = {
             "id": f"act_{place.get('id') or _norm(place_name)[:30]}",
             "action": action_verb,
-            "name": f"{action_verb} — {place_name}",
+            "name": f"{action_verb} - {place_name}",
             "description": description,
             "location_name": place_name,
             "location_id": place.get("id") or place.get("place_id"),

@@ -181,13 +181,9 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
           </span>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {opt.verified ? (
-              <span className="inline-flex items-center gap-1 text-[9.5px] font-black uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
-                <BadgeCheck className="w-3 h-3" /> Verified
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[9.5px] font-black uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-                <CircleAlert className="w-3 h-3" /> Real Schedule
+            {opt.service && (
+              <span className="hidden sm:inline-flex items-center text-[10px] font-semibold text-charcoal-600 bg-sand-100/90 rounded-md px-2 py-0.5 max-w-[180px] truncate" title={opt.service}>
+                {opt.service}
               </span>
             )}
 
@@ -198,7 +194,7 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 title={`Book directly on ${bookingLabel}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sand-100 hover:bg-travion-100 border border-charcoal-200 text-charcoal-700 hover:text-travion-700 text-[10px] font-bold transition-colors"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-travion-50 hover:bg-travion-100 border border-travion-200 text-travion-700 text-[11px] font-extrabold transition-all shadow-xs"
               >
                 <span>Book</span>
                 <ExternalLink className="w-3 h-3" />
@@ -220,9 +216,8 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
         {opt.date && <p className="mt-1 text-[11px] font-semibold text-charcoal-400">{opt.date}</p>}
 
         <div className="mt-2.5 flex items-end justify-between gap-2">
-          <span className="text-[11px] font-bold text-charcoal-500">
-            {opt.availability || 'Available on scheduled date'}
-            {partySize ? ` · ${partySize} traveller${partySize === 1 ? '' : 's'}` : ''}
+          <span className="text-[11px] font-medium text-charcoal-500">
+            {partySize && partySize > 1 ? `Total for ${partySize} travellers` : 'Scheduled service'}
           </span>
           <span className="text-right">
             <span className="block text-[15px] font-black text-charcoal-900">{inr(opt.party_total)}</span>
