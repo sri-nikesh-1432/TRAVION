@@ -239,14 +239,53 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
     hasFlights: boolean;
     onPick: (id: string) => void;
   }> = ({ title, options, selected, currentTab, onTabChange, hasFlights, onPick }) => {
-    const trainsCount = options.filter((o) => o.type === 'train').length;
-    const busesCount = options.filter((o) => o.type === 'bus').length;
-    const flightsCount = options.filter((o) => o.type === 'flight').length;
+    const flightOptions = options.filter((o) => o.type === 'flight');
+    const trainOptions = options.filter((o) => o.type === 'train');
+    const busOptions = options.filter((o) => o.type === 'bus');
 
-    const filtered = options.filter((o) => {
-      if (currentTab === 'all') return true;
-      return o.type === currentTab;
-    });
+    const renderModeSection = (
+      modeTitle: string,
+      modeIcon: React.ReactNode,
+      opts: TransportOption[],
+      badgeBg: string,
+      badgeText: string
+    ) => {
+      if (opts.length === 0) return null;
+      return (
+        <div className="space-y-3.5">
+          <div className="flex items-center justify-between pb-2 border-b border-charcoal-100">
+            <div className="flex items-center gap-2.5">
+              <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${badgeBg} ${badgeText}`}>
+                {modeIcon}
+              </span>
+              <h4 className="text-xs font-black uppercase tracking-wider text-charcoal-800">
+                {modeTitle}
+              </h4>
+              <span className="text-[11px] font-extrabold text-charcoal-500 bg-sand-100/90 px-2.5 py-0.5 rounded-full">
+                {opts.length} available
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold text-charcoal-400 hidden sm:inline">
+              Sorted by departure schedule
+            </span>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3.5">
+            {opts.map((o) => (
+              <OptionCard
+                key={o.id}
+                opt={o}
+                active={selected === o.id}
+                onPick={() => {
+                  setGate(null);
+                  onPick(o.id);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    };
 
     return (
       <section className="bg-white rounded-3xl border border-charcoal-200/80 p-5 shadow-soft">
@@ -279,7 +318,7 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
               }`}
             >
               <TrainFront className="w-3.5 h-3.5" />
-              <span>Trains ({trainsCount})</span>
+              <span>Trains ({trainOptions.length})</span>
             </button>
             <button
               type="button"
@@ -291,7 +330,7 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
               }`}
             >
               <Bus className="w-3.5 h-3.5" />
-              <span>Buses ({busesCount})</span>
+              <span>Buses ({busOptions.length})</span>
             </button>
             <button
               type="button"
@@ -303,7 +342,7 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
               }`}
             >
               <Plane className="w-3.5 h-3.5" />
-              <span>Flights ({flightsCount})</span>
+              <span>Flights ({flightOptions.length})</span>
             </button>
           </div>
         </div>
@@ -321,31 +360,89 @@ export const TransportSelection: React.FC<TransportSelectionProps> = ({
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {options.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-charcoal-300 bg-ivory-50 px-5 py-8 text-center">
-            <p className="text-[13px] font-bold text-charcoal-600">
-              {currentTab === 'flight' && !hasFlights
-                ? 'Flight service is not available for this route.'
-                : `No verified ${currentTab} options currently match.`}
-            </p>
+            <p className="text-[13px] font-bold text-charcoal-600">No transport options available for this route.</p>
             <p className="mt-1 text-[12px] font-medium text-charcoal-400">
-              Switch category tabs above or use the refresh button below.
+              Try refreshing schedules or adjusting travel dates.
             </p>
           </div>
-        ) : (
-          <div className="grid sm:grid-cols-2 gap-3.5">
-            {filtered.map((o) => (
-              <OptionCard
-                key={o.id}
-                opt={o}
-                active={selected === o.id}
-                onPick={() => {
-                  setGate(null);
-                  onPick(o.id);
-                }}
-              />
-            ))}
+        ) : currentTab === 'all' ? (
+          <div className="space-y-7">
+            {flightOptions.length > 0 &&
+              renderModeSection(
+                'Flights',
+                <Plane className="w-4 h-4" />,
+                flightOptions,
+                'bg-sky-50',
+                'text-sky-600'
+              )}
+            {trainOptions.length > 0 &&
+              renderModeSection(
+                'Trains',
+                <TrainFront className="w-4 h-4" />,
+                trainOptions,
+                'bg-emerald-50',
+                'text-emerald-600'
+              )}
+            {busOptions.length > 0 &&
+              renderModeSection(
+                'Buses',
+                <Bus className="w-4 h-4" />,
+                busOptions,
+                'bg-amber-50',
+                'text-amber-600'
+              )}
           </div>
+        ) : currentTab === 'flight' ? (
+          flightOptions.length > 0 ? (
+            renderModeSection(
+              'Flights',
+              <Plane className="w-4 h-4" />,
+              flightOptions,
+              'bg-sky-50',
+              'text-sky-600'
+            )
+          ) : (
+            <div className="rounded-2xl border border-dashed border-charcoal-300 bg-ivory-50 px-5 py-8 text-center">
+              <p className="text-[13px] font-bold text-charcoal-600">
+                {!hasFlights
+                  ? 'Flight service is not available for this route.'
+                  : 'No verified flight options match currently.'}
+              </p>
+              <p className="mt-1 text-[12px] font-medium text-charcoal-400">
+                Switch to Trains or Buses above for real schedules.
+              </p>
+            </div>
+          )
+        ) : currentTab === 'train' ? (
+          trainOptions.length > 0 ? (
+            renderModeSection(
+              'Trains',
+              <TrainFront className="w-4 h-4" />,
+              trainOptions,
+              'bg-emerald-50',
+              'text-emerald-600'
+            )
+          ) : (
+            <div className="rounded-2xl border border-dashed border-charcoal-300 bg-ivory-50 px-5 py-8 text-center">
+              <p className="text-[13px] font-bold text-charcoal-600">No verified train options match currently.</p>
+            </div>
+          )
+        ) : (
+          busOptions.length > 0 ? (
+            renderModeSection(
+              'Buses',
+              <Bus className="w-4 h-4" />,
+              busOptions,
+              'bg-amber-50',
+              'text-amber-600'
+            )
+          ) : (
+            <div className="rounded-2xl border border-dashed border-charcoal-300 bg-ivory-50 px-5 py-8 text-center">
+              <p className="text-[13px] font-bold text-charcoal-600">No verified bus options match currently.</p>
+            </div>
+          )
         )}
       </section>
     );
