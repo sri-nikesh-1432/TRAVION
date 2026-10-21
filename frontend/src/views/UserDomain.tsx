@@ -34,7 +34,7 @@ import { LocalTransportPlanner } from '../components/local-transport/LocalTransp
 import { BudgetFoodPlan } from '../components/budget/BudgetFoodPlan';
 import { StaySelection } from '../components/stay/StaySelection';
 import { PaymentStep } from '../components/payment/PaymentStep';
-import { GodsEyeViewModal } from '../components/navigation/GodsEyeViewModal';
+import { LiveJourneyCompanionScreen } from '../components/navigation/LiveJourneyCompanionScreen';
 import { TripCancellationModal } from '../components/user/TripCancellationModal';
 import { ProgressReviewModal } from '../components/user/ProgressReviewModal';
 import { resolveBudgetMax } from '../utils/budget';
@@ -182,7 +182,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   });
 
   const [showProgressReview, setShowProgressReview] = useState(false);
-  const [showGodsEyeView, setShowGodsEyeView] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Global Back & Forward History management:
@@ -897,6 +896,63 @@ export const UserDomain: React.FC<UserDomainProps> = ({
     }
   ];
 
+  if (currentView === 'workspace' && activeTrip && itinerary) {
+    return (
+      <>
+        <LiveJourneyCompanionScreen
+          trip={activeTrip}
+          itinerary={itinerary}
+          assignedGuide={assignedGuide}
+          onBackToHome={() => setCurrentView('search')}
+          onOpenOffline={() => setShowOfflineModal(true)}
+          onOpenCancel={() => setShowCancelModal(true)}
+          onOpenChat={() => setShowChatDrawer(true)}
+          onTriggerReplan={(reason) => handleTriggerReplan(reason as any)}
+        />
+
+        {/* Chat Drawer */}
+        <TripChatDrawer
+          tripId={activeTrip.id}
+          isOpen={showChatDrawer}
+          onClose={() => setShowChatDrawer(false)}
+          isGuideAssigned={!!assignedGuide || activeTrip.status === 'GUIDE_ASSIGNED'}
+          assignedGuideName={assignedGuide?.name || ''}
+          onTriggerReplan={() => handleTriggerReplan('TIREDNESS')}
+          currentPosition={livePosition}
+          destinationName={activeTrip.destination_name}
+          tripStart={activeTrip.start_datetime}
+          tripEnd={activeTrip.end_datetime}
+          itinerary={itinerary}
+          budgetLabel={itinerary?.cost_breakdown ? `Trip cost ₹${Math.round(itinerary.cost_breakdown.total || 0).toLocaleString('en-IN')}` : undefined}
+        />
+
+        {/* Offline Package Modal */}
+        <OfflineManager
+          tripId={activeTrip.id}
+          isOpen={showOfflineModal}
+          onClose={() => setShowOfflineModal(false)}
+        />
+
+        {/* Cancellation Modal */}
+        <TripCancellationModal
+          tripId={activeTrip.id}
+          isOpen={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          onCancelled={() => void loadTripWorkspace(activeTrip.id)}
+        />
+
+        {/* Review Modal */}
+        <ReviewModal
+          tripId={activeTrip.id}
+          guideName={assignedGuide?.name || "your guide"}
+          isOpen={showReviewModal}
+          onClose={() => setShowReviewModal(false)}
+          onSuccess={() => alert(`Thank you! Your review has been attached to ${assignedGuide?.name || "your guide"}'s profile.`)}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-cream-50 flex flex-col justify-between">
       
@@ -926,16 +982,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Live Journey Companion Button */}
-            <button
-              type="button"
-              onClick={() => setShowGodsEyeView(true)}
-              title="Live Journey Companion — Real-time Tour Navigator & GPS"
-              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm"
-            >
-              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline font-mono">Live Companion</span>
-            </button>
 
             {/* Persistent Review Progress Button — always accessible */}
             {(activeTrip || myTrips.length > 0) && (
@@ -1530,14 +1576,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowGodsEyeView(true)}
-                  className="px-4 py-2 rounded-xl bg-charcoal-900 hover:bg-black text-emerald-400 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-soft"
-                >
-                  <Navigation className="w-4 h-4 text-emerald-400" />
-                  <span>Live Companion</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setShowOfflineModal(true)}
                   className="px-4 py-2 rounded-xl bg-sand-100 hover:bg-sand-200 text-charcoal-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
                 >
@@ -1677,14 +1715,6 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         onSuccess={() => alert(`Thank you! Your review has been attached to ${assignedGuide?.name || "your guide"}'s profile.`)}
       />
 
-      {/* God's Eye View Spatial Intelligence & Speedometer Modal */}
-      <GodsEyeViewModal
-        isOpen={showGodsEyeView}
-        onClose={() => setShowGodsEyeView(false)}
-        trip={activeTrip}
-        itinerary={itinerary}
-        onProceedToPayment={() => setCurrentView('pay')}
-      />
 
       {/* Progress Review Modal — accessible from anywhere across the 11 steps */}
       <ProgressReviewModal
