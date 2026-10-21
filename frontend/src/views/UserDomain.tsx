@@ -1071,6 +1071,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               setSearchInitialSource(userProfile?.home_city || localStorage.getItem('travion_permanent_source') || 'Chennai');
               setCurrentView('search');
             }}
+            onEditProfile={() => setShowProfileSheet(true)}
           />
         )}
 

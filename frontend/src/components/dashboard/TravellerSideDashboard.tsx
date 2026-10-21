@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -27,6 +27,7 @@ import {
   Receipt,
   Wallet,
   PieChart,
+  Upload,
 } from 'lucide-react';
 import { TripItem, UserProfile } from '../../types';
 
@@ -63,6 +64,31 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
   onEditProfile,
 }) => {
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
+  const drawerFileRef = useRef<HTMLInputElement>(null);
+
+  const [userPhotoState, setUserPhotoState] = useState<string>(
+    userProfile?.photo_url || localStorage.getItem('travion_user_photo') || ''
+  );
+
+  useEffect(() => {
+    if (userProfile?.photo_url) {
+      setUserPhotoState(userProfile.photo_url);
+    }
+  }, [userProfile?.photo_url]);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        setUserPhotoState(result);
+        localStorage.setItem('travion_user_photo', result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (initialTab) {
@@ -75,11 +101,6 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
     userProfile?.first_name ||
     userEmail.split('@')[0] ||
     'Datta Srinikesh';
-
-  const userPhoto =
-    userProfile?.photo_url ||
-    localStorage.getItem('travion_user_photo') ||
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80';
 
   const permanentSource =
     userProfile?.home_city ||
@@ -162,14 +183,35 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
           >
             {/* Top Drawer Header with User Profile */}
             <div className="p-5 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl">
+              {/* Hidden file input for photo change */}
+              <input
+                ref={drawerFileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoUpload}
+              />
+
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-13 h-13 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-sky-100 shrink-0">
-                    <img
-                      src={userPhoto}
-                      alt={displayName}
-                      className="w-full h-full object-cover"
-                    />
+                  <div
+                    onClick={() => drawerFileRef.current?.click()}
+                    className="relative group cursor-pointer w-13 h-13 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-gradient-to-br from-sky-400 to-pink-400 flex items-center justify-center text-white font-black text-base shrink-0"
+                    title="Click to change your photo"
+                  >
+                    {userPhotoState ? (
+                      <img
+                        src={userPhotoState}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                        onError={() => setUserPhotoState('')}
+                      />
+                    ) : (
+                      <span>{(displayName.charAt(0) || 'D').toUpperCase()}</span>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera className="w-4 h-4 text-white" />
+                    </div>
                   </div>
 
                   <div>
@@ -635,17 +677,39 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                   {/* Profile Card */}
                   <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
                     <div className="flex items-center gap-3.5 pb-3 border-b border-slate-100">
-                      <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-sky-100 shrink-0">
-                        <img
-                          src={userPhoto}
-                          alt={displayName}
-                          className="w-full h-full object-cover"
-                        />
+                      <div
+                        onClick={() => drawerFileRef.current?.click()}
+                        className="relative group cursor-pointer w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-gradient-to-br from-sky-400 to-pink-400 flex items-center justify-center text-white font-black text-lg shrink-0"
+                        title="Upload new photo"
+                      >
+                        {userPhotoState ? (
+                          <img
+                            src={userPhotoState}
+                            alt={displayName}
+                            className="w-full h-full object-cover"
+                            onError={() => setUserPhotoState('')}
+                          />
+                        ) : (
+                          <span>{(displayName.charAt(0) || 'D').toUpperCase()}</span>
+                        )}
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Camera className="w-4 h-4 text-white" />
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-base font-black text-slate-900 leading-tight">
-                          {displayName}
-                        </h4>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-base font-black text-slate-900 leading-tight">
+                            {displayName}
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => drawerFileRef.current?.click()}
+                            className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-600 hover:text-sky-800"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>Upload Photo</span>
+                          </button>
+                        </div>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{userEmail}</p>
                       </div>
                     </div>

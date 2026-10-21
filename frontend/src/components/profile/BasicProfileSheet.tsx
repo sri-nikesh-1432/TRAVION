@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
   Phone,
-  Globe,
-  Shield,
   ArrowRight,
   CheckCircle2,
   X,
   Camera,
   MapPin,
   Heart,
-  Sparkles,
   Mail,
+  Upload,
+  Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { UserProfile } from '../../types';
@@ -23,14 +23,6 @@ interface BasicProfileSheetProps {
   onComplete: () => void;
   onClose?: () => void;
 }
-
-const PRESET_AVATARS = [
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&q=80',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=256&q=80',
-];
 
 const POPULAR_SOURCE_CITIES = [
   'Chennai',
@@ -45,15 +37,15 @@ const POPULAR_SOURCE_CITIES = [
 ];
 
 const ALL_INTERESTS = [
-  '🌲 Nature & Wildlife',
+  '🌲 Nature & Wilderness',
   '🏛️ Historic Heritage',
-  '🏖️ Azure Coasts & Beaches',
-  '🍲 Street Food & Gourmet',
-  '🏔️ Mountain Treks',
-  '🧘 Spiritual Ghats & Peace',
+  '🏖️ Azure Coasts & Shorelines',
+  '🍲 Authentic Regional Cuisine',
+  '🏔️ Mountain Treks & Valleys',
+  '🧘 Spiritual Ghats & Sanctuaries',
   '📸 Photography & Sunsets',
   '🏰 Royal Palaces & Forts',
-  '☕ Tea & Coffee Estates',
+  '☕ Tea & Coffee Plantations',
 ];
 
 export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
@@ -62,18 +54,24 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   onComplete,
   onClose,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [firstName, setFirstName] = useState(initialData?.first_name || '');
   const [lastName, setLastName] = useState(initialData?.last_name || '');
   const [preferredName, setPreferredName] = useState(initialData?.preferred_name || '');
-  const [photoUrl, setPhotoUrl] = useState(
-    initialData?.photo_url || localStorage.getItem('travion_user_photo') || PRESET_AVATARS[0]
+  
+  const [photoUrl, setPhotoUrl] = useState<string>(
+    initialData?.photo_url || localStorage.getItem('travion_user_photo') || ''
   );
+  
   const [gender, setGender] = useState(initialData?.gender || 'Prefer not to say');
   const [language, setLanguage] = useState(initialData?.preferred_language || 'English');
   const [country, setCountry] = useState(initialData?.country || 'India');
+  
   const [homeCity, setHomeCity] = useState(
     initialData?.home_city || localStorage.getItem('travion_permanent_source') || 'Chennai'
   );
+  
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [homeCityError, setHomeCityError] = useState<string | null>(null);
@@ -84,9 +82,9 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   const [selectedInterests, setSelectedInterests] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('travion_user_interests');
-      return saved ? JSON.parse(saved) : ['🌲 Nature & Wildlife', '🏛️ Historic Heritage', '🏖️ Azure Coasts & Beaches'];
+      return saved ? JSON.parse(saved) : ['🌲 Nature & Wilderness', '🏛️ Historic Heritage', '🏖️ Azure Coasts & Shorelines'];
     } catch {
-      return ['🌲 Nature & Wildlife', '🏛️ Historic Heritage'];
+      return ['🌲 Nature & Wilderness', '🏛️ Historic Heritage'];
     }
   });
 
@@ -96,6 +94,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   );
   const [emergencyPhoneError, setEmergencyPhoneError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadSuccessNote, setUploadSuccessNote] = useState<string | null>(null);
 
   const phoneDigits = phone.replace(/\D/g, '');
   const phoneValid = phoneDigits.length >= 10 && phoneDigits.length <= 13;
@@ -120,6 +119,39 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
     }
   };
 
+  // Real Image File Upload from Computer / Device
+  const handlePhotoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image size should be under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        setPhotoUrl(result);
+        localStorage.setItem('travion_user_photo', result);
+        setUploadSuccessNote('Photo uploaded successfully!');
+        setTimeout(() => setUploadSuccessNote(null), 3000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = () => {
+    setPhotoUrl('');
+    localStorage.removeItem('travion_user_photo');
+  };
+
   const toggleInterest = (interest: string) => {
     setSelectedInterests((prev) =>
       prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]
@@ -129,15 +161,16 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!homeCity.trim()) {
-      setHomeCityError('Please enter your permanent source / home city to continue.');
+      setHomeCityError('Please enter your permanent departure city to continue.');
       return;
     }
     setHomeCityError(null);
     setIsSubmitting(true);
     try {
-      // Save locally
       localStorage.setItem('travion_permanent_source', homeCity.trim());
-      localStorage.setItem('travion_user_photo', photoUrl);
+      if (photoUrl) {
+        localStorage.setItem('travion_user_photo', photoUrl);
+      }
       localStorage.setItem('travion_user_interests', JSON.stringify(selectedInterests));
 
       await api.updateBasicProfile({
@@ -164,56 +197,105 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
     }
   };
 
+  const initials = (firstName.charAt(0) + (lastName.charAt(0) || '')).toUpperCase() || 'DS';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-2xl bg-[#FAF7F2] rounded-[32px] shadow-2xl border border-white/80 p-6 sm:p-8 my-8 relative max-h-[92vh] overflow-y-auto"
+        className="w-full max-w-2xl bg-[#FAF7F2] rounded-[36px] shadow-2xl border border-white/90 p-6 sm:p-9 my-8 relative max-h-[92vh] overflow-y-auto"
       >
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-5 right-5 p-2 rounded-xl bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-200"
+            className="absolute top-5 right-5 p-2 rounded-xl bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-200 shadow-xs"
+            title="Close"
           >
             <X className="w-4 h-4" />
           </button>
         )}
 
-        <div className="text-center mb-6 space-y-2">
-          {/* Profile Photo & Avatar Picker */}
+        {/* ── PHOTO UPLOAD & HEADER ── */}
+        <div className="text-center mb-6 space-y-3">
           <div className="relative inline-block mx-auto">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-lg mx-auto bg-sky-100">
-              <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-white shadow-xl mx-auto bg-gradient-to-br from-sky-300 via-sky-400 to-pink-300 flex items-center justify-center text-white font-black text-2xl select-none">
+              {photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                  onError={() => setPhotoUrl('')}
+                />
+              ) : (
+                <span>{initials}</span>
+              )}
             </div>
-            <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-sky-500 text-white shadow-sm">
-              <Camera className="w-3.5 h-3.5" />
-            </span>
+
+            {/* Camera / Upload Action Overlay Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-1 right-1 p-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-md transition-all hover:scale-105"
+              title="Upload your photo"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
           </div>
 
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoFileUpload}
+          />
+
+          {/* Photo Actions: Upload or Remove */}
           <div className="flex items-center justify-center gap-2 pt-1">
-            {PRESET_AVATARS.map((av, idx) => (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white hover:bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold transition-all shadow-xs"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{photoUrl ? 'Change Photo' : 'Upload Your Photo'}</span>
+            </button>
+
+            {photoUrl && (
               <button
-                key={idx}
                 type="button"
-                onClick={() => setPhotoUrl(av)}
-                className={`w-8 h-8 rounded-full overflow-hidden border-2 transition-all ${
-                  photoUrl === av ? 'border-sky-500 scale-110 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'
-                }`}
+                onClick={removePhoto}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white hover:bg-red-50 border border-slate-200 text-slate-500 hover:text-red-600 text-xs font-semibold transition-all"
+                title="Remove photo"
               >
-                <img src={av} alt="avatar" className="w-full h-full object-cover" />
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Remove</span>
               </button>
-            ))}
+            )}
           </div>
 
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-3">
-            Your Personal Traveller Profile
-          </h2>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            This profile saves your permanent departure city and travel preferences so you never have to re-enter them.
-          </p>
+          {uploadSuccessNote && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-xs font-bold text-emerald-600"
+            >
+              ✓ {uploadSuccessNote}
+            </motion.p>
+          )}
+
+          <div className="pt-1">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+              Your Personal Traveller Profile
+            </h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto mt-0.5">
+              Customize your profile photo, origin departure city, and travel vibes.
+            </p>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs font-semibold">
@@ -274,7 +356,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-slate-900 font-black flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-sky-600" />
-                <span>Permanent Source City (Default Departure Hub) *</span>
+                <span>Permanent Departure City (Origin Hub) *</span>
               </label>
               <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
                 Default Origin
@@ -282,7 +364,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 font-normal">
-              This city will be automatically selected as your starting location whenever you plan a new trip.
+              Automatically used as your starting location whenever you plan a new trip.
             </p>
 
             <input
@@ -312,7 +394,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                     homeCity.toLowerCase() === city.toLowerCase()
                       ? 'bg-sky-500 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      : 'bg-[#FAF7F2] hover:bg-slate-200 text-slate-700 border border-slate-200/80'
                   }`}
                 >
                   {city}
@@ -321,7 +403,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             </div>
           </div>
 
-          {/* Mobile phone number */}
+          {/* Mobile Phone Number */}
           <div>
             <label className="block text-slate-700 font-bold mb-1">
               Mobile Phone Number *
@@ -348,12 +430,12 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             </p>
           </div>
 
-          {/* TRAVEL INTERESTS & STYLE (CRITICAL REQUIREMENT) */}
+          {/* TRAVEL INTERESTS & STYLE */}
           <div className="p-4 rounded-2xl bg-white border border-pink-100 shadow-xs space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-slate-900 font-black flex items-center gap-1.5">
                 <Heart className="w-4 h-4 text-pink-500" />
-                <span>Your Travel Interests & Style</span>
+                <span>Your Travel Interests & Vibes</span>
               </label>
               <span className="text-[10px] font-bold text-pink-700 bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200">
                 {selectedInterests.length} Selected
@@ -361,7 +443,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 font-normal">
-              Select your favorite travel vibes so we can highlight relevant experiences.
+              Select your travel moods so we can personalize every destination for you.
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -392,7 +474,7 @@ export const BasicProfileSheet: React.FC<BasicProfileSheetProps> = ({
             disabled={isSubmitting || !firstName || !lastName || !phoneValid}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 via-sky-600 to-sky-500 hover:from-sky-600 hover:to-sky-700 text-white font-black text-sm shadow-md shadow-sky-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
           >
-            <span>Save Profile & Permanent Source</span>
+            <span>Save Profile & Permanent Origin</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
