@@ -186,6 +186,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [showProgressReview, setShowProgressReview] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showSideDashboard, setShowSideDashboard] = useState(false);
+  const [sideDashboardTab, setSideDashboardTab] = useState<'planned' | 'analytics' | 'memories' | 'dna' | 'settings'>('planned');
+  const [searchInitialDest, setSearchInitialDest] = useState<string>('');
+  const [searchInitialSource, setSearchInitialSource] = useState<string>('');
 
   // Global Back & Forward History management:
   // Synchronized with browser history and sessionStorage so users are never
@@ -1051,14 +1054,21 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             onPlanNewTrip={() => {
               setActiveTrip(null);
               setStageState(null);
+              setSearchInitialDest('');
+              setSearchInitialSource(userProfile?.home_city || localStorage.getItem('travion_permanent_source') || 'Chennai');
               setCurrentView('search');
             }}
             onResumeTrip={(trip) => void resumeFromStageState(trip)}
             onViewPaidTrip={(trip) => void loadTripWorkspace(trip.id, true)}
-            onOpenSideDashboard={() => setShowSideDashboard((prev) => !prev)}
+            onOpenSideDashboard={(tab = 'planned') => {
+              setSideDashboardTab(tab);
+              setShowSideDashboard(true);
+            }}
             onSelectQuickDestination={(destName) => {
               setActiveTrip(null);
               setStageState(null);
+              setSearchInitialDest(destName);
+              setSearchInitialSource(userProfile?.home_city || localStorage.getItem('travion_permanent_source') || 'Chennai');
               setCurrentView('search');
             }}
           />
@@ -1165,7 +1175,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               )}
             </AnimatePresence>
 
-            <TripSearchBar onSearch={handleTripSearch} isLoading={isSearching} />
+            <TripSearchBar
+              onSearch={handleTripSearch}
+              isLoading={isSearching}
+              initialDestination={searchInitialDest}
+              initialSource={searchInitialSource || userProfile?.home_city || localStorage.getItem('travion_permanent_source') || undefined}
+            />
 
             {/* Trust strip — factual product capabilities, never invented stats */}
             <div className="mt-7 flex flex-wrap items-center justify-center gap-x-7 gap-y-2.5 text-[11.5px] font-semibold text-charcoal-500">
@@ -1687,7 +1702,14 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         {showProfileSheet && (
           <BasicProfileSheet
             initialData={userProfile || undefined}
-            onComplete={() => setShowProfileSheet(false)}
+            userEmail={session.email}
+            onComplete={() => {
+              setShowProfileSheet(false);
+              api.getMe().then((res) => {
+                if (res.user) setUserProfile(res.user);
+              }).catch(() => {});
+            }}
+            onClose={() => setShowProfileSheet(false)}
           />
         )}
       </AnimatePresence>
@@ -1779,9 +1801,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         userProfile={userProfile}
         userEmail={session.email}
         trips={myTrips}
+        initialTab={sideDashboardTab}
         onPlanNewTrip={() => {
           setActiveTrip(null);
           setStageState(null);
+          setSearchInitialDest('');
+          setSearchInitialSource(userProfile?.home_city || localStorage.getItem('travion_permanent_source') || 'Chennai');
           setCurrentView('search');
         }}
         onResumeTrip={(trip) => void resumeFromStageState(trip)}

@@ -19,11 +19,15 @@ import {
   Trees,
   Waves,
   ChevronRight,
-  Plane,
-  Train,
+  BarChart3,
+  TrendingUp,
+  Wallet,
+  Receipt,
+  PieChart,
 } from 'lucide-react';
 import { TripItem, UserProfile } from '../../types';
 import travionLogoNature from '../../assets/travion-logo-nature.png';
+import { DashboardTab } from './TravellerSideDashboard';
 
 interface TravellerHomeDashboardProps {
   userProfile?: UserProfile | null;
@@ -32,7 +36,7 @@ interface TravellerHomeDashboardProps {
   onPlanNewTrip: () => void;
   onResumeTrip: (trip: TripItem) => void;
   onViewPaidTrip: (trip: TripItem) => void;
-  onOpenSideDashboard: () => void;
+  onOpenSideDashboard: (initialTab?: DashboardTab) => void;
   onSelectQuickDestination?: (destinationName: string) => void;
 }
 
@@ -177,6 +181,11 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
     userEmail.split('@')[0] ||
     'Datta Srinikesh';
 
+  const permanentSource =
+    userProfile?.home_city ||
+    localStorage.getItem('travion_permanent_source') ||
+    'Chennai';
+
   const plannedTrips = trips.filter((t) =>
     ['REQUESTED', 'PLANNED', 'DRAFT', 'ACTIVE', 'PAID', 'GUIDE_ASSIGNED'].includes(
       t.status
@@ -189,6 +198,25 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
 
   const latestTrip = plannedTrips[0] || null;
 
+  // Total investment calculations
+  const totalInvestment = trips.reduce(
+    (sum, t) => sum + (Number(t.total_cost) || Number(t.budget) || 0),
+    0
+  );
+
+  const avgCostPerTrip =
+    trips.length > 0 ? Math.round(totalInvestment / trips.length) : 0;
+
+  const plannedCapital = plannedTrips.reduce(
+    (sum, t) => sum + (Number(t.total_cost) || Number(t.budget) || 0),
+    0
+  );
+
+  const maxTripCost = Math.max(
+    ...trips.map((t) => Number(t.total_cost) || Number(t.budget) || 0),
+    1
+  );
+
   const filteredDestinations =
     selectedMood === 'all'
       ? DESTINATION_INSPIRATIONS
@@ -199,41 +227,43 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
       {/* ── ETHEREAL SKY, BEIGE & BLUSH AMBIENT GLOWS ── */}
       <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
         {/* Soft sky blue upper atmosphere */}
-        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[1100px] h-[550px] rounded-full bg-gradient-to-b from-sky-200/40 via-sky-100/25 to-transparent blur-3xl opacity-80" />
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] rounded-full bg-gradient-to-b from-sky-200/40 via-sky-100/25 to-transparent blur-3xl opacity-80" />
         {/* Baby pink blush sunrise glow on top-right */}
-        <div className="absolute top-10 right-[-100px] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-pink-200/35 via-rose-100/20 to-transparent blur-3xl opacity-70" />
+        <div className="absolute top-10 right-[-100px] w-[550px] h-[550px] rounded-full bg-gradient-to-bl from-pink-200/40 via-rose-100/20 to-transparent blur-3xl opacity-75" />
         {/* Warm cream/beige reflection on bottom-left */}
-        <div className="absolute bottom-40 -left-20 w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-amber-100/30 via-stone-100/20 to-transparent blur-3xl opacity-75" />
+        <div className="absolute bottom-40 -left-20 w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-amber-100/35 via-stone-100/20 to-transparent blur-3xl opacity-75" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 space-y-10 sm:space-y-12">
-        {/* ── HERO SANCTUARY: UPLOADED LOGO + PERSONAL WELCOME + GLASS CTA ── */}
+        {/* ── HERO CARD: GRAND LOGO CENTERPIECE (AS BIG AS THE CARD) + GREETING + GLASS CTA ── */}
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="relative rounded-[36px] bg-gradient-to-b from-white/95 via-white/85 to-[#FAF7F2]/90 border border-white/80 p-8 sm:p-12 lg:p-14 shadow-[0_12px_45px_-10px_rgba(14,165,233,0.12)] backdrop-blur-2xl overflow-hidden"
+          className="relative rounded-[36px] bg-gradient-to-b from-white/95 via-white/90 to-[#FAF7F2]/95 border border-white/90 p-6 sm:p-10 lg:p-12 shadow-[0_16px_50px_-10px_rgba(14,165,233,0.14)] backdrop-blur-2xl overflow-hidden"
         >
           {/* Subtle sky cloud shimmer backdrop */}
           <div
             aria-hidden="true"
-            className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(186,230,253,0.35),transparent_60%),radial-gradient(ellipse_at_bottom_right,rgba(252,231,243,0.35),transparent_60%)] pointer-events-none"
+            className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(186,230,253,0.4),transparent_65%),radial-gradient(ellipse_at_bottom_right,rgba(252,231,243,0.4),transparent_65%)] pointer-events-none"
           />
 
-          <div className="relative z-10 flex flex-col items-center text-center max-w-3xl mx-auto space-y-6">
-            {/* The Signature Uploaded TRAVION Logo */}
+          <div className="relative z-10 flex flex-col items-center text-center max-w-4xl mx-auto space-y-6">
+            {/* ── THE UPLOADED TRAVION LOGO: BOLD, EXPANSIVE & GRAND ── */}
             <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.6 }}
-              className="relative px-4 py-2"
+              className="relative w-full max-w-3xl flex items-center justify-center py-2 sm:py-4"
             >
+              {/* Radiant soft ambient halo behind logo */}
+              <div className="absolute inset-0 w-3/4 mx-auto h-3/4 rounded-full bg-gradient-to-r from-sky-200/50 via-pink-100/40 to-sky-200/50 blur-2xl -z-10" />
+
               <img
                 src={travionLogoNature}
                 alt="TRAVION"
-                className="h-16 sm:h-20 md:h-24 object-contain filter drop-shadow-sm select-none mx-auto"
+                className="w-full max-w-[96%] sm:max-w-[90%] md:max-w-[85%] h-auto max-h-[160px] sm:max-h-[220px] md:max-h-[280px] object-contain select-none filter drop-shadow-md mx-auto transition-transform duration-500 hover:scale-[1.01]"
                 onError={(e) => {
-                  // Fallback to public path if bundler asset issue
                   const target = e.currentTarget;
                   if (!target.src.endsWith('/travion-logo-nature.png')) {
                     target.src = '/travion-logo-nature.png';
@@ -242,12 +272,19 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
               />
             </motion.div>
 
-            {/* Personalized Warm Greeting */}
-            <div className="space-y-2">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-800 text-xs font-semibold tracking-wide">
-                <Sparkles className="w-3.5 h-3.5 text-sky-500" />
-                <span>Good day, {displayName}</span>
-              </span>
+            {/* Personalized Warm Greeting with Permanent Origin Badge */}
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-800 text-xs font-semibold tracking-wide shadow-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-500" />
+                  <span>Welcome back, {displayName}</span>
+                </span>
+
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-pink-50 border border-pink-100 text-pink-700 text-xs font-semibold shadow-xs">
+                  <MapPin className="w-3 h-3 text-pink-500" />
+                  <span>Origin Hub: <strong>{permanentSource}</strong></span>
+                </span>
+              </div>
 
               <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-snug">
                 Where will your heart{' '}
@@ -256,13 +293,13 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                 </span>
               </h1>
 
-              <p className="text-sm sm:text-base text-slate-600 font-normal max-w-xl mx-auto leading-relaxed">
+              <p className="text-sm sm:text-base text-slate-600 font-normal leading-relaxed">
                 Your personal travel sanctuary. Curate journeys through emerald hill stations, serene coastlines, and ancient horizons across India.
               </p>
             </div>
 
             {/* ── GLASSMORPHISM ACTION BUTTONS ── */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full sm:w-auto">
               {/* Primary "Plan a New Trip" Signature Glass CTA */}
               <motion.button
                 type="button"
@@ -285,25 +322,25 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                 </div>
               </motion.button>
 
-              {/* Secondary "Travel Hub & Memories" Glass Pill */}
+              {/* Secondary "Travel Hub & Analytics" Glass Pill */}
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.02, y: -1 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={onOpenSideDashboard}
-                className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-3.5 px-6 py-4 rounded-2xl bg-white/90 hover:bg-white text-slate-800 font-semibold border border-slate-200/80 shadow-[0_6px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-all"
+                onClick={() => onOpenSideDashboard('analytics')}
+                className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-3.5 px-6 py-4 rounded-2xl bg-white/95 hover:bg-white text-slate-800 font-semibold border border-slate-200/80 shadow-[0_6px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-all"
               >
-                <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600">
-                  <Compass className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-pink-50 border border-pink-100 flex items-center justify-center text-pink-600">
+                  <BarChart3 className="w-5 h-5" />
                 </div>
                 <div className="text-left">
                   <span className="text-xs text-slate-500 font-medium block">
-                    Your Travel Hub
+                    Travel Intelligence
                   </span>
                   <span className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                    My Trips & Memories
-                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-sky-100 text-sky-700 border border-sky-200">
-                      {plannedTrips.length}
+                    Spending & Analytics
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-pink-100 text-pink-700 border border-pink-200">
+                      {inr(totalInvestment)}
                     </span>
                   </span>
                 </div>
@@ -317,7 +354,7 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
           <motion.section
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-[30px] bg-white/90 border border-sky-100/90 p-6 sm:p-7 shadow-[0_8px_30px_rgba(14,165,233,0.06)] backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5"
+            className="rounded-[30px] bg-white/95 border border-sky-100/90 p-6 sm:p-7 shadow-[0_8px_30px_rgba(14,165,233,0.06)] backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5"
           >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 border border-sky-200/70 shadow-sm">
@@ -367,7 +404,7 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
             <div className="flex items-center gap-2.5 w-full sm:w-auto">
               <button
                 type="button"
-                onClick={onOpenSideDashboard}
+                onClick={() => onOpenSideDashboard('planned')}
                 className="flex-1 sm:flex-initial px-4 h-11 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold transition-all shadow-sm"
               >
                 All Trips ({plannedTrips.length})
@@ -396,7 +433,91 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
           </motion.section>
         )}
 
-        {/* ── TRAVEL MOODS & INSPIRATION HORIZONS ── */}
+        {/* ── TRAVEL SPENDING & ANALYTICS OVERVIEW SECTION (CRITICAL REQUIREMENT) ── */}
+        <section className="rounded-[32px] bg-gradient-to-r from-white via-white to-sky-50/50 border border-sky-100/80 p-7 sm:p-9 shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-sky-600 block flex items-center gap-1.5">
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Financial & Journey Analytics</span>
+              </span>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+                Your Complete Travel Investment Overview
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 font-normal">
+                How much each journey costed, your cumulative travel spending, and trip analytics.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onOpenSideDashboard('analytics')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-sky-50 text-sky-700 border border-sky-200 text-xs font-bold transition-all shadow-sm shrink-0"
+            >
+              <span>View Full Analytics Breakdown</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Metric Bento Pills */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-slate-200/70 space-y-1">
+              <span className="text-[11px] font-bold text-slate-500 block">Total Investment</span>
+              <div className="text-2xl font-black text-slate-900">{inr(totalInvestment)}</div>
+              <span className="text-[10px] text-sky-700 font-semibold block">Across all {trips.length} journeys</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-slate-200/70 space-y-1">
+              <span className="text-[11px] font-bold text-slate-500 block">Average per Journey</span>
+              <div className="text-2xl font-black text-slate-900">{inr(avgCostPerTrip)}</div>
+              <span className="text-[10px] text-pink-700 font-semibold block">Budget-to-actual allocation</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-slate-200/70 space-y-1">
+              <span className="text-[11px] font-bold text-slate-500 block">Active Planning Capital</span>
+              <div className="text-2xl font-black text-slate-900">{inr(plannedCapital)}</div>
+              <span className="text-[10px] text-emerald-700 font-semibold block">{plannedTrips.length} active itineraries</span>
+            </div>
+          </div>
+
+          {/* Quick Snapshot Table of Recent Trips Spending */}
+          {trips.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <span className="text-xs font-bold text-slate-700 block">Recent Journeys Cost Comparison</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {trips.slice(0, 3).map((trip) => {
+                  const cost = Number(trip.total_cost) || Number(trip.budget) || 0;
+                  const ratio = maxTripCost > 0 ? (cost / maxTripCost) * 100 : 0;
+                  return (
+                    <div
+                      key={trip.id}
+                      className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-black text-slate-900 truncate">
+                          {trip.source_name} → {trip.destination_name}
+                        </span>
+                        <span className="font-extrabold text-sky-700">{inr(cost)}</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-sky-400 to-pink-400"
+                          style={{ width: `${Math.max(ratio, 10)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>{new Date(trip.start_datetime).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
+                        <span className="uppercase font-semibold text-slate-500">{trip.status}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ── TRAVEL MOODS & INSPIRATION HORIZONS (WITH AUTO-FILL ON CLICK) ── */}
         <section className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
@@ -407,7 +528,7 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                 Wonders of Nature & Heritage
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 font-normal mt-1">
-                Choose an inspiring destination to start planning your next journey.
+                Click <strong>"Plan this trip"</strong> to automatically fill the destination and your origin hub into Step 1!
               </p>
             </div>
 
@@ -439,7 +560,6 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <AnimatePresence mode="popLayout">
               {filteredDestinations.map((dest, i) => {
-                // Badge color styles
                 const badgeStyle =
                   dest.badgeType === 'blush'
                     ? 'bg-pink-50 text-pink-700 border-pink-200'
@@ -520,7 +640,7 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Card Footer */}
+                      {/* Card Footer: Clear Autofill Trigger */}
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                         <span className="text-xs font-bold text-sky-600 group-hover:text-sky-700 flex items-center gap-1 transition-colors">
                           Plan this trip
@@ -536,71 +656,6 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                 );
               })}
             </AnimatePresence>
-          </div>
-        </section>
-
-        {/* ── TRAVEL MEMORIES & NOSTALGIA ARCHIVE (PERSONAL SANCTUARY) ── */}
-        <section className="rounded-[32px] bg-gradient-to-r from-white via-white to-pink-50/40 border border-pink-100/60 p-7 sm:p-9 shadow-[0_6px_25px_rgba(0,0,0,0.03)] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-pink-600 block">
-                Travel Memories
-              </span>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                Every Journey Becomes a Story in the Sky
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600 font-normal">
-                Cherish the places you've explored and the memories you've collected along the way.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onOpenSideDashboard}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-pink-50/60 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold transition-all shadow-sm shrink-0"
-            >
-              <Camera className="w-3.5 h-3.5 text-pink-500" />
-              <span>View Memory Vault</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                <Globe className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-sm font-black text-slate-900 block">
-                  {trips.length} Total Journeys
-                </span>
-                <span className="text-xs text-slate-500">Planned & cherishing</span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center shrink-0">
-                <Heart className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-sm font-black text-slate-900 block">
-                  India Unfolds
-                </span>
-                <span className="text-xs text-slate-500">Hills, coasts & heritage</span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-sm font-black text-slate-900 block">
-                  Custom Itineraries
-                </span>
-                <span className="text-xs text-slate-500">Curated with heart</span>
-              </div>
-            </div>
           </div>
         </section>
       </div>

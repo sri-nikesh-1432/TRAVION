@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -22,8 +22,15 @@ import {
   ChevronRight,
   Sun,
   Shield,
+  BarChart3,
+  TrendingUp,
+  Receipt,
+  Wallet,
+  PieChart,
 } from 'lucide-react';
 import { TripItem, UserProfile } from '../../types';
+
+export type DashboardTab = 'planned' | 'analytics' | 'memories' | 'dna' | 'settings';
 
 interface TravellerSideDashboardProps {
   isOpen: boolean;
@@ -31,6 +38,7 @@ interface TravellerSideDashboardProps {
   userProfile?: UserProfile | null;
   userEmail: string;
   trips: TripItem[];
+  initialTab?: DashboardTab;
   onPlanNewTrip: () => void;
   onResumeTrip: (trip: TripItem) => void;
   onViewPaidTrip: (trip: TripItem) => void;
@@ -41,27 +49,53 @@ interface TravellerSideDashboardProps {
 const inr = (n: number | null | undefined) =>
   `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
 
-type DashboardTab = 'planned' | 'memories' | 'dna' | 'settings';
-
 export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
   isOpen,
   onClose,
   userProfile,
   userEmail,
   trips,
+  initialTab = 'planned',
   onPlanNewTrip,
   onResumeTrip,
   onViewPaidTrip,
   onLogout,
   onEditProfile,
 }) => {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('planned');
+  const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
 
   const displayName =
     userProfile?.preferred_name ||
     userProfile?.first_name ||
     userEmail.split('@')[0] ||
     'Datta Srinikesh';
+
+  const userPhoto =
+    userProfile?.photo_url ||
+    localStorage.getItem('travion_user_photo') ||
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80';
+
+  const permanentSource =
+    userProfile?.home_city ||
+    localStorage.getItem('travion_permanent_source') ||
+    'Chennai';
+
+  const userInterests: string[] = (() => {
+    try {
+      const saved = localStorage.getItem('travion_user_interests');
+      return saved
+        ? JSON.parse(saved)
+        : ['🌲 Nature & Wildlife', '🏛️ Historic Heritage', '🏖️ Azure Coasts & Beaches'];
+    } catch {
+      return ['🌲 Nature & Wildlife', '🏛️ Historic Heritage'];
+    }
+  })();
 
   const plannedTrips = trips.filter((t) =>
     ['REQUESTED', 'PLANNED', 'DRAFT', 'ACTIVE', 'PAID', 'GUIDE_ASSIGNED'].includes(
@@ -73,7 +107,31 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
     ['COMPLETED', 'FINISHED'].includes(t.status)
   );
 
-  const travelInterests = [
+  // ── FINANCIAL & TRIP ANALYTICS CALCULATIONS ──
+  const totalInvestment = trips.reduce(
+    (sum, t) => sum + (Number(t.total_cost) || Number(t.budget) || 0),
+    0
+  );
+
+  const completedSpend = completedTrips.reduce(
+    (sum, t) => sum + (Number(t.total_cost) || Number(t.budget) || 0),
+    0
+  );
+
+  const plannedSpend = plannedTrips.reduce(
+    (sum, t) => sum + (Number(t.total_cost) || Number(t.budget) || 0),
+    0
+  );
+
+  const avgCostPerTrip =
+    trips.length > 0 ? Math.round(totalInvestment / trips.length) : 0;
+
+  const maxTripCost = Math.max(
+    ...trips.map((t) => Number(t.total_cost) || Number(t.budget) || 0),
+    1
+  );
+
+  const travelArchetypes = [
     { label: 'Scenic Hills & Mountain Trails', icon: Mountain, count: '6 Destinations' },
     { label: 'Azure Coasts & Ocean Breezes', icon: Sun, count: '8 Coastlines' },
     { label: 'Heritage & Ancient Architecture', icon: Landmark, count: '14 Sites' },
@@ -100,27 +158,38 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-            className="relative z-10 w-full max-w-md h-full bg-[#FAF7F2] border-l border-white/80 shadow-2xl flex flex-col font-sans text-slate-800 overflow-hidden"
+            className="relative z-10 w-full max-w-lg h-full bg-[#FAF7F2] border-l border-white/80 shadow-2xl flex flex-col font-sans text-slate-800 overflow-hidden"
           >
             {/* Top Drawer Header with User Profile */}
-            <div className="p-5 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+            <div className="p-5 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-white font-black text-lg flex items-center justify-center shadow-md shadow-sky-500/20">
-                    {displayName.charAt(0).toUpperCase()}
+                  <div className="w-13 h-13 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-sky-100 shrink-0">
+                    <img
+                      src={userPhoto}
+                      alt={displayName}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
+
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h3 className="text-base font-black text-slate-900 leading-tight">
                         {displayName}
                       </h3>
                       <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200">
-                        <CheckCircle2 className="w-2.5 h-2.5 text-sky-500" /> Member
+                        <CheckCircle2 className="w-2.5 h-2.5 text-sky-500" /> Active Traveller
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">
-                      {userEmail}
-                    </p>
+
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-sky-600" />
+                        <strong className="text-slate-800 font-semibold">{permanentSource}</strong> (Origin)
+                      </span>
+                      <span>·</span>
+                      <span className="font-mono truncate max-w-[150px]">{userEmail}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -134,8 +203,8 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Segmented Tab Bar */}
-              <div className="mt-5 grid grid-cols-4 gap-1 p-1 rounded-2xl bg-slate-200/60 text-xs font-bold">
+              {/* Segmented Tab Bar: 5 Tabs */}
+              <div className="mt-4 grid grid-cols-5 gap-1 p-1 rounded-2xl bg-slate-200/60 text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => setActiveTab('planned')}
@@ -145,8 +214,22 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Planned ({plannedTrips.length})
+                  Trips ({plannedTrips.length})
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analytics')}
+                  className={`py-2 px-1 rounded-xl text-center transition-all flex items-center justify-center gap-1 ${
+                    activeTab === 'analytics'
+                      ? 'bg-white text-sky-700 shadow-sm font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BarChart3 className="w-3 h-3" />
+                  <span>Analytics</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab('memories')}
@@ -158,6 +241,7 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                 >
                   Memories
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab('dna')}
@@ -169,6 +253,7 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                 >
                   Interests
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab('settings')}
@@ -178,7 +263,7 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Settings
+                  Profile
                 </button>
               </div>
             </div>
@@ -301,7 +386,125 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                 </div>
               )}
 
-              {/* ── TAB 2: MEMORIES ── */}
+              {/* ── TAB 2: TRIP & EXPENSE ANALYTICS (CRITICAL REQUIREMENT) ── */}
+              {activeTab === 'analytics' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+                    <span>Trip Spending Intelligence</span>
+                    <span className="text-sky-700 font-extrabold">{trips.length} Journeys Indexed</span>
+                  </div>
+
+                  {/* Summary Metric Bento */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 rounded-3xl bg-gradient-to-br from-sky-50 to-white border border-sky-100 shadow-xs space-y-1">
+                      <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center shadow-xs">
+                        <Wallet className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10.5px] font-bold text-slate-500 block pt-1">
+                        Total Investment
+                      </span>
+                      <h4 className="text-lg font-black text-slate-900">
+                        {inr(totalInvestment)}
+                      </h4>
+                      <span className="text-[10px] text-sky-700 font-semibold block">
+                        Across all journeys
+                      </span>
+                    </div>
+
+                    <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-50 to-white border border-pink-100 shadow-xs space-y-1">
+                      <div className="w-8 h-8 rounded-xl bg-pink-500 text-white flex items-center justify-center shadow-xs">
+                        <TrendingUp className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10.5px] font-bold text-slate-500 block pt-1">
+                        Average per Trip
+                      </span>
+                      <h4 className="text-lg font-black text-slate-900">
+                        {inr(avgCostPerTrip)}
+                      </h4>
+                      <span className="text-[10px] text-pink-700 font-semibold block">
+                        Estimated average
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Investment Distribution Bars */}
+                  <div className="p-4 rounded-3xl bg-white border border-slate-200/80 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <PieChart className="w-4 h-4 text-sky-500" />
+                        <span>Investment by Journey</span>
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-medium">Exact Rupee Breakdown</span>
+                    </div>
+
+                    {trips.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">No trips planned yet.</p>
+                    ) : (
+                      <div className="space-y-3.5 pt-1">
+                        {trips.map((trip) => {
+                          const cost = Number(trip.total_cost) || Number(trip.budget) || 0;
+                          const ratio = maxTripCost > 0 ? (cost / maxTripCost) * 100 : 0;
+                          const shareOfTotal = totalInvestment > 0 ? Math.round((cost / totalInvestment) * 100) : 0;
+
+                          return (
+                            <div key={trip.id} className="space-y-1.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                  <span>{trip.source_name}</span>
+                                  <ArrowRight className="w-3 h-3 text-sky-500" />
+                                  <span>{trip.destination_name}</span>
+                                </span>
+                                <span className="font-black text-slate-900">{inr(cost)}</span>
+                              </div>
+
+                              {/* Progress bar comparing this trip */}
+                              <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-sky-400 via-sky-500 to-pink-400 transition-all duration-500"
+                                  style={{ width: `${Math.max(ratio, 8)}%` }}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                <span>{shareOfTotal}% of total spend</span>
+                                <span className="uppercase font-semibold text-slate-500">{trip.status}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Standard Category Proportions */}
+                  <div className="p-4 rounded-3xl bg-[#FAF7F2] border border-slate-200/80 space-y-2 text-xs">
+                    <span className="font-bold text-slate-900 block flex items-center gap-1">
+                      <Receipt className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Standard Cost Allocations</span>
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-600">
+                      <div className="p-2 rounded-xl bg-white border border-slate-100">
+                        <span className="block font-bold text-slate-800">🚆 Transport ~30%</span>
+                        <span className="text-slate-400">Verified rails & flights</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white border border-slate-100">
+                        <span className="block font-bold text-slate-800">🏨 Stays ~40%</span>
+                        <span className="text-slate-400">Curated boutique rooms</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white border border-slate-100">
+                        <span className="block font-bold text-slate-800">🍽️ Dining ~18%</span>
+                        <span className="text-slate-400">Iconic culinary gems</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white border border-slate-100">
+                        <span className="block font-bold text-slate-800">🎟️ Sightseeing ~12%</span>
+                        <span className="text-slate-400">Monuments & activities</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 3: MEMORIES ── */}
               {activeTab === 'memories' && (
                 <div className="space-y-3.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
@@ -358,15 +561,33 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                 </div>
               )}
 
-              {/* ── TAB 3: TRAVEL DNA & INTERESTS ── */}
+              {/* ── TAB 4: TRAVEL DNA & INTERESTS ── */}
               {activeTab === 'dna' && (
                 <div className="space-y-4">
                   <div className="text-xs font-bold text-slate-500 px-1">
                     Your Travel Style & Preferences
                   </div>
 
+                  {/* User Selected Interests */}
+                  <div className="p-4 rounded-3xl bg-white border border-pink-100 space-y-2.5">
+                    <span className="text-xs font-bold text-slate-900 block flex items-center gap-1.5">
+                      <Heart className="w-3.5 h-3.5 text-pink-500" />
+                      <span>Active Selected Vibes</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {userInterests.map((interest, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-xl bg-pink-50 text-pink-700 text-xs font-bold border border-pink-200"
+                        >
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="space-y-2.5">
-                    {travelInterests.map((item, idx) => {
+                    {travelArchetypes.map((item, idx) => {
                       const Icon = item.icon;
                       return (
                         <div
@@ -389,42 +610,77 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                     })}
                   </div>
 
-                  <div className="p-4 rounded-3xl bg-white border border-slate-200/80 space-y-2 text-xs">
-                    <span className="font-bold text-slate-900 block">
-                      Custom Travel Curation
-                    </span>
-                    <p className="text-slate-500 leading-relaxed">
-                      Your travel preferences adapt every itinerary to match your desired tempo, dining tastes, and destination style.
-                    </p>
-                  </div>
+                  {onEditProfile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onEditProfile();
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-white hover:bg-slate-50 text-sky-700 border border-sky-200 text-xs font-bold transition-all text-center block"
+                    >
+                      Update Travel Interests →
+                    </button>
+                  )}
                 </div>
               )}
 
-              {/* ── TAB 4: PROFILE SETTINGS ── */}
+              {/* ── TAB 5: PROFILE & SETTINGS (WITH PHOTO, EMAIL, PHONE, PERMANENT SOURCE) ── */}
               {activeTab === 'settings' && (
                 <div className="space-y-4 text-xs font-semibold">
                   <div className="text-xs font-bold text-slate-500 px-1">
-                    Account & Preferences
+                    Your Complete Profile Details
                   </div>
 
-                  <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-3">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Full Name</span>
-                      <span className="font-bold text-slate-900">{displayName}</span>
+                  {/* Profile Card */}
+                  <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center gap-3.5 pb-3 border-b border-slate-100">
+                      <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-sky-100 shrink-0">
+                        <img
+                          src={userPhoto}
+                          alt={displayName}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-black text-slate-900 leading-tight">
+                          {displayName}
+                        </h4>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">{userEmail}</p>
+                      </div>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Email</span>
-                      <span className="font-bold text-slate-900 truncate max-w-[180px]">
-                        {userEmail}
-                      </span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Membership</span>
-                      <span className="font-bold text-sky-600">Active Traveller</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-500">Support</span>
-                      <span className="font-bold text-slate-900">24/7 Journey Concierge</span>
+
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="text-slate-500">Phone Number</span>
+                        <span className="font-bold text-slate-900 font-mono">
+                          {userProfile?.phone || '+91 98765 43210'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                          <span>Permanent Departure City</span>
+                        </span>
+                        <span className="font-black text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-200">
+                          {permanentSource}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="text-slate-500">Language</span>
+                        <span className="font-bold text-slate-900">
+                          {userProfile?.preferred_language || 'English'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-slate-500">Active Interests</span>
+                        <span className="font-bold text-pink-700">
+                          {userInterests.length} Selected
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -435,9 +691,10 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                         onClose();
                         onEditProfile();
                       }}
-                      className="w-full h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold transition-colors"
+                      className="w-full h-11 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white text-xs font-bold shadow-md shadow-sky-500/20 transition-all flex items-center justify-center gap-1.5"
                     >
-                      Edit Profile Info
+                      <Settings className="w-4 h-4" />
+                      <span>Edit Profile, Photo & Permanent City</span>
                     </button>
                   )}
 
@@ -447,7 +704,7 @@ export const TravellerSideDashboard: React.FC<TravellerSideDashboardProps> = ({
                     className="w-full h-11 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 text-xs font-bold flex items-center justify-center gap-2 transition-colors mt-4"
                   >
                     <LogOut className="w-4 h-4" />
-                    <span>Sign Out</span>
+                    <span>Sign Out of Travion</span>
                   </button>
                 </div>
               )}

@@ -107,6 +107,8 @@ interface TripSearchBarProps {
     endDate: string;
   }) => void;
   isLoading?: boolean;
+  initialSource?: string;
+  initialDestination?: string;
 }
 
 type FieldKind = 'source' | 'destination';
@@ -134,7 +136,12 @@ export function isSameLocation(a: LocationItem | null, b: LocationItem | null): 
   return false;
 }
 
-export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoading = false }) => {
+export const TripSearchBar: React.FC<TripSearchBarProps> = ({
+  onSearch,
+  isLoading = false,
+  initialSource,
+  initialDestination,
+}) => {
   const [sourceQuery, setSourceQuery] = useState('');
   const [destQuery, setDestQuery] = useState('');
   const [selectedSource, setSelectedSource] = useState<LocationItem | null>(null);
@@ -189,6 +196,60 @@ export const TripSearchBar: React.FC<TripSearchBarProps> = ({ onSearch, isLoadin
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Autofill destination when requested from place cards
+  useEffect(() => {
+    if (initialDestination) {
+      const hits = searchPlaces(initialDestination);
+      if (hits.length > 0) {
+        const p = hits[0];
+        const address = p.country === 'India'
+          ? [p.name, p.state, 'India'].filter(Boolean).join(', ')
+          : p.country;
+        const item: LocationItem = {
+          id: `india:${p.id}`,
+          name: p.name,
+          state: p.state,
+          country: p.country,
+          lat: p.lat,
+          lng: p.lng,
+          formatted_address: address,
+          description: address,
+        };
+        setSelectedDest(item);
+        setDestQuery(p.name);
+      } else {
+        setDestQuery(initialDestination);
+      }
+    }
+  }, [initialDestination]);
+
+  // Autofill source from user's permanent home city if available
+  useEffect(() => {
+    if (initialSource) {
+      const hits = searchPlaces(initialSource);
+      if (hits.length > 0) {
+        const p = hits[0];
+        const address = p.country === 'India'
+          ? [p.name, p.state, 'India'].filter(Boolean).join(', ')
+          : p.country;
+        const item: LocationItem = {
+          id: `india:${p.id}`,
+          name: p.name,
+          state: p.state,
+          country: p.country,
+          lat: p.lat,
+          lng: p.lng,
+          formatted_address: address,
+          description: address,
+        };
+        setSelectedSource(item);
+        setSourceQuery(p.name);
+      } else {
+        setSourceQuery(initialSource);
+      }
+    }
+  }, [initialSource]);
 
   /** Live query against Google Places — char by char, debounced, stale-cancelled. */
   const queryWorld = useCallback(async (text: string, field: FieldKind) => {
