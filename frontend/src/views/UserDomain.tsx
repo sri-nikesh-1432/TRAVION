@@ -4,7 +4,7 @@ import {
   Compass, Sparkles, Navigation, ShieldCheck,
   MessageSquare, Download, RefreshCw, CheckCircle2,
   LogOut, ArrowLeft, Star, Clock, AlertCircle,
-  Mountain, Lock, BadgeCheck, Check, Crosshair, Ban, ArrowRight
+  Mountain, Lock, BadgeCheck, Check, Crosshair, Ban, ArrowRight, Plus
 } from 'lucide-react';
 import {
   AuthSession, LocationItem, TripItem, TripItinerary,
@@ -35,6 +35,7 @@ import { BudgetFoodPlan } from '../components/budget/BudgetFoodPlan';
 import { StaySelection } from '../components/stay/StaySelection';
 import { PaymentStep } from '../components/payment/PaymentStep';
 import { LiveJourneyCompanionScreen } from '../components/navigation/LiveJourneyCompanionScreen';
+import { TravellerHomeDashboard } from '../components/dashboard/TravellerHomeDashboard';
 import { TripCancellationModal } from '../components/user/TripCancellationModal';
 import { ProgressReviewModal } from '../components/user/ProgressReviewModal';
 import { resolveBudgetMax } from '../utils/budget';
@@ -112,7 +113,7 @@ declare global {
 }
 
 type PlannerView =
-  | 'search' | 'discovery' | 'transport' | 'discovery_select' | 'stay_select' | 'mode_select'
+  | 'dashboard' | 'search' | 'discovery' | 'transport' | 'discovery_select' | 'stay_select' | 'mode_select'
   | 'local_transport' | 'budget_food' | 'planner' | 'review' | 'pay'
   | 'workspace' | 'my_trips';
 
@@ -175,9 +176,9 @@ export const UserDomain: React.FC<UserDomainProps> = ({
   const [currentView, setCurrentViewState] = useState<PlannerView>(() => {
     try {
       const saved = localStorage.getItem('travion_current_view') as PlannerView | null;
-      return saved && saved !== 'workspace' ? saved : 'search';
+      return saved && saved !== 'workspace' && saved !== 'search' ? saved : 'dashboard';
     } catch {
-      return 'search';
+      return 'dashboard';
     }
   });
 
@@ -234,7 +235,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         setCurrentViewState(prev);
         try { localStorage.setItem('travion_current_view', prev); } catch {}
       } else {
-        setCurrentViewState('search');
+        setCurrentViewState('dashboard');
       }
     }
   };
@@ -406,30 +407,8 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
     api.getMyTrips().then((trips) => {
       setMyTrips(trips);
-      // ── PERSISTENT TRIP (spec §1/§32) ──────────────────────────────
-      // The SAME trip_id survives refresh across the WHOLE flow.
-      const storedTripId = localStorage.getItem('travion_active_trip_id');
-      const targetStoredTrip = storedTripId ? trips.find((t) => t.id === storedTripId) : null;
-
-      if (targetStoredTrip) {
-        if (['ACTIVE', 'GUIDE_ASSIGNED', 'PAID'].includes(targetStoredTrip.status)) {
-          loadTripWorkspace(targetStoredTrip.id, true);
-          return;
-        }
-        void resumeFromStageState(targetStoredTrip);
-        return;
-      }
-
-      const ongoing = trips.find(t => t.status === 'ACTIVE' || t.status === 'GUIDE_ASSIGNED' || t.status === 'PAID');
-      if (ongoing) {
-        loadTripWorkspace(ongoing.id, true);
-        return;
-      }
-      const midPlanning = trips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT'].includes(t.status));
-      if (midPlanning) {
-        // STAGE-AWARE resume: jump to the trip's current_stage view.
-        void resumeFromStageState(midPlanning);
-      }
+      // Traveller lands on the Home Dashboard where they can view planned trips,
+      // memories, and start new journeys with the New Trip button without auto-hijacking.
     }).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -961,14 +940,15 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setCurrentView('search')}
+              onClick={() => setCurrentView('dashboard')}
+              title="Travion Home Dashboard"
               className="flex items-center gap-2.5 focus:outline-none"
             >
               <TravionLogo mark="dark" />
             </button>
             {/* §25 — Global Back: returns to the ACTUAL previous screen with
                 all trip state intact (never a hardcoded Home). */}
-            {currentView !== 'search' && (
+            {currentView !== 'dashboard' && currentView !== 'search' && (
               <button
                 onClick={goBack}
                 aria-label="Go back to the previous screen"
@@ -979,9 +959,33 @@ export const UserDomain: React.FC<UserDomainProps> = ({
                 <span className="hidden sm:inline">Back</span>
               </button>
             )}
+            {currentView !== 'dashboard' && (
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                title="Return to Home Dashboard"
+                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl border border-charcoal-200 bg-white text-charcoal-700 text-xs font-bold hover:border-charcoal-300 hover:bg-charcoal-50 transition-colors shadow-sm"
+              >
+                <Compass className="w-4 h-4 text-travion-600" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
+            {currentView === 'dashboard' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTrip(null);
+                  setStageState(null);
+                  setCurrentView('search');
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-gradient-to-r from-travion-600 to-emerald-600 hover:from-travion-700 hover:to-emerald-700 text-white text-xs font-black shadow-sm transition-all"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                <span>New Trip</span>
+              </button>
+            )}
 
             {/* Persistent Review Progress Button — always accessible */}
             {(activeTrip || myTrips.length > 0) && (
@@ -1035,8 +1039,51 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         </AnimatePresence>
 
         {/* VIEW 1: Search & Home — the beginning of a journey */}
+        {/* VIEW 0: Personal Traveller Home / Dashboard */}
+        {currentView === 'dashboard' && (
+          <TravellerHomeDashboard
+            userProfile={userProfile}
+            userEmail={session.email}
+            trips={myTrips}
+            onPlanNewTrip={() => {
+              setActiveTrip(null);
+              setStageState(null);
+              setCurrentView('search');
+            }}
+            onResumeTrip={(trip) => void resumeFromStageState(trip)}
+            onViewPaidTrip={(trip) => void loadTripWorkspace(trip.id, true)}
+            onReviewTrip={(trip) => {
+              setActiveTrip(trip);
+              setShowProgressReview(true);
+            }}
+            onSelectQuickDestination={(destName) => {
+              setActiveTrip(null);
+              setStageState(null);
+              setCurrentView('search');
+            }}
+            onEditProfile={() => setShowProfileSheet(true)}
+          />
+        )}
+
         {currentView === 'search' && (
-          <div className="pt-8 md:pt-12">
+          <div className="pt-2">
+            <FlowStepper current="search" />
+
+            {/* Top Bar with Back to Dashboard */}
+            <div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setCurrentView('dashboard')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-charcoal-200/80 text-charcoal-700 hover:border-travion-300 text-xs font-bold transition-all shadow-sm"
+              >
+                <ArrowLeft className="w-4 h-4 text-charcoal-500" />
+                <span>Back to Dashboard</span>
+              </button>
+              <span className="text-xs font-black uppercase tracking-wider text-travion-600">
+                Step 1 · Trip Basics
+              </span>
+            </div>
+
             {/* Editorial hero */}
             <div className="relative max-w-3xl mx-auto text-center mb-9">
               <div aria-hidden="true" className="absolute -top-20 left-1/2 -translate-x-1/2 w-[620px] h-[260px] rounded-full bg-gradient-to-r from-sky-200/50 via-travion-100/60 to-sand-200/50 blur-3xl -z-10" />
