@@ -996,14 +996,14 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               title="Toggle Travel Hub, Planned Trips & Memories"
               className={`inline-flex items-center gap-2 px-3.5 h-9 rounded-xl border transition-all shadow-sm text-xs font-bold ${
                 showSideDashboard
-                  ? 'bg-charcoal-900 text-emerald-400 border-charcoal-800'
-                  : 'border-charcoal-200/90 bg-white hover:border-emerald-300 hover:bg-emerald-50/40 text-charcoal-800'
+                  ? 'bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-500/20'
+                  : 'border-sky-200/90 bg-white/95 hover:border-sky-300 hover:bg-sky-50/60 text-slate-800'
               }`}
             >
-              <Compass className="w-4 h-4 text-emerald-600" />
+              <Compass className="w-4 h-4 text-sky-500" />
               <span className="hidden sm:inline">Travel Hub & Trips</span>
               {myTrips.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[10px] font-black">
+                <span className="px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[10px] font-black">
                   {myTrips.length}
                 </span>
               )}

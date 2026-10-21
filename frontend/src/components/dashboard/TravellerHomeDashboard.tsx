@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
   Plus,
@@ -8,28 +8,22 @@ import {
   Calendar,
   Clock,
   ArrowRight,
-  ShieldCheck,
   Heart,
   Luggage,
-  TrainFront,
-  Utensils,
   Mountain,
   Landmark,
   Camera,
-  Star,
-  Award,
   Navigation,
   Globe,
-  Shield,
-  Layers,
-  Leaf,
   Sun,
   Trees,
-  CheckCircle2,
+  Waves,
   ChevronRight,
-  ExternalLink,
+  Plane,
+  Train,
 } from 'lucide-react';
 import { TripItem, UserProfile } from '../../types';
+import travionLogoNature from '../../assets/travion-logo-nature.png';
 
 interface TravellerHomeDashboardProps {
   userProfile?: UserProfile | null;
@@ -45,67 +39,124 @@ interface TravellerHomeDashboardProps {
 const inr = (n: number | null | undefined) =>
   `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
 
-const NATURAL_WONDERS = [
+interface DestinationInspiration {
+  name: string;
+  state: string;
+  tagline: string;
+  category: 'hills' | 'coastal' | 'heritage' | 'spiritual' | 'all';
+  categoryLabel: string;
+  badge: string;
+  badgeType: 'sky' | 'blush' | 'nature' | 'cream';
+  image: string;
+  highlights: string[];
+  weather: string;
+}
+
+const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
   {
     name: 'Munnar',
     state: 'Kerala',
-    tagline: 'Emerald Mist & Tea Plantations',
-    badge: 'Scenic Mountain Haven',
-    image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Tea Estate Trails', 'Eravikulam National Park', 'Anamudi Peak'],
-    fare: '₹1,440 Scenic Coach',
-    weather: '19°C · Misty',
-  },
-  {
-    name: 'Hyderabad',
-    state: 'Telangana',
-    tagline: 'City of Nizams & Historic Charminar',
-    badge: 'Heritage & Gastronomy',
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Charminar', 'Golconda Fort', 'Chowmahalla Palace', 'Biryani Trail'],
-    fare: '₹1,150 IRCTC Superfast',
-    weather: '28°C · Pleasant',
-  },
-  {
-    name: 'Warangal',
-    state: 'Telangana',
-    tagline: 'Kakatiya Dynasty & Ancient Stone Temples',
-    badge: 'Sacred Stone Architecture',
-    image: 'https://images.unsplash.com/photo-1626290467773-678cb54a5c9f?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Thousand Pillar Temple', 'Kakatiya Fort Gates', 'Ramappa UNESCO'],
-    fare: '₹940 Express Train',
-    weather: '27°C · Clear',
-  },
-  {
-    name: 'Jaipur',
-    state: 'Rajasthan',
-    tagline: 'The Royal Pink City & Palatial Forts',
-    badge: 'Regal Splendor',
-    image: 'https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Amber Fort', 'Hawa Mahal', 'City Palace', 'Bazaars'],
-    fare: '₹1,850 Express Line',
-    weather: '25°C · Sunny',
+    tagline: 'Emerald Mist, Rolling Hills & Tea Horizons',
+    category: 'hills',
+    categoryLabel: 'Misty Hill Station',
+    badge: 'Tea Estate Haven',
+    badgeType: 'nature',
+    image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Tea Plantation Walk', 'Eravikulam Trails', 'Anamudi Peak View'],
+    weather: '19°C · Gentle Mist',
   },
   {
     name: 'Goa',
     state: 'Goa',
-    tagline: 'Sun-Kissed Coastlines & Portuguese Vibe',
+    tagline: 'Azure Ocean Waves & Sun-Drenched Palm Shores',
+    category: 'coastal',
+    categoryLabel: 'Azure Coast',
     badge: 'Coastal Serenity',
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Old Goa Churches', 'Palolem Beach', 'Spice Plantations'],
-    fare: '₹2,100 Coastal Express',
-    weather: '29°C · Tropical',
+    badgeType: 'sky',
+    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Palolem Sands', 'Old Latin Quarter', 'Sunset Sailing'],
+    weather: '29°C · Ocean Breeze',
+  },
+  {
+    name: 'Jaipur',
+    state: 'Rajasthan',
+    tagline: 'The Romantic Pink City & Majestic Amber Palaces',
+    category: 'heritage',
+    categoryLabel: 'Royal Heritage',
+    badge: 'Blush Pink City',
+    badgeType: 'blush',
+    image: 'https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Hawa Mahal Dawn', 'Amber Fort Courtyards', 'Handicraft Bazaars'],
+    weather: '25°C · Warm Sun',
+  },
+  {
+    name: 'Udaipur',
+    state: 'Rajasthan',
+    tagline: 'City of Shimmering Lakes & Marble Palaces',
+    category: 'heritage',
+    categoryLabel: 'Lake Sanctuary',
+    badge: 'Lakeside Serenade',
+    badgeType: 'blush',
+    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Lake Pichola Boat Ride', 'City Palace Balconies', 'Jagmandir Island'],
+    weather: '26°C · Clear Sky',
+  },
+  {
+    name: 'Hyderabad',
+    state: 'Telangana',
+    tagline: 'Historic Charminar, Nizam Palaces & Fragrant Biryani',
+    category: 'heritage',
+    categoryLabel: 'Royal Heritage',
+    badge: 'City of Nizams',
+    badgeType: 'cream',
+    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Charminar Heritage Walk', 'Golconda Sunset', 'Chowmahalla Palace'],
+    weather: '28°C · Pleasant',
   },
   {
     name: 'Varanasi',
     state: 'Uttar Pradesh',
-    tagline: 'Spiritual Ghats & Sacred Ganga River',
-    badge: 'Eternal Heritage',
-    image: 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&w=800&q=80',
-    highlights: ['Dashashwamedh Ghat', 'Ganga Aarti', 'Sarnath', 'Silk Guilds'],
-    fare: '₹1,750 Vande Bharat',
+    tagline: 'Sacred Sunrise Ghats on the Eternal River Ganga',
+    category: 'spiritual',
+    categoryLabel: 'Timeless Heritage',
+    badge: 'Sacred Ganga',
+    badgeType: 'sky',
+    image: 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Subah-e-Banaras Boat', 'Evening Ganga Aarti', 'Ancient Alleys'],
     weather: '24°C · Serene',
   },
+  {
+    name: 'Manali',
+    state: 'Himachal Pradesh',
+    tagline: 'Pine Valleys, Rushing Glaciers & Crystal Mountain Skies',
+    category: 'hills',
+    categoryLabel: 'Mountain Peaks',
+    badge: 'Alpine Sky',
+    badgeType: 'sky',
+    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Solang Valley Heights', 'Old Manali Cafés', 'Jogini Waterfall Trail'],
+    weather: '14°C · Crisp Air',
+  },
+  {
+    name: 'Warangal',
+    state: 'Telangana',
+    tagline: 'Ancient Kakatiya Stone Temples & Sacred Gateways',
+    category: 'heritage',
+    categoryLabel: 'Sacred Stone Architecture',
+    badge: 'Kakatiya Wonders',
+    badgeType: 'cream',
+    image: 'https://images.unsplash.com/photo-1626290467773-678cb54a5c9f?auto=format&fit=crop&w=900&q=80',
+    highlights: ['Thousand Pillar Sanctuary', 'Kakatiya Stone Arch', 'Ramappa UNESCO'],
+    weather: '27°C · Golden Light',
+  },
+];
+
+const TRAVEL_MOODS = [
+  { id: 'all', label: 'All Horizons', icon: Compass },
+  { id: 'hills', label: 'Misty Hills & Tea Estates', icon: Mountain },
+  { id: 'coastal', label: 'Azure Coasts & Palms', icon: Waves },
+  { id: 'heritage', label: 'Palaces & Heritage', icon: Landmark },
+  { id: 'spiritual', label: 'Sacred Rivers & Serenity', icon: Sun },
 ];
 
 export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
@@ -118,6 +169,8 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
   onOpenSideDashboard,
   onSelectQuickDestination,
 }) => {
+  const [selectedMood, setSelectedMood] = useState<string>('all');
+
   const displayName =
     userProfile?.preferred_name ||
     userProfile?.first_name ||
@@ -130,104 +183,128 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
     )
   );
 
+  const completedTrips = trips.filter((t) =>
+    ['COMPLETED', 'FINISHED'].includes(t.status)
+  );
+
   const latestTrip = plannedTrips[0] || null;
 
+  const filteredDestinations =
+    selectedMood === 'all'
+      ? DESTINATION_INSPIRATIONS
+      : DESTINATION_INSPIRATIONS.filter((d) => d.category === selectedMood);
+
   return (
-    <div className="relative min-h-screen font-sans overflow-hidden">
-      {/* ── AMBIENT LIVING NATURE BACKGROUND (APPLE-INSPIRED AURA) ── */}
+    <div className="relative min-h-screen font-sans bg-[#FAF7F2] text-slate-800 pb-20 overflow-x-hidden selection:bg-sky-200 selection:text-sky-900">
+      {/* ── ETHEREAL SKY, BEIGE & BLUSH AMBIENT GLOWS ── */}
       <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
-        {/* Soft emerald forest glow orb */}
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-emerald-200/40 via-teal-100/30 to-transparent blur-3xl opacity-70 animate-pulse duration-[10000ms]" />
-        {/* Sunrise amber gold aura */}
-        <div className="absolute top-1/4 -right-40 w-[550px] h-[550px] rounded-full bg-gradient-to-bl from-amber-200/40 via-orange-100/25 to-transparent blur-3xl opacity-60" />
-        {/* Mountain mist teal aura */}
-        <div className="absolute bottom-10 left-1/3 w-[650px] h-[450px] rounded-full bg-gradient-to-tr from-travion-100/40 via-emerald-100/30 to-transparent blur-3xl opacity-50" />
+        {/* Soft sky blue upper atmosphere */}
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[1100px] h-[550px] rounded-full bg-gradient-to-b from-sky-200/40 via-sky-100/25 to-transparent blur-3xl opacity-80" />
+        {/* Baby pink blush sunrise glow on top-right */}
+        <div className="absolute top-10 right-[-100px] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-pink-200/35 via-rose-100/20 to-transparent blur-3xl opacity-70" />
+        {/* Warm cream/beige reflection on bottom-left */}
+        <div className="absolute bottom-40 -left-20 w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-amber-100/30 via-stone-100/20 to-transparent blur-3xl opacity-75" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-12">
-        {/* ── CINEMATIC APPLE-GRADE HERO BANNER ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 space-y-10 sm:space-y-12">
+        {/* ── HERO SANCTUARY: UPLOADED LOGO + PERSONAL WELCOME + GLASS CTA ── */}
         <motion.section
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="relative rounded-[36px] overflow-hidden bg-gradient-to-br from-charcoal-900/95 via-charcoal-850/95 to-charcoal-950/95 text-white p-8 sm:p-12 lg:p-16 shadow-2xl border border-white/10 backdrop-blur-3xl"
+          transition={{ duration: 0.5 }}
+          className="relative rounded-[36px] bg-gradient-to-b from-white/95 via-white/85 to-[#FAF7F2]/90 border border-white/80 p-8 sm:p-12 lg:p-14 shadow-[0_12px_45px_-10px_rgba(14,165,233,0.12)] backdrop-blur-2xl overflow-hidden"
         >
-          {/* Subtle nature mesh texture overlay */}
+          {/* Subtle sky cloud shimmer backdrop */}
           <div
             aria-hidden="true"
-            className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.18),transparent_50%),radial-gradient(circle_at_bottom_left,rgba(245,158,11,0.12),transparent_50%)] pointer-events-none"
+            className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(186,230,253,0.35),transparent_60%),radial-gradient(ellipse_at_bottom_right,rgba(252,231,243,0.35),transparent_60%)] pointer-events-none"
           />
 
-          <div className="relative z-10 max-w-4xl space-y-6">
-            {/* Supertag pill */}
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 text-emerald-300 text-xs font-mono font-bold tracking-wider shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>NEXT-GEN AI TRAVEL ORCHESTRATION</span>
+          <div className="relative z-10 flex flex-col items-center text-center max-w-3xl mx-auto space-y-6">
+            {/* The Signature Uploaded TRAVION Logo */}
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.6 }}
+              className="relative px-4 py-2"
+            >
+              <img
+                src={travionLogoNature}
+                alt="TRAVION"
+                className="h-16 sm:h-20 md:h-24 object-contain filter drop-shadow-sm select-none mx-auto"
+                onError={(e) => {
+                  // Fallback to public path if bundler asset issue
+                  const target = e.currentTarget;
+                  if (!target.src.endsWith('/travion-logo-nature.png')) {
+                    target.src = '/travion-logo-nature.png';
+                  }
+                }}
+              />
+            </motion.div>
+
+            {/* Personalized Warm Greeting */}
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-800 text-xs font-semibold tracking-wide">
+                <Sparkles className="w-3.5 h-3.5 text-sky-500" />
+                <span>Good day, {displayName}</span>
+              </span>
+
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-snug">
+                Where will your heart{' '}
+                <span className="italic font-serif bg-gradient-to-r from-sky-600 via-sky-500 to-rose-400 bg-clip-text text-transparent">
+                  travel next?
+                </span>
+              </h1>
+
+              <p className="text-sm sm:text-base text-slate-600 font-normal max-w-xl mx-auto leading-relaxed">
+                Your personal travel sanctuary. Curate journeys through emerald hill stations, serene coastlines, and ancient horizons across India.
+              </p>
             </div>
 
-            {/* Main Headline */}
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08] text-white">
-              Where India's wonders become your{' '}
-              <span className="italic font-editorial bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 bg-clip-text text-transparent">
-                unforgettable story.
-              </span>
-            </h1>
-
-            {/* Editorial Description */}
-            <p className="text-sm sm:text-base lg:text-lg text-charcoal-300 font-medium leading-relaxed max-w-2xl">
-              Welcome back, <strong className="text-white font-bold">{displayName}</strong>. Experience travel planned with pure deterministic math — verified IRCTC rail corridors, genuine hotel rooms, and handpicked local cuisine.
-            </p>
-
-            {/* ── THE SIGNATURE APPLE-STYLE GLASSMORPHISM BUTTONS ── */}
-            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-              {/* Primary Glassmorphism "Plan a New Trip" CTA */}
+            {/* ── GLASSMORPHISM ACTION BUTTONS ── */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
+              {/* Primary "Plan a New Trip" Signature Glass CTA */}
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.025, y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={onPlanNewTrip}
-                className="group relative flex items-center justify-between sm:justify-start gap-4 px-8 py-5 rounded-[26px] bg-gradient-to-r from-travion-600/90 via-emerald-600/90 to-travion-700/90 hover:from-travion-500/95 hover:to-emerald-500/95 text-white backdrop-blur-2xl border border-white/30 shadow-[0_20px_50px_rgba(16,185,129,0.3)] transition-all duration-300"
+                className="group w-full sm:w-auto flex items-center justify-between sm:justify-start gap-4 px-8 py-4 rounded-2xl bg-gradient-to-r from-sky-500 via-sky-600 to-sky-500 hover:from-sky-600 hover:to-sky-700 text-white font-bold text-base shadow-[0_12px_28px_rgba(14,165,233,0.32)] border border-sky-300/40 transition-all duration-300"
               >
-                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-white shadow-md group-hover:rotate-12 transition-transform duration-300">
-                  <Plus className="w-6 h-6 stroke-[3]" />
+                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white group-hover:rotate-12 transition-transform duration-300">
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div className="text-left">
-                  <span className="text-[10.5px] font-mono font-black uppercase tracking-wider text-emerald-200 block">
-                    AI Journey Orchestrator
+                  <span className="text-xs text-sky-100 font-medium block">
+                    Begin Journey
                   </span>
-                  <span className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+                  <span className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
                     Plan a New Trip
-                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform" />
-                  </span>
-                  <span className="text-xs text-white/80 font-medium">
-                    From, To, Dates & Verified Fares
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </span>
                 </div>
               </motion.button>
 
-              {/* Secondary Side Dashboard Trigger Glass Pill */}
+              {/* Secondary "Travel Hub & Memories" Glass Pill */}
               <motion.button
                 type="button"
-                whileHover={{ scale: 1.025, y: -2 }}
+                whileHover={{ scale: 1.02, y: -1 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={onOpenSideDashboard}
-                className="flex items-center justify-between sm:justify-start gap-3.5 px-6 py-5 rounded-[26px] bg-white/10 hover:bg-white/15 text-white backdrop-blur-2xl border border-white/20 shadow-lg hover:shadow-xl transition-all"
+                className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-3.5 px-6 py-4 rounded-2xl bg-white/90 hover:bg-white text-slate-800 font-semibold border border-slate-200/80 shadow-[0_6px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-all"
               >
-                <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-emerald-400">
-                  <Compass className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600">
+                  <Compass className="w-5 h-5" />
                 </div>
                 <div className="text-left">
-                  <span className="text-[10.5px] font-mono font-black uppercase tracking-wider text-charcoal-400 block">
+                  <span className="text-xs text-slate-500 font-medium block">
                     Your Travel Hub
                   </span>
-                  <span className="text-base font-black text-white flex items-center gap-1.5">
-                    View Trips & Memories
-                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                    My Trips & Memories
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-sky-100 text-sky-700 border border-sky-200">
                       {plannedTrips.length}
                     </span>
-                  </span>
-                  <span className="text-xs text-charcoal-400 font-medium">
-                    Side dashboard with all plans & settings →
                   </span>
                 </div>
               </motion.button>
@@ -235,249 +312,294 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
           </div>
         </motion.section>
 
-        {/* ── FLOATING GLASS METRIC CAPSULES (APPLE STYLE) ── */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Real IRCTC Schedules', val: 'Verified Trains', icon: TrainFront, color: 'text-emerald-600 bg-emerald-50/80 border-emerald-200/80' },
-            { label: 'Deterministic Pricing', val: 'Zero Rupee Drift', icon: ShieldCheck, color: 'text-amber-600 bg-amber-50/80 border-amber-200/80' },
-            { label: 'Curated Verified Stays', val: 'Real Bed Math', icon: Landmark, color: 'text-indigo-600 bg-indigo-50/80 border-indigo-200/80' },
-            { label: 'Emergency Fund', val: '15% Protected', icon: Shield, color: 'text-teal-600 bg-teal-50/80 border-teal-200/80' },
-          ].map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <motion.div
-                key={idx}
-                whileHover={{ y: -3 }}
-                className="p-4 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/80 shadow-soft hover:shadow-card transition-all flex items-center gap-3.5"
-              >
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border ${item.color} shrink-0`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-black text-charcoal-900 block leading-tight">
-                    {item.val}
-                  </span>
-                  <span className="text-[11px] font-semibold text-charcoal-400">
-                    {item.label}
-                  </span>
-                </div>
-              </motion.div>
-            );
-          })}
-        </section>
-
-        {/* ── IN-PROGRESS JOURNEY HIGHLIGHT (IF ANY TRIPS EXIST) ── */}
+        {/* ── ACTIVE JOURNEY IN PROGRESS SPOTLIGHT (IF ANY) ── */}
         {latestTrip && (
-          <section className="rounded-3xl bg-gradient-to-r from-emerald-500/10 via-sand-50/80 to-amber-500/10 border border-emerald-200/60 p-6 sm:p-7 backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-soft">
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-[30px] bg-white/90 border border-sky-100/90 p-6 sm:p-7 shadow-[0_8px_30px_rgba(14,165,233,0.06)] backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5"
+          >
             <div className="flex items-center gap-4">
-              <span className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
-                <Compass className="w-6 h-6 animate-pulse" />
-              </span>
+              <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 border border-sky-200/70 shadow-sm">
+                <Compass className="w-6 h-6 animate-spin-slow" />
+              </div>
+
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    {latestTrip.status === 'PAID' ? 'Confirmed & Active' : 'Active Plan in Progress'}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-pink-50 text-pink-700 border border-pink-200/80">
+                    {latestTrip.status === 'PAID' ? 'Confirmed Journey' : 'Trip in Planning'}
                   </span>
-                  <span className="text-xs font-mono text-charcoal-500 font-bold">
-                    {latestTrip.mode === 'GUIDE_MODE' ? 'Guide Mode' : 'Adventurous'}
+                  <span className="text-xs font-medium text-slate-500">
+                    {latestTrip.mode === 'GUIDE_MODE' ? 'Guided Experience' : 'Self-Exploration'}
                   </span>
                 </div>
-                <h3 className="text-lg sm:text-xl font-black text-charcoal-900 mt-1 flex items-center gap-2">
+
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-1 flex items-center gap-2">
                   <span>{latestTrip.source_name}</span>
-                  <ArrowRight className="w-4 h-4 text-emerald-600" />
+                  <ArrowRight className="w-4 h-4 text-sky-500" />
                   <span>{latestTrip.destination_name}</span>
                 </h3>
-                <p className="text-xs text-charcoal-500 mt-0.5">
-                  Investment: <strong className="text-charcoal-900">{inr(latestTrip.total_cost || latestTrip.budget)}</strong> ·{' '}
-                  {new Date(latestTrip.start_datetime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} –{' '}
-                  {new Date(latestTrip.end_datetime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+
+                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span>
+                    Investment:{' '}
+                    <strong className="text-slate-800 font-bold">
+                      {inr(latestTrip.total_cost || latestTrip.budget)}
+                    </strong>
+                  </span>
+                  <span>·</span>
+                  <span>
+                    {new Date(latestTrip.start_datetime).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}{' '}
+                    –{' '}
+                    {new Date(latestTrip.end_datetime).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={onOpenSideDashboard}
-                className="flex-1 sm:flex-initial px-4 h-11 rounded-2xl bg-white border border-charcoal-200 hover:border-charcoal-300 text-charcoal-700 text-xs font-bold transition-all shadow-sm"
+                className="flex-1 sm:flex-initial px-4 h-11 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold transition-all shadow-sm"
               >
                 All Trips ({plannedTrips.length})
               </button>
+
               {['PAID', 'ACTIVE', 'GUIDE_ASSIGNED'].includes(latestTrip.status) ? (
                 <button
                   type="button"
                   onClick={() => onViewPaidTrip(latestTrip)}
-                  className="flex-1 sm:flex-initial px-6 h-11 rounded-2xl bg-charcoal-900 hover:bg-black text-emerald-400 text-xs font-black flex items-center justify-center gap-1.5 transition-colors shadow-soft"
+                  className="flex-1 sm:flex-initial px-6 h-11 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-sky-600/20"
                 >
-                  <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                  <Navigation className="w-4 h-4" />
                   <span>Live Companion</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => onResumeTrip(latestTrip)}
-                  className="flex-1 sm:flex-initial px-6 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-colors shadow-md"
+                  className="flex-1 sm:flex-initial px-6 h-11 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-sky-500/20"
                 >
                   <span>Resume Plan</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
             </div>
-          </section>
+          </motion.section>
         )}
 
-        {/* ── WONDERS OF INDIA: ICONIC NATURE & HERITAGE SHOWCASE ── */}
+        {/* ── TRAVEL MOODS & INSPIRATION HORIZONS ── */}
         <section className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
-              <span className="text-[10.5px] font-mono font-black uppercase tracking-wider text-emerald-700 block">
-                EXPLORE NATURAL & HISTORIC DESTINATIONS
+              <span className="text-xs font-bold uppercase tracking-wider text-sky-600 block">
+                Inspiring Horizons
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-charcoal-900 tracking-tight mt-1">
-                Wonders of India, Grounded in Real Routes
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-1">
+                Wonders of Nature & Heritage
               </h2>
-              <p className="text-xs sm:text-sm text-charcoal-500 font-medium mt-1">
-                Every destination is fully indexed with real train timetables, iconic monuments, and curated stays.
+              <p className="text-xs sm:text-sm text-slate-600 font-normal mt-1">
+                Choose an inspiring destination to start planning your next journey.
+              </p>
+            </div>
+
+            {/* Filter pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              {TRAVEL_MOODS.map((mood) => {
+                const Icon = mood.icon;
+                const isSelected = selectedMood === mood.id;
+                return (
+                  <button
+                    key={mood.id}
+                    type="button"
+                    onClick={() => setSelectedMood(mood.id)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-sky-500 text-white shadow-sm shadow-sky-500/20'
+                        : 'bg-white/80 hover:bg-white text-slate-600 border border-slate-200/80'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{mood.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Destination Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <AnimatePresence mode="popLayout">
+              {filteredDestinations.map((dest, i) => {
+                // Badge color styles
+                const badgeStyle =
+                  dest.badgeType === 'blush'
+                    ? 'bg-pink-50 text-pink-700 border-pink-200'
+                    : dest.badgeType === 'nature'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : dest.badgeType === 'cream'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-sky-50 text-sky-700 border-sky-200';
+
+                return (
+                  <motion.div
+                    key={dest.name}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3, delay: i * 0.04 }}
+                    whileHover={{ y: -5 }}
+                    onClick={() => {
+                      if (onSelectQuickDestination) {
+                        onSelectQuickDestination(dest.name);
+                      } else {
+                        onPlanNewTrip();
+                      }
+                    }}
+                    className="group relative rounded-[28px] overflow-hidden bg-white border border-slate-200/70 shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0_16px_36px_rgba(14,165,233,0.12)] transition-all duration-300 cursor-pointer flex flex-col justify-between"
+                  >
+                    {/* Destination Image */}
+                    <div className="relative h-48 overflow-hidden">
+                      <img
+                        src={dest.image}
+                        alt={dest.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent" />
+
+                      {/* Top Badges */}
+                      <div className="absolute top-3 left-3">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold border backdrop-blur-md shadow-xs ${badgeStyle}`}
+                        >
+                          {dest.badge}
+                        </span>
+                      </div>
+
+                      <div className="absolute top-3 right-3">
+                        <span className="px-2 py-0.5 rounded-full bg-white/90 text-slate-800 backdrop-blur-md text-[10px] font-semibold border border-white/60">
+                          {dest.weather}
+                        </span>
+                      </div>
+
+                      {/* Bottom Image Overlay: City and State */}
+                      <div className="absolute bottom-3 left-3.5 right-3.5 text-white">
+                        <span className="text-[10px] font-medium tracking-wide text-sky-200 block">
+                          {dest.state}, India
+                        </span>
+                        <h3 className="text-xl font-black tracking-tight">{dest.name}</h3>
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                      <div>
+                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                          {dest.tagline}
+                        </p>
+
+                        <div className="mt-2.5 flex flex-wrap gap-1">
+                          {dest.highlights.slice(0, 2).map((h, hi) => (
+                            <span
+                              key={hi}
+                              className="px-2 py-0.5 rounded-lg bg-[#FAF7F2] border border-slate-200/60 text-[10.5px] font-medium text-slate-700"
+                            >
+                              {h}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Card Footer */}
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-xs font-bold text-sky-600 group-hover:text-sky-700 flex items-center gap-1 transition-colors">
+                          Plan this trip
+                          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                        </span>
+
+                        <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 group-hover:bg-sky-500 group-hover:text-white flex items-center justify-center transition-all shadow-xs">
+                          <Plus className="w-4 h-4 stroke-[2.5]" />
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </section>
+
+        {/* ── TRAVEL MEMORIES & NOSTALGIA ARCHIVE (PERSONAL SANCTUARY) ── */}
+        <section className="rounded-[32px] bg-gradient-to-r from-white via-white to-pink-50/40 border border-pink-100/60 p-7 sm:p-9 shadow-[0_6px_25px_rgba(0,0,0,0.03)] space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-pink-600 block">
+                Travel Memories
+              </span>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+                Every Journey Becomes a Story in the Sky
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 font-normal">
+                Cherish the places you've explored and the memories you've collected along the way.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={onPlanNewTrip}
-              className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 hover:text-emerald-900 transition-colors shrink-0"
+              onClick={onOpenSideDashboard}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-pink-50/60 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold transition-all shadow-sm shrink-0"
             >
-              <span>Explore all destinations</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <Camera className="w-3.5 h-3.5 text-pink-500" />
+              <span>View Memory Vault</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {NATURAL_WONDERS.map((wonder, i) => (
-              <motion.div
-                key={wonder.name}
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06 }}
-                whileHover={{ y: -6 }}
-                onClick={() => {
-                  if (onSelectQuickDestination) {
-                    onSelectQuickDestination(wonder.name);
-                  } else {
-                    onPlanNewTrip();
-                  }
-                }}
-                className="group relative rounded-[32px] overflow-hidden bg-white/90 backdrop-blur-2xl border border-charcoal-200/80 shadow-soft hover:shadow-2xl transition-all cursor-pointer flex flex-col justify-between"
-              >
-                {/* Destination Image with ambient gradient overlay */}
-                <div className="relative h-56 overflow-hidden">
-                  <img
-                    src={wonder.image}
-                    alt={wonder.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-charcoal-950/80 via-transparent to-black/20" />
-
-                  {/* Top Badges */}
-                  <div className="absolute top-4 left-4 flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-full bg-charcoal-950/80 text-white backdrop-blur-md text-[10px] font-mono font-black uppercase tracking-wider">
-                      {wonder.badge}
-                    </span>
-                  </div>
-
-                  <div className="absolute top-4 right-4">
-                    <span className="px-2.5 py-1 rounded-full bg-white/90 text-charcoal-900 backdrop-blur-md text-[10px] font-bold">
-                      {wonder.weather}
-                    </span>
-                  </div>
-
-                  {/* Bottom Image Overlay: Name & State */}
-                  <div className="absolute bottom-4 left-4 right-4 text-white">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-300 block">
-                      {wonder.state}, India
-                    </span>
-                    <h3 className="text-2xl font-black tracking-tight">{wonder.name}</h3>
-                  </div>
-                </div>
-
-                {/* Card Body */}
-                <div className="p-5 space-y-4 flex-1 flex flex-col justify-between bg-white">
-                  <div>
-                    <p className="text-xs font-semibold text-charcoal-600 leading-snug">
-                      {wonder.tagline}
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {wonder.highlights.slice(0, 3).map((h, hi) => (
-                        <span
-                          key={hi}
-                          className="px-2.5 py-1 rounded-xl bg-sand-100/80 text-[10.5px] font-semibold text-charcoal-700"
-                        >
-                          {h}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-charcoal-100 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-mono uppercase text-charcoal-400 block font-bold">
-                        Transit Connectivity
-                      </span>
-                      <span className="text-xs font-black text-emerald-700">
-                        {wonder.fare}
-                      </span>
-                    </div>
-
-                    <div className="w-9 h-9 rounded-xl bg-charcoal-900 group-hover:bg-emerald-600 text-white flex items-center justify-center transition-colors shadow-sm">
-                      <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* ── CONSCIOUS & DETERMINISTIC TRAVEL PHILOSOPHY ── */}
-        <section className="rounded-[32px] bg-white/70 backdrop-blur-2xl border border-charcoal-200/80 p-8 sm:p-10 shadow-soft space-y-6">
-          <div className="max-w-2xl">
-            <span className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-700 block">
-              TRAVION CORE ARCHITECTURE
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-charcoal-900 tracking-tight mt-1">
-              Built on 3 Non-Negotiable Travel Principles
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-5 rounded-3xl bg-sand-50/60 border border-charcoal-100 space-y-2.5">
-              <span className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black">
-                1
-              </span>
-              <h3 className="text-sm font-black text-charcoal-900">Deterministic Financial Math</h3>
-              <p className="text-xs text-charcoal-500 leading-relaxed">
-                AI models never guess money. Transport fares, hotel tariffs, food allowances, and platform fees match from Stage 8 to payment with zero rupee mismatch.
-              </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                <Globe className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-sm font-black text-slate-900 block">
+                  {trips.length} Total Journeys
+                </span>
+                <span className="text-xs text-slate-500">Planned & cherishing</span>
+              </div>
             </div>
 
-            <div className="p-5 rounded-3xl bg-sand-50/60 border border-charcoal-100 space-y-2.5">
-              <span className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-black">
-                2
-              </span>
-              <h3 className="text-sm font-black text-charcoal-900">Zero Hallucinated Geography</h3>
-              <p className="text-xs text-charcoal-500 leading-relaxed">
-                Every landmark and station is verified via Google Places and official IRCTC rail timetables. Never fictional tourist spots or nonexistent trains.
-              </p>
+            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center shrink-0">
+                <Heart className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-sm font-black text-slate-900 block">
+                  India Unfolds
+                </span>
+                <span className="text-xs text-slate-500">Hills, coasts & heritage</span>
+              </div>
             </div>
 
-            <div className="p-5 rounded-3xl bg-sand-50/60 border border-charcoal-100 space-y-2.5">
-              <span className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-800 flex items-center justify-center font-black">
-                3
-              </span>
-              <h3 className="text-sm font-black text-charcoal-900">Full-Screen Live Companion</h3>
-              <p className="text-xs text-charcoal-500 leading-relaxed">
-                After payment, your trip opens in an immersive full-screen tour companion with real-time GPS speedometer, Indian rail tracking, and offline support.
-              </p>
+            <div className="p-4 rounded-2xl bg-white/80 border border-slate-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-sm font-black text-slate-900 block">
+                  Custom Itineraries
+                </span>
+                <span className="text-xs text-slate-500">Curated with heart</span>
+              </div>
             </div>
           </div>
         </section>
