@@ -705,7 +705,38 @@ export interface BudgetGateFees {
   insurance: number;
 }
 
+export interface BudgetCard {
+  type: 'VALUE' | 'RECOMMENDED' | 'PREMIUM';
+  plan_code: string;
+  label: string;
+  tagline: string;
+  badge: string;
+  description: string;
+  food_tier: FoodTier;
+  food_rate: number;
+  food_allowance: number;
+  recommended: boolean;
+  base_plan_cost: number;
+  travel_spend: number;
+  guide_fee: number;
+  platform_fee: number;
+  safety_reserve: number;
+  insurance_fee: number;
+  final_total: number;
+  total_cost: number;
+  amount_payable: number;
+  per_person: number;
+  budget_max: number;
+  remaining_budget: number;
+  within_budget: boolean;
+  highlights: string[];
+  spend: BudgetGateSpend;
+  cost_breakdown: Record<string, any>;
+}
+
 export interface BudgetGate {
+  trip_id?: string;
+  currency?: string;
   budget_max: number;
   adjustments: Array<Record<string, any>>;
   spend: BudgetGateSpend;
@@ -717,6 +748,8 @@ export interface BudgetGate {
   food_tier: FoodTier;
   food_allowance: number;
   pricing_unit_notes: string[];
+  budget_cards?: BudgetCard[];
+  cards?: BudgetCard[];
 }
 
 export interface StageState {

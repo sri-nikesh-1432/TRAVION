@@ -1378,6 +1378,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             <FlowStepper current="budget_food" />
             <BudgetFoodPlan
               tripId={activeTrip.id}
+              destinationName={activeTrip.destination_name}
               initialGate={stageState?.trip_id === activeTrip.id ? stageState.budget : null}
               travellers={Number(answersSoFar?.party?.total) || null}
               days={(() => {

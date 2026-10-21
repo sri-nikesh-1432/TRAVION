@@ -306,6 +306,139 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
         "Guide fee 12.5% applies in Guide Mode only; platform 3% always; "
         "the 15% safety reserve is protected money set aside, not spendable.",
     ]
+    party_size = max(party["total"], 1)
+    trip_days = dn["days"]
+    trip_nights = dn["nights"]
+
+    stay_name = ""
+    for r in rows:
+        if str(r.category or "").lower() in STAY_CATEGORIES:
+            stay_name = r.name or "Selected Accommodation"
+            break
+    stay_summary = stay_name if stay_name else ("Stay included" if stay_val > 0 else "Day-trip style (no stay)")
+
+    transport_summary = "Round-trip transport"
+    _st = dict(trip.selected_transport or {})
+    if _st.get("outbound") and _st.get("return"):
+        ob_op = _st["outbound"].get("operator") or _st["outbound"].get("service") or "Transport"
+        ret_op = _st["return"].get("operator") or _st["return"].get("service") or "Transport"
+        transport_summary = f"{ob_op} + {ret_op}"
+
+    card_definitions = [
+        {
+            "type": "VALUE",
+            "plan_code": "PLAN A",
+            "label": "Budget",
+            "tagline": "Maximum experience with minimum unnecessary spending.",
+            "badge": "⚡ Maximum savings",
+            "food_tier": "BASIC",
+            "food_rate": 500.0,
+            "recommended": False,
+            "description": "Economical curated local dining, authentic street food & clean comfort while protecting your budget.",
+        },
+        {
+            "type": "RECOMMENDED",
+            "plan_code": "PLAN B",
+            "label": "Recommended",
+            "tagline": "Best balance of comfort, experiences and budget.",
+            "badge": "✦ Best balance",
+            "food_tier": "STANDARD",
+            "food_rate": 800.0,
+            "recommended": True,
+            "description": "Balanced dining at curated local favorites, verified stay, and smooth transfers tailored to your preferences.",
+        },
+        {
+            "type": "PREMIUM",
+            "plan_code": "PLAN C",
+            "label": "Premium",
+            "tagline": "Maximum comfort while staying inside your budget.",
+            "badge": "★ Premium experiences",
+            "food_tier": "PREMIUM",
+            "food_rate": 1200.0,
+            "recommended": False,
+            "description": "Top-rated restaurants, rooftop dining, upgraded flexibility, and premium comfort throughout.",
+        },
+    ]
+
+    budget_cards = []
+    for cdef in card_definitions:
+        c_rate = cdef["food_rate"]
+        c_food = round(c_rate * party_size * trip_days, 2)
+        c_base = round(transport_val + stay_val + c_food + activities_val + local_val, 2)
+        c_guide = round(c_base * GUIDE_FEE_RATE, 0) if guide_mode else 0.0
+        c_platform = round(c_base * PLATFORM_FEE_RATE, 0)
+        c_safety = round(c_base * SAFETY_RESERVE_RATE, 0)
+        c_ins = float(INSURANCE_FEE)
+        c_final = round(c_base + c_guide + c_platform + c_safety + c_ins, 0)
+        c_remaining = round(budget_max - c_base, 2)
+        c_within = bool(c_base <= budget_max + 0.01)
+        c_per_person = round(c_final / party_size, 0)
+
+        c_highlights = [
+            f"🏨 {stay_summary}",
+            f"🚗 {transport_summary}",
+            f"🍴 {cdef['label']} dining (₹{int(c_rate):,}/person/day)",
+            cdef["badge"],
+        ]
+        if activities_val > 0:
+            c_highlights.append(f"📍 Selected attractions & sightseeing (₹{int(activities_val):,})")
+
+        budget_cards.append({
+            "type": cdef["type"],
+            "plan_code": cdef["plan_code"],
+            "label": cdef["label"],
+            "tagline": cdef["tagline"],
+            "badge": cdef["badge"],
+            "description": cdef["description"],
+            "food_tier": cdef["food_tier"],
+            "food_rate": c_rate,
+            "food_allowance": c_food,
+            "recommended": cdef["recommended"],
+            "base_plan_cost": c_base,
+            "travel_spend": c_base,
+            "guide_fee": c_guide,
+            "platform_fee": c_platform,
+            "safety_reserve": c_safety,
+            "insurance_fee": c_ins,
+            "final_total": c_final,
+            "total_cost": c_final,
+            "amount_payable": c_final,
+            "per_person": c_per_person,
+            "budget_max": budget_max,
+            "remaining_budget": c_remaining,
+            "within_budget": c_within,
+            "highlights": c_highlights,
+            "spend": {
+                "transport": transport_val,
+                "stay": stay_val,
+                "food": c_food,
+                "activities": activities_val,
+                "local_transport": local_val,
+                "base_total": c_base,
+            },
+            "cost_breakdown": {
+                "transport": round(transport_val, 0),
+                "stay": round(stay_val, 0),
+                "food": round(c_food, 0),
+                "activities": round(activities_val, 0),
+                "local_transport": round(local_val, 0),
+                "travel_spend": round(c_base, 0),
+                "base_plan_cost": round(c_base, 0),
+                "guide_fee": round(c_guide, 0),
+                "platform_fee": round(c_platform, 0),
+                "safety_reserve": round(c_safety, 0),
+                "insurance_fee": round(c_ins, 0),
+                "final_total": round(c_final, 0),
+                "total": round(c_final, 0),
+                "payable": round(c_final, 0),
+                "days": trip_days,
+                "nights": trip_nights,
+                "travellers": party_size,
+                "mode": trip.mode or "ADVENTUROUS_MODE",
+                "budget_max": budget_max,
+            },
+        })
+
     return {
         "trip_id": trip.id,
         "currency": "INR",
@@ -338,7 +471,9 @@ def evaluate_budget_gate(db: Session, trip: Trip) -> Dict[str, Any]:
         "can_continue": not violations,
         "violations": violations,
         "food_tier": food_info["tier"],
-        "food_allowance": food_info,
+        "food_allowance": food_info["allowance"],
+        "budget_cards": budget_cards,
+        "cards": budget_cards,
         "pricing_unit_notes": notes,
         "adjustments": [
             {
