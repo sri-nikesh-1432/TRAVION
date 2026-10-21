@@ -36,6 +36,7 @@ import { StaySelection } from '../components/stay/StaySelection';
 import { PaymentStep } from '../components/payment/PaymentStep';
 import { LiveJourneyCompanionScreen } from '../components/navigation/LiveJourneyCompanionScreen';
 import { TravellerHomeDashboard } from '../components/dashboard/TravellerHomeDashboard';
+import { TravellerSideDashboard } from '../components/dashboard/TravellerSideDashboard';
 import { TripCancellationModal } from '../components/user/TripCancellationModal';
 import { ProgressReviewModal } from '../components/user/ProgressReviewModal';
 import { resolveBudgetMax } from '../utils/budget';
@@ -184,6 +185,7 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
   const [showProgressReview, setShowProgressReview] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showSideDashboard, setShowSideDashboard] = useState(false);
 
   // Global Back & Forward History management:
   // Synchronized with browser history and sessionStorage so users are never
@@ -987,24 +989,25 @@ export const UserDomain: React.FC<UserDomainProps> = ({
               </button>
             )}
 
-            {/* Persistent Review Progress Button — always accessible */}
-            {(activeTrip || myTrips.length > 0) && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!activeTrip && myTrips.length > 0) {
-                    const latest = myTrips.find(t => ['REQUESTED', 'PLANNED', 'DRAFT', 'ACTIVE'].includes(t.status)) || myTrips[0];
-                    setActiveTrip(latest);
-                  }
-                  setShowProgressReview(true);
-                }}
-                title="Review your plan progress and selections so far"
-                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-travion-50 hover:bg-travion-100 text-travion-700 border border-travion-200 text-xs font-bold transition-colors shadow-sm"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-travion-600" />
-                <span className="hidden sm:inline">Review Progress</span>
-              </button>
-            )}
+            {/* Travel Hub & Side Dashboard Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowSideDashboard((prev) => !prev)}
+              title="Toggle Travel Hub, Planned Trips & Memories"
+              className={`inline-flex items-center gap-2 px-3.5 h-9 rounded-xl border transition-all shadow-sm text-xs font-bold ${
+                showSideDashboard
+                  ? 'bg-charcoal-900 text-emerald-400 border-charcoal-800'
+                  : 'border-charcoal-200/90 bg-white hover:border-emerald-300 hover:bg-emerald-50/40 text-charcoal-800'
+              }`}
+            >
+              <Compass className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">Travel Hub & Trips</span>
+              {myTrips.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[10px] font-black">
+                  {myTrips.length}
+                </span>
+              )}
+            </button>
 
             {/* Profile Avatar / Logout */}
             <div className="flex items-center gap-2 pl-2 border-l border-charcoal-200">
@@ -1052,16 +1055,12 @@ export const UserDomain: React.FC<UserDomainProps> = ({
             }}
             onResumeTrip={(trip) => void resumeFromStageState(trip)}
             onViewPaidTrip={(trip) => void loadTripWorkspace(trip.id, true)}
-            onReviewTrip={(trip) => {
-              setActiveTrip(trip);
-              setShowProgressReview(true);
-            }}
+            onOpenSideDashboard={() => setShowSideDashboard((prev) => !prev)}
             onSelectQuickDestination={(destName) => {
               setActiveTrip(null);
               setStageState(null);
               setCurrentView('search');
             }}
-            onEditProfile={() => setShowProfileSheet(true)}
           />
         )}
 
@@ -1771,6 +1770,24 @@ export const UserDomain: React.FC<UserDomainProps> = ({
         stageState={stageState}
         answers={answersSoFar}
         onNavigateToStep={(target) => setCurrentView(target as PlannerView)}
+      />
+
+      {/* Traveller Slide-out Side Dashboard */}
+      <TravellerSideDashboard
+        isOpen={showSideDashboard}
+        onClose={() => setShowSideDashboard(false)}
+        userProfile={userProfile}
+        userEmail={session.email}
+        trips={myTrips}
+        onPlanNewTrip={() => {
+          setActiveTrip(null);
+          setStageState(null);
+          setCurrentView('search');
+        }}
+        onResumeTrip={(trip) => void resumeFromStageState(trip)}
+        onViewPaidTrip={(trip) => void loadTripWorkspace(trip.id, true)}
+        onLogout={onLogout}
+        onEditProfile={() => setShowProfileSheet(true)}
       />
 
       {/* Trip Cancellation & 8-Hour Refund Modal */}
