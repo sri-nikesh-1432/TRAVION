@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   BadgeCheck,
   MapPin,
@@ -17,14 +17,14 @@ import {
   LayoutGrid,
   Clock,
   Sparkles,
+  Star,
+  Landmark,
+  Ticket,
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   DestinationCatalog,
-  CatalogPlace,
-  CatalogFood,
-  CatalogActivity,
   SelectedPlaceItem,
   SelectedFoodItem,
   SelectedStay,
@@ -49,90 +49,46 @@ interface DiscoverySelectProps {
 
 type TabCategory = 'all' | 'must_visit' | 'activities' | 'tourist_spots' | 'food';
 
-const KNOWN_LANDMARK_IMAGES: Record<string, string> = {
-  // Hyderabad
-  'charminar': 'https://images.unsplash.com/photo-1572445271230-a78b5944a659?auto=format&fit=crop&w=800&q=80',
-  'golconda': 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?auto=format&fit=crop&w=800&q=80',
-  'salar jung': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=800&q=80',
-  'chowmahalla': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=800&q=80',
-  'qutb shahi': 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=800&q=80',
-  'birla mandir': 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
-  'ramoji': 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=800&q=80',
-  'hussain sagar': 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
-  'lumbini': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-  'nehru zoological': 'https://images.unsplash.com/photo-1534567153574-2b12153a87f0?auto=format&fit=crop&w=800&q=80',
-  'laad bazaar': 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
-  'taramati': 'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&w=800&q=80',
-  'durgam cheruvu': 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80',
-  'paradise biryani': 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=800&q=80',
-  'bawarchi': 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=800&q=80',
-  'shadab': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
-  'chutneys': 'https://images.unsplash.com/photo-1610192244261-3f33de3f55e4?auto=format&fit=crop&w=800&q=80',
-  // Bangalore
-  'lalbagh': 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=800&q=80',
-  'cubbon': 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80',
-  'bangalore palace': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=800&q=80',
-  'vidhana soudha': 'https://images.unsplash.com/photo-1599661046827-dacff0c0f09a?auto=format&fit=crop&w=800&q=80',
-  // Chennai
-  'marina beach': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-  'kapaleeshwarar': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=800&q=80',
-  // Agra
-  'taj mahal': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=800&q=80',
-  'agra fort': 'https://images.unsplash.com/photo-1585135497273-1a86b09fe70e?auto=format&fit=crop&w=800&q=80',
-  'fatehpur sikri': 'https://images.unsplash.com/photo-1590050752117-238cb0fb12b1?auto=format&fit=crop&w=800&q=80',
-};
-
-const CATEGORY_IMAGES: Record<string, string[]> = {
-  heritage: [
-    'https://images.unsplash.com/photo-1599661046827-dacff0c0f09a?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1590050752117-238cb0fb12b1?auto=format&fit=crop&w=800&q=80',
-  ],
-  nature: [
-    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80',
-  ],
-  activities: [
-    'https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1503220317375-aaad61436b1b?auto=format&fit=crop&w=800&q=80',
-  ],
-  food: [
-    'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=800&q=80',
-  ],
-  default: [
-    'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=800&q=80',
-  ],
-};
-
-function getPlaceImage(
-  item: { name: string; category?: string; image_url?: string | null },
-  _destinationName: string,
-  index: number
-): string {
-  if (item.image_url && item.image_url.startsWith('http')) {
-    return item.image_url;
+function getCategoryTheme(item: { kind: 'place' | 'activity' | 'food'; category: string }) {
+  const cat = (item.category || '').toLowerCase();
+  if (item.kind === 'food' || cat.includes('food') || cat.includes('rest') || cat.includes('cafe') || cat.includes('dining')) {
+    return {
+      bgGradient: 'from-rose-50 via-pink-50/70 to-amber-50/60',
+      borderColor: 'border-pink-200/80',
+      iconBg: 'bg-pink-100 text-pink-700',
+      badgeBg: 'bg-rose-50 text-rose-700 border-rose-200',
+      Icon: Utensils,
+      typeLabel: 'Culinary & Dining',
+    };
   }
-  const nameLower = (item.name || '').toLowerCase();
-  for (const [key, url] of Object.entries(KNOWN_LANDMARK_IMAGES)) {
-    if (nameLower.includes(key)) {
-      return url;
-    }
+  if (item.kind === 'activity' || cat.includes('activ') || cat.includes('trail') || cat.includes('trek')) {
+    return {
+      bgGradient: 'from-sky-50 via-pink-50/50 to-indigo-50/60',
+      borderColor: 'border-sky-200/80',
+      iconBg: 'bg-sky-100 text-sky-700',
+      badgeBg: 'bg-sky-50 text-sky-700 border-sky-200',
+      Icon: Compass,
+      typeLabel: 'Verified Activity',
+    };
   }
-  const c = String(item.category || '').toLowerCase();
-  let list = CATEGORY_IMAGES.default;
-  if (c.includes('food') || c.includes('rest') || c.includes('cafe') || c.includes('biryani') || c.includes('dining')) {
-    list = CATEGORY_IMAGES.food;
-  } else if (c.includes('activ') || c.includes('trek') || c.includes('tour') || c.includes('walk')) {
-    list = CATEGORY_IMAGES.activities;
-  } else if (c.includes('natur') || c.includes('park') || c.includes('lake') || c.includes('beach') || c.includes('hill')) {
-    list = CATEGORY_IMAGES.nature;
-  } else if (c.includes('temple') || c.includes('fort') || c.includes('palace') || c.includes('herit') || c.includes('monum')) {
-    list = CATEGORY_IMAGES.heritage;
+  if (cat.includes('nature') || cat.includes('park') || cat.includes('lake') || cat.includes('waterfall') || cat.includes('hill')) {
+    return {
+      bgGradient: 'from-emerald-50 via-teal-50/60 to-sky-50/70',
+      borderColor: 'border-emerald-200/80',
+      iconBg: 'bg-emerald-100 text-emerald-700',
+      badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      Icon: Mountain,
+      typeLabel: 'Scenic Nature',
+    };
   }
-  return list[index % list.length];
+  return {
+    bgGradient: 'from-sky-50 via-amber-50/40 to-pink-50/50',
+    borderColor: 'border-amber-200/70',
+    iconBg: 'bg-amber-100 text-amber-800',
+    badgeBg: 'bg-amber-50 text-amber-800 border-amber-200',
+    Icon: Landmark,
+    typeLabel: 'Heritage & Landmark',
+  };
 }
 
 export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
@@ -148,6 +104,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabCategory>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Selected Place and Food Sets (by name)
   const [selectedPlaces, setSelectedPlaces] = useState<Set<string>>(new Set());
@@ -160,7 +117,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   // Leaflet map reference
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<L.FeatureGroup | null>(null);
 
   const fetchCatalog = async () => {
     setLoading(true);
@@ -230,27 +187,26 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           name: f.name,
           latitude: f.latitude || null,
           longitude: f.longitude || null,
-          distance_km: f.distance_km || null,
+          distance_km: null,
           avg_cost_for_two: f.avg_cost_for_two || null,
           cuisine: f.cuisine || null,
-          must_try: f.must_try || null,
           rating: f.rating || null,
-          source: f.source || 'verified_catalog',
+          source: f.source || 'food_catalog',
         });
       });
 
       setPlaceItemsMap(pMap);
       setFoodItemsMap(fMap);
 
-      // Pre-select top recommended places if user hasn't selected any yet
-      if (initialSelected.size > 0 && selectedPlaces.size === 0) {
-        setSelectedPlaces(initialSelected);
-      } else if (selectedPlaces.size === 0 && (data.must_visit || []).length > 0) {
-        const top3 = (data.must_visit || []).slice(0, 3).map((p) => p.name);
-        setSelectedPlaces(new Set(top3));
+      // Pre-select recommended highlights (or at least first 2)
+      if (initialSelected.size === 0 && pMap.size > 0) {
+        const firstTwo = Array.from(pMap.keys()).slice(0, 2);
+        firstTwo.forEach((name) => initialSelected.add(name));
       }
+      setSelectedPlaces(initialSelected);
     } catch (err: any) {
-      setError(err?.message || 'Could not load destination attractions.');
+      console.error('Failed to load destination catalog:', err);
+      setError(err?.message || 'Could not fetch catalog for this destination.');
     } finally {
       setLoading(false);
     }
@@ -263,8 +219,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const togglePlace = (name: string) => {
     setSelectedPlaces((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
       return next;
     });
   };
@@ -272,8 +231,11 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
   const toggleFood = (name: string) => {
     setSelectedFoods((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
       return next;
     });
   };
@@ -293,7 +255,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       recommended?: boolean;
       latitude?: number | null;
       longitude?: number | null;
-      image_url?: string | null;
     }> = [];
 
     (catalog.must_visit || []).forEach((p, idx) => {
@@ -310,7 +271,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         recommended: p.recommended,
         latitude: p.latitude,
         longitude: p.longitude,
-        image_url: p.image_url,
       });
     });
 
@@ -328,7 +288,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           verified: true,
           latitude: p.latitude,
           longitude: p.longitude,
-          image_url: p.image_url,
         });
       }
     });
@@ -348,7 +307,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
           recommended: a.recommended,
           latitude: a.latitude,
           longitude: a.longitude,
-          image_url: a.image_url,
         });
       }
     });
@@ -366,7 +324,6 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
         verified: true,
         latitude: f.latitude,
         longitude: f.longitude,
-        image_url: f.image_url,
       });
     });
 
@@ -378,69 +335,90 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const match =
-          String(item.name || '').toLowerCase().includes(q) ||
-          String(item.category || '').toLowerCase().includes(q) ||
-          (item.description && String(item.description).toLowerCase().includes(q));
+          item.name.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q) ||
+          (item.description && item.description.toLowerCase().includes(q));
         if (!match) return false;
       }
       if (activeTab === 'all') return true;
-      if (activeTab === 'must_visit') return String(item.category || '').toLowerCase().includes('must') || Boolean(item.recommended);
-      if (activeTab === 'activities') return item.kind === 'activity';
+      if (activeTab === 'must_visit') {
+        return (
+          item.category.toLowerCase().includes('must') ||
+          item.category.toLowerCase().includes('highlight') ||
+          Boolean(item.recommended)
+        );
+      }
       if (activeTab === 'tourist_spots') return item.kind === 'place';
+      if (activeTab === 'activities') return item.kind === 'activity';
       if (activeTab === 'food') return item.kind === 'food';
       return true;
     });
   }, [allItems, searchQuery, activeTab]);
 
-  // Leaflet Map Initialization
+  // Leaflet map initialization
   useEffect(() => {
     if (viewMode !== 'map' || !mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
-      const lat = catalog?.destination_latitude || 17.385;
-      const lng = catalog?.destination_longitude || 78.4867;
       const map = L.map(mapContainerRef.current, {
-        zoomControl: true,
-        scrollWheelZoom: true,
-      }).setView([lat, lng], 12);
+        center: [17.385, 78.4867],
+        zoom: 12,
+        zoomControl: false,
+      });
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 19,
       }).addTo(map);
 
-      const markers = L.layerGroup().addTo(map);
-      markersRef.current = markers;
+      markersRef.current = L.featureGroup().addTo(map);
       mapInstanceRef.current = map;
     }
 
+    // Refresh markers
     if (markersRef.current && mapInstanceRef.current) {
       markersRef.current.clearLayers();
       const bounds = L.latLngBounds([]);
 
       allItems.forEach((item) => {
         if (item.latitude && item.longitude) {
-          const isSel = item.kind === 'food' ? selectedFoods.has(item.name) : selectedPlaces.has(item.name);
-          const markerColor = isSel ? '#059669' : '#0284c7';
+          const isSelected = item.kind === 'food' ? selectedFoods.has(item.name) : selectedPlaces.has(item.name);
+
+          const iconHtml = `
+            <div style="
+              width: 32px;
+              height: 32px;
+              background-color: ${isSelected ? '#0284c7' : '#ffffff'};
+              border: 2px solid ${isSelected ? '#ffffff' : '#64748b'};
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: ${isSelected ? '#ffffff' : '#0f172a'};
+              box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+              cursor: pointer;
+            ">
+              <span style="font-size: 14px; font-weight: bold;">
+                ${isSelected ? '✓' : '•'}
+              </span>
+            </div>
+          `;
 
           const customIcon = L.divIcon({
+            html: iconHtml,
             className: 'custom-map-pin',
-            html: `
-              <div style="background-color: ${markerColor}; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid white; font-weight: bold; font-size: 11px;">
-                ${isSel ? '✓' : '•'}
-              </div>
-            `,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
           });
 
           const marker = L.marker([item.latitude, item.longitude], { icon: customIcon });
-          marker.bindPopup(`
-            <div style="font-family: inherit; font-size: 12px; padding: 4px;">
-              <strong style="color: #0f172a; font-size: 13px;">${item.name}</strong><br/>
-              <span style="color: #64748b;">${item.category}</span><br/>
-              <p style="margin: 4px 0 0 0; color: #334155;">${item.description || ''}</p>
-            </div>
-          `);
+
+          marker.bindTooltip(`<strong>${item.name}</strong><br/>${item.category}`, {
+            direction: 'top',
+            offset: [0, -16],
+          });
 
           marker.on('click', () => {
             if (item.kind === 'food') toggleFood(item.name);
@@ -458,7 +436,7 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     }
   }, [viewMode, allItems, selectedPlaces, selectedFoods, catalog]);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedPlaces.size === 0) {
       setError('Please select at least one attraction or place to visit.');
       return;
@@ -479,6 +457,43 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       (item) => item.kind === 'activity' && selectedPlaces.has(item.name)
     ).length;
 
+    setIsSubmitting(true);
+    setError(null);
+
+    // Sync selections directly into backend single source of truth
+    const itemsToSync: any[] = [
+      ...placeItems.map((p) => ({
+        provider_place_id: p.id || `place_${encodeURIComponent(p.name)}`,
+        name: p.name,
+        category: 'must_visit',
+        latitude: p.latitude ?? undefined,
+        longitude: p.longitude ?? undefined,
+        entry_fee: p.entry_fee ?? undefined,
+        price: p.entry_fee ?? 0,
+        selection_source: 'catalog',
+      })),
+      ...foodItems.map((f) => ({
+        provider_place_id: f.id || `food_${encodeURIComponent(f.name)}`,
+        name: f.name,
+        category: 'restaurants',
+        latitude: f.latitude ?? undefined,
+        longitude: f.longitude ?? undefined,
+        avg_cost_for_two: f.avg_cost_for_two ?? undefined,
+        price: f.avg_cost_for_two ?? 0,
+        selection_source: 'catalog',
+      })),
+    ];
+
+    try {
+      if (itemsToSync.length > 0) {
+        await api.syncTripSelections(tripId, itemsToSync, true);
+      }
+    } catch (err: any) {
+      console.warn('Sync selections warning:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+
     onConfirm(placesList, foodsList, placeItems, foodItems, null, true, activityCount);
   };
 
@@ -488,40 +503,40 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
     <div className="max-w-6xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-travion-50 border border-travion-200 text-travion-700 text-xs font-black uppercase tracking-wider mb-2">
-          <Compass className="w-3.5 h-3.5 text-travion-600" />
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-50 border border-sky-200 text-sky-800 text-xs font-black uppercase tracking-wider mb-2">
+          <Compass className="w-3.5 h-3.5 text-sky-600" />
           Step 4 · Discover & Curate
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-charcoal-900 tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
           What would you like to experience in {destinationName}?
         </h1>
-        <p className="mt-1.5 text-sm text-charcoal-600 max-w-xl mx-auto">
-          Explore genuine attractions, heritage monuments, scenic nature spots, and authentic culinary dining.
+        <p className="mt-1.5 text-sm text-slate-600 max-w-xl mx-auto">
+          Explore genuine attractions, heritage monuments, scenic nature spots, and authentic culinary dining with zero image bloat.
         </p>
       </div>
 
       {/* Search & Mode Toolbar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6">
         <div className="relative w-full sm:w-96">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-charcoal-400" />
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={`Search places in ${destinationName}…`}
-            className="w-full h-11 pl-10 pr-4 rounded-2xl border border-charcoal-200 bg-white text-xs font-semibold placeholder:text-charcoal-400 focus:outline-none focus:border-travion-500 focus:ring-2 focus:ring-travion-100 transition-all"
+            className="w-full h-11 pl-10 pr-4 rounded-2xl border border-slate-200 bg-white text-xs font-semibold placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 transition-all"
           />
         </div>
 
         {/* View Switcher: Grid vs Map */}
-        <div className="flex items-center gap-1 p-1 bg-sand-100 rounded-xl border border-charcoal-200 self-end sm:self-auto">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 self-end sm:self-auto">
           <button
             type="button"
             onClick={() => setViewMode('grid')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
               viewMode === 'grid'
-                ? 'bg-white text-charcoal-900 shadow-sm'
-                : 'text-charcoal-500 hover:text-charcoal-800'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -532,8 +547,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             onClick={() => setViewMode('map')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
               viewMode === 'map'
-                ? 'bg-white text-charcoal-900 shadow-sm'
-                : 'text-charcoal-500 hover:text-charcoal-800'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <MapIcon className="w-3.5 h-3.5" />
@@ -573,8 +588,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
             onClick={() => setActiveTab(tab.id as TabCategory)}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               activeTab === tab.id
-                ? 'bg-travion-600 text-white shadow-sm'
-                : 'bg-white border border-charcoal-200 text-charcoal-600 hover:border-travion-300'
+                ? 'bg-sky-600 text-white shadow-sm'
+                : 'bg-white border border-slate-200 text-slate-600 hover:border-sky-300'
             }`}
           >
             {tab.label} <span className="opacity-75">({tab.count})</span>
@@ -600,8 +615,8 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       {/* Loading state */}
       {loading && (
         <div className="py-20 text-center">
-          <RefreshCw className="w-8 h-8 text-travion-600 animate-spin mx-auto mb-4" />
-          <p className="text-sm font-bold text-charcoal-600">
+          <RefreshCw className="w-8 h-8 text-sky-600 animate-spin mx-auto mb-4" />
+          <p className="text-sm font-bold text-slate-600">
             Gathering verified locations and experiences in {destinationName}…
           </p>
         </div>
@@ -609,24 +624,25 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
 
       {/* Interactive Map View */}
       {viewMode === 'map' && !loading && (
-        <div className="mb-24 rounded-3xl overflow-hidden border border-charcoal-200 shadow-soft bg-white">
-          <div className="p-3 bg-sand-50 border-b border-charcoal-200 flex items-center justify-between text-xs text-charcoal-600">
+        <div className="mb-24 rounded-3xl overflow-hidden border border-slate-200 shadow-soft bg-white">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
             <span className="font-bold flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-travion-600" />
+              <MapPin className="w-4 h-4 text-sky-600" />
               Click any pin on the map to add/remove it from your itinerary
             </span>
-            <span className="font-semibold text-emerald-700">● Green: In your plan</span>
+            <span className="font-semibold text-emerald-700">● Blue: In your plan</span>
           </div>
           <div ref={mapContainerRef} className="w-full h-[520px]" />
         </div>
       )}
 
-      {/* Grid View */}
+      {/* Grid View: Pure CSS High-End Gradient Cards (ZERO IMAGES) */}
       {viewMode === 'grid' && !loading && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-28">
-          {filteredItems.map((item, idx) => {
+          {filteredItems.map((item) => {
             const isSelected = item.kind === 'food' ? selectedFoods.has(item.name) : selectedPlaces.has(item.name);
-            const img = getPlaceImage(item, destinationName, idx);
+            const theme = getCategoryTheme(item);
+            const CategoryIcon = theme.Icon;
 
             return (
               <motion.div
@@ -639,57 +655,72 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                 }}
                 className={`cursor-pointer rounded-3xl border overflow-hidden transition-all flex flex-col ${
                   isSelected
-                    ? 'border-travion-600 ring-2 ring-travion-500 bg-travion-50/20 shadow-floating'
-                    : 'border-charcoal-200 bg-white hover:border-travion-300 hover:shadow-card'
+                    ? 'border-sky-500 ring-2 ring-sky-400 bg-sky-50/20 shadow-md'
+                    : 'border-slate-200 bg-white hover:border-sky-300 hover:shadow-sm'
                 }`}
               >
-                {/* Photo & Badges */}
-                <div className="relative h-44 bg-charcoal-100 overflow-hidden">
-                  <img
-                    src={img}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-travion-900/80 backdrop-blur-md text-white text-[10.5px] font-black uppercase tracking-wider">
-                    <BadgeCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    {item.category}
+                {/* Visual Header Banner - Pure CSS Palette Art */}
+                <div className={`p-4 bg-gradient-to-br ${theme.bgGradient} border-b ${theme.borderColor} relative`}>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`p-1.5 rounded-xl ${theme.iconBg} shadow-xs`}>
+                        <CategoryIcon className="w-4 h-4" />
+                      </div>
+                      <span className={`text-[11px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border ${theme.badgeBg}`}>
+                        {item.category}
+                      </span>
+                    </div>
+
+                    {/* Checkbox badge */}
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all ${
+                        isSelected
+                          ? 'bg-sky-600 text-white shadow-sm'
+                          : 'bg-white border border-slate-300 text-slate-400'
+                      }`}
+                    >
+                      {isSelected ? <Check className="w-4 h-4 stroke-[2.5]" /> : <Plus className="w-4 h-4" />}
+                    </div>
                   </div>
 
-                  {item.recommended && (
-                    <div className="absolute top-3 right-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase shadow-sm">
-                      <Sparkles className="w-3 h-3" /> Recommended
-                    </div>
-                  )}
+                  <h3 className="text-base font-black text-slate-900 leading-snug line-clamp-1">
+                    {item.name}
+                  </h3>
 
-                  {isSelected && (
-                    <div className="absolute bottom-3 right-3 px-3 py-1 rounded-full bg-travion-600 text-white text-xs font-black flex items-center gap-1 shadow-md">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" /> Added
-                    </div>
-                  )}
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 font-semibold">
+                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Verified Place
+                    </span>
+                    <span className="flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                      {Number(item.rating || 4.7).toFixed(1)}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Details */}
+                {/* Details Body */}
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-base font-extrabold text-charcoal-900 leading-snug line-clamp-1">
-                      {item.name}
-                    </h3>
-                    <p className="mt-1 text-xs text-charcoal-500 line-clamp-2 leading-relaxed">
+                    <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
                       {item.description}
                     </p>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-charcoal-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-[11.5px] text-charcoal-500 font-semibold">
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-[11.5px] text-slate-600 font-semibold">
                       {item.duration ? (
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-charcoal-400" />
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
                           {item.duration} min
                         </span>
                       ) : null}
-                      <span className="flex items-center gap-1 text-charcoal-700">
-                        {item.price && item.price > 0 ? `₹${item.price}` : 'Free entry'}
+                      <span className="flex items-center gap-1 text-slate-800 font-bold">
+                        <Ticket className="w-3.5 h-3.5 text-sky-600" />
+                        {item.price && item.price > 0
+                          ? item.kind === 'food'
+                            ? `₹${item.price} avg for two`
+                            : `₹${item.price} entry`
+                          : 'Free entry'}
                       </span>
                     </div>
 
@@ -700,19 +731,19 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
                         if (item.kind === 'food') toggleFood(item.name);
                         else togglePlace(item.name);
                       }}
-                      className={`h-9 px-3.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
+                      className={`h-8 px-3 rounded-xl font-bold text-xs flex items-center gap-1 transition-all ${
                         isSelected
-                          ? 'bg-travion-600 text-white shadow-sm'
-                          : 'bg-sand-100 text-charcoal-700 hover:bg-travion-50 hover:text-travion-700'
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-700'
                       }`}
                     >
                       {isSelected ? (
                         <>
-                          <Check className="w-3.5 h-3.5" /> Added
+                          <Check className="w-3 h-3" /> Added
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" /> Add
+                          <Plus className="w-3 h-3" /> Select
                         </>
                       )}
                     </button>
@@ -725,33 +756,33 @@ export const DiscoverySelect: React.FC<DiscoverySelectProps> = ({
       )}
 
       {/* Floating Tray Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-charcoal-200 py-4 px-6 shadow-floating">
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 py-4 px-6 shadow-floating">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border border-charcoal-300 text-charcoal-700 text-xs font-bold hover:bg-charcoal-50 transition-colors"
+            className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Back to Transport
           </button>
 
           <div className="hidden sm:flex items-center gap-2">
-            <span className="text-xs font-black text-charcoal-900">
+            <span className="text-xs font-black text-slate-900">
               {totalSelectedCount} {totalSelectedCount === 1 ? 'place' : 'places'} selected
             </span>
-            <span className="text-xs text-charcoal-400">·</span>
-            <span className="text-[11.5px] font-medium text-charcoal-500">
-              {selectedPlaces.size} attractions & {selectedFoods.size} dining spots
+            <span className="text-xs text-slate-400">·</span>
+            <span className="text-xs font-semibold text-slate-500">
+              {selectedPlaces.size} attractions, {selectedFoods.size} dining spots
             </span>
           </div>
 
           <button
             type="button"
-            disabled={selectedPlaces.size === 0 || busy}
+            disabled={selectedPlaces.size === 0 || busy || isSubmitting}
             onClick={handleContinue}
-            className="inline-flex items-center gap-2 px-6 h-11 rounded-xl bg-travion-600 hover:bg-travion-700 disabled:bg-charcoal-300 text-white text-xs font-black uppercase tracking-wider transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 px-6 h-11 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 text-white text-xs font-black uppercase tracking-wider transition-colors shadow-sm"
           >
-            {busy ? (
+            {busy || isSubmitting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> Saving Choices…
               </>

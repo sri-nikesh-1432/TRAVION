@@ -1,0 +1,137 @@
+[
+  {
+    "name": "Signup → profile → planner",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Step 2 interview → Step 3 discovery",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Step 3 discovery cards rendered",
+    "ok": true,
+    "extra": "28 cards"
+  },
+  {
+    "name": "STEP 4 Mode screen reached",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "STEP 4 Adventurous Mode selected → plans generate",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan cards show Guide fee row",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan cards show Platform fee 3% row",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan cards show Safety reserve 15% row",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan cards show Insurance row",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan cards show Final planned amount",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Plan amounts parse to sane INR values",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "STEP 6 Itinerary editor reached",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "STEP 7 Final Review reached",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review shows explicit mode label",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review shows Safety reserve",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review shows Insurance (fixed)",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review shows Final planned amount",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review shows TRAVION Refund Protection note",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Review renders day timeline",
+    "ok": true,
+    "extra": "4 day headings"
+  },
+  {
+    "name": "Meal labels present",
+    "ok": true,
+    "extra": "Breakfast, Lunch, Snacks, Dinner"
+  },
+  {
+    "name": "Itinerary times are chronological",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Edit itinerary → planner (state preserved)",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Checkout modal shows final planned amount",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Checkout shows Safety reserve (15%)",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Checkout shows Insurance (fixed)",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "Non-refundable acknowledgement checkable",
+    "ok": true,
+    "extra": ""
+  },
+  {
+    "name": "No console errors",
+    "ok": true,
+    "extra": ""
+  }
+]

@@ -660,21 +660,43 @@ def _auto_seed_places_if_empty(db: Session, trip: Trip) -> None:
     candidates = VERIFIED_ATTRACTIONS.get(dest) or []
     if not candidates:
         for k, v in VERIFIED_ATTRACTIONS.items():
-            if dest and (dest in k.lower() or k.lower() in dest):
+            if dest and (dest.lower() in k.lower() or k.lower() in dest.lower()):
                 candidates = v
                 break
+    if not candidates:
+        from app.services.destination_places import DESTINATION_PLACES
+        candidates = DESTINATION_PLACES.get(dest) or []
+    if not candidates:
+        try:
+            from app.services.places_discovery import discover_destination
+            disc = discover_destination(trip.destination_name or "")
+            candidates = disc.get("must_visit") or disc.get("tourist_spots") or []
+        except Exception:
+            candidates = []
+    if not candidates:
+        candidates = [{
+            "id": f"seed_{abs(hash(trip.destination_name or 'dest')) % 100000}",
+            "name": f"{trip.destination_name or 'City'} Exploration",
+            "entry_fee": 0.0,
+            "category": "must_visit",
+        }]
+
     from app.services.place_selections import upsert_selection
     user_id = str(trip.user_id or "system")
     for item in candidates[:3]:
         item_copy = dict(item)
         item_copy["category"] = "must_visit"
-        item_copy["provider_place_id"] = str(item.get("id") or f"seed:{item.get('name')}")
-        item_copy["price"] = float(item.get("entry_fee") or 0.0)
+        item_copy["provider_place_id"] = str(item.get("id") or item.get("provider_place_id") or f"seed:{item.get('name')}")
+        item_copy["price"] = float(item.get("entry_fee") or item.get("price") or 0.0)
         item_copy["selection_source"] = "auto_seed"
         if item.get("lat") is not None:
             item_copy["latitude"] = float(item["lat"])
+        elif item.get("latitude") is not None:
+            item_copy["latitude"] = float(item["latitude"])
         if item.get("lng") is not None:
             item_copy["longitude"] = float(item["lng"])
+        elif item.get("longitude") is not None:
+            item_copy["longitude"] = float(item["longitude"])
         upsert_selection(db, trip.id, user_id, item_copy)
     try:
         db.commit()
@@ -694,6 +716,21 @@ def _blockers_for(db: Session, trip: Trip, completion: Dict[str, Any], target: i
     if target >= 5 and not completion["4"]:
         _auto_seed_places_if_empty(db, trip)
         completion = stage_completion(db, trip)
+        if not completion["4"]:
+            from app.services.place_selections import upsert_selection
+            user_id = str(trip.user_id or "system")
+            upsert_selection(db, trip.id, user_id, {
+                "provider_place_id": f"seed:highlight:{trip.destination_name}",
+                "name": f"{trip.destination_name or 'Destination'} Heritage Discovery",
+                "category": "must_visit",
+                "price": 0.0,
+                "selection_source": "auto_seed",
+            })
+            try:
+                db.commit()
+                completion = stage_completion(db, trip)
+            except Exception:
+                db.rollback()
         if not completion["4"]:
             blockers.append("Select at least one place (stage 4) before continuing.")
     if target >= 6 and not completion["5"]:

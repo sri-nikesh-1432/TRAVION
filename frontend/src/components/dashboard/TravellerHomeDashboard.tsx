@@ -57,7 +57,6 @@ interface DestinationInspiration {
   categoryLabel: string;
   badge: string;
   badgeType: 'sky' | 'blush' | 'nature' | 'cream';
-  image: string;
   highlights: string[];
   weather: string;
 }
@@ -71,7 +70,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Misty Hill Station',
     badge: 'Tea Estate Haven',
     badgeType: 'nature',
-    image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?auto=format&fit=crop&w=900&q=80',
     highlights: ['Tea Plantation Walk', 'Eravikulam Trails', 'Anamudi Peak View'],
     weather: '19°C · Gentle Mist',
   },
@@ -83,7 +81,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Azure Coast',
     badge: 'Coastal Serenity',
     badgeType: 'sky',
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=900&q=80',
     highlights: ['Palolem Sands', 'Old Latin Quarter', 'Sunset Sailing'],
     weather: '29°C · Ocean Breeze',
   },
@@ -95,7 +92,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Royal Heritage',
     badge: 'Blush Pink City',
     badgeType: 'blush',
-    image: 'https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&w=900&q=80',
     highlights: ['Hawa Mahal Dawn', 'Amber Fort Courtyards', 'Handicraft Bazaars'],
     weather: '25°C · Warm Sun',
   },
@@ -107,7 +103,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Lake Sanctuary',
     badge: 'Lakeside Serenade',
     badgeType: 'blush',
-    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?auto=format&fit=crop&w=900&q=80',
     highlights: ['Lake Pichola Boat Ride', 'City Palace Balconies', 'Jagmandir Island'],
     weather: '26°C · Clear Sky',
   },
@@ -119,7 +114,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Royal Heritage',
     badge: 'City of Nizams',
     badgeType: 'cream',
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?auto=format&fit=crop&w=900&q=80',
     highlights: ['Charminar Heritage Walk', 'Golconda Sunset', 'Chowmahalla Palace'],
     weather: '28°C · Pleasant',
   },
@@ -131,7 +125,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Timeless Heritage',
     badge: 'Sacred Ganga',
     badgeType: 'sky',
-    image: 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&w=900&q=80',
     highlights: ['Subah-e-Banaras Boat', 'Evening Ganga Aarti', 'Ancient Alleys'],
     weather: '24°C · Serene',
   },
@@ -143,7 +136,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Mountain Peaks',
     badge: 'Alpine Sky',
     badgeType: 'sky',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?auto=format&fit=crop&w=900&q=80',
     highlights: ['Solang Valley Heights', 'Old Manali Cafés', 'Jogini Waterfall Trail'],
     weather: '14°C · Crisp Air',
   },
@@ -155,7 +147,6 @@ const DESTINATION_INSPIRATIONS: DestinationInspiration[] = [
     categoryLabel: 'Sacred Stone Architecture',
     badge: 'Kakatiya Wonders',
     badgeType: 'cream',
-    image: 'https://images.unsplash.com/photo-1626290467773-678cb54a5c9f?auto=format&fit=crop&w=900&q=80',
     highlights: ['Thousand Pillar Sanctuary', 'Kakatiya Stone Arch', 'Ramappa UNESCO'],
     weather: '27°C · Golden Light',
   },
@@ -641,6 +632,15 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                     ? 'bg-amber-50 text-amber-800 border-amber-200'
                     : 'bg-sky-50 text-sky-700 border-sky-200';
 
+                const headerGradient =
+                  dest.badgeType === 'blush'
+                    ? 'from-pink-50 via-rose-50/60 to-amber-50/50'
+                    : dest.badgeType === 'nature'
+                    ? 'from-emerald-50 via-teal-50/60 to-sky-50/60'
+                    : dest.badgeType === 'cream'
+                    ? 'from-amber-50 via-yellow-50/50 to-pink-50/40'
+                    : 'from-sky-50 via-cyan-50/60 to-indigo-50/40';
+
                 return (
                   <motion.div
                     key={dest.name}
@@ -659,37 +659,27 @@ export const TravellerHomeDashboard: React.FC<TravellerHomeDashboardProps> = ({
                     }}
                     className="group relative rounded-[28px] overflow-hidden bg-white border border-slate-200/70 shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0_16px_36px_rgba(14,165,233,0.12)] transition-all duration-300 cursor-pointer flex flex-col justify-between"
                   >
-                    {/* Destination Image */}
-                    <div className="relative h-48 overflow-hidden">
-                      <img
-                        src={dest.image}
-                        alt={dest.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent" />
-
+                    {/* Destination Visual Banner (Zero External Images) */}
+                    <div className={`p-5 bg-gradient-to-br ${headerGradient} border-b border-slate-200/80 relative overflow-hidden`}>
                       {/* Top Badges */}
-                      <div className="absolute top-3 left-3">
+                      <div className="flex items-center justify-between gap-2 mb-3">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold border backdrop-blur-md shadow-xs ${badgeStyle}`}
                         >
                           {dest.badge}
                         </span>
-                      </div>
 
-                      <div className="absolute top-3 right-3">
                         <span className="px-2 py-0.5 rounded-full bg-white/90 text-slate-800 backdrop-blur-md text-[10px] font-semibold border border-white/60">
                           {dest.weather}
                         </span>
                       </div>
 
-                      {/* Bottom Image Overlay: City and State */}
-                      <div className="absolute bottom-3 left-3.5 right-3.5 text-white">
-                        <span className="text-[10px] font-medium tracking-wide text-sky-200 block">
+                      {/* City and State */}
+                      <div className="mt-3">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
                           {dest.state}, India
                         </span>
-                        <h3 className="text-xl font-black tracking-tight">{dest.name}</h3>
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">{dest.name}</h3>
                       </div>
                     </div>
 

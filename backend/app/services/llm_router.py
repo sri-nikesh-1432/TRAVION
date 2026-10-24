@@ -535,7 +535,7 @@ def route_task(task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         raw = str(result["honest"])
     else:
         # model is now a google.genai.Client instance
-        _MODEL_ID = "gemini-2.0-flash"
+        _MODEL_ID = "gemini-3.8-flash"
         for attempt in range(1, _max_retries + 1):
             try:
                 response = model.models.generate_content(

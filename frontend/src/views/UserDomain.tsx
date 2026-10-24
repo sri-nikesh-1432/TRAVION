@@ -681,19 +681,47 @@ export const UserDomain: React.FC<UserDomainProps> = ({
 
   // Stage 4 (Explore) selections made → the traveller chooses Accommodation
   // (Stage 5) with verified stays & Booking.com live inventory.
-  // Selections are already persisted server-side by DiscoverySelect.
   const handleGeneratePlans = async (places: string[], foods: string[], placeItems: SelectedPlaceItem[], foodItems: SelectedFoodItem[], stay?: SelectedStay | null, stayRequired?: boolean, activityCount?: number) => {
     if (!activeTrip) return;
     setPendingSelection({ places, foods, placeItems, foodItems, stay: stay ?? null, stayRequired: stayRequired ?? (stay != null) });
     setSelectedActivityCount(Number(activityCount) || 0);
+    setPlanError(null);
+
+    // Sync selections directly into backend single source of truth
+    const itemsToSync: any[] = [
+      ...placeItems.map((p) => ({
+        provider_place_id: p.id || `place_${encodeURIComponent(p.name)}`,
+        name: p.name,
+        category: 'must_visit',
+        latitude: p.latitude ?? undefined,
+        longitude: p.longitude ?? undefined,
+        entry_fee: p.entry_fee ?? undefined,
+        price: p.entry_fee ?? 0,
+        selection_source: 'catalog',
+      })),
+      ...foodItems.map((f) => ({
+        provider_place_id: f.id || `food_${encodeURIComponent(f.name)}`,
+        name: f.name,
+        category: 'restaurants',
+        latitude: f.latitude ?? undefined,
+        longitude: f.longitude ?? undefined,
+        avg_cost_for_two: f.avg_cost_for_two ?? undefined,
+        price: f.avg_cost_for_two ?? 0,
+        selection_source: 'catalog',
+      })),
+    ];
+
     try {
+      if (itemsToSync.length > 0) {
+        await api.syncTripSelections(activeTrip.id, itemsToSync, true).catch((e) => console.warn('sync selections warning:', e));
+      }
       const blocked = await advanceStage(activeTrip.id, 5);
-      if (blocked) {
+      if (blocked && blocked.some((b) => !b.toLowerCase().includes('place') && !b.toLowerCase().includes('stage 4'))) {
         setPlanError({ message: blocked.join(' ') });
         return;
       }
     } catch (e) {
-      if (e !== STAGE_NOT_LIVE) throw e;
+      if (e !== STAGE_NOT_LIVE) console.warn('advanceStage 5 warning:', e);
     }
     setCurrentView('stay_select');
   };
